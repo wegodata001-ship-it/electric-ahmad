@@ -1,0 +1,194 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
+import { Bell, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useAppStore } from "@/store/app.store";
+import { searchService } from "@/services";
+import { notificationService } from "@/features/notifications/services/notification.service";
+import { currentUser } from "@/mock";
+import { Avatar, Button } from "@/components/ui";
+import { formatRelative } from "@/utils/format";
+import { motion, AnimatePresence } from "framer-motion";
+
+const breadcrumbMap: Record<string, string> = {
+  dashboard: "דשבורד",
+  projects: "פרויקטים",
+  boq: "כתב כמויות",
+  employees: "עובדים",
+  reports: "דיווחים",
+  documents: "מסמכים",
+  "partial-invoices": "חשבונות חלקיים",
+  gallery: "גלריה",
+  settings: "הגדרות",
+  worker: "אפליקציית עובד",
+};
+
+export function Header() {
+  const pathname = usePathname();
+  const {
+    sidebarCollapsed,
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    setSearchResults,
+    searchOpen,
+    setSearchOpen,
+    notifications,
+    setNotifications,
+    notificationsOpen,
+    setNotificationsOpen,
+    markNotificationRead,
+    markAllNotificationsRead,
+    unreadCount,
+  } = useAppStore();
+
+  const [searchFocused, setSearchFocused] = useState(false);
+
+  useEffect(() => {
+    notificationService.getAll().then(setNotifications);
+  }, [setNotifications]);
+
+  const handleSearch = useCallback(
+    async (query: string) => {
+      setSearchQuery(query);
+      if (query.length >= 2) {
+        const results = await searchService.search(query);
+        setSearchResults(results);
+        setSearchOpen(true);
+      } else {
+        setSearchResults([]);
+        setSearchOpen(false);
+      }
+    },
+    [setSearchQuery, setSearchResults, setSearchOpen]
+  );
+
+  const segments = pathname.split("/").filter(Boolean);
+  const breadcrumbs = segments.map((seg) => breadcrumbMap[seg] || seg);
+
+  return (
+    <header
+      className={cn(
+        "fixed top-0 left-0 h-16 bg-white/80 backdrop-blur-md border-b border-gray-200/80 z-30 flex items-center px-6 gap-4 transition-all duration-300",
+        sidebarCollapsed ? "right-[72px]" : "right-[260px]"
+      )}
+    >
+      <nav className="flex items-center gap-1.5 text-sm text-gray-500 min-w-0">
+        <Link href="/dashboard" className="hover:text-gray-700 transition-colors">בית</Link>
+        {breadcrumbs.map((crumb, i) => (
+          <span key={i} className="flex items-center gap-1.5">
+            <span className="text-gray-300">/</span>
+            <span className={cn(i === breadcrumbs.length - 1 ? "text-gray-900 font-medium" : "hover:text-gray-700")}>
+              {crumb}
+            </span>
+          </span>
+        ))}
+      </nav>
+
+      <div className="flex-1 max-w-md mx-auto relative">
+        <div className="relative">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="חיפוש פרויקטים, עובדים, סעיפים..."
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+            className="w-full h-9 pr-10 pl-4 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white transition-all"
+          />
+        </div>
+
+        <AnimatePresence>
+          {searchOpen && searchResults.length > 0 && searchFocused && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              className="absolute top-full mt-2 w-full bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden z-50"
+            >
+              {searchResults.map((result) => (
+                <Link
+                  key={result.id}
+                  href={result.link}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
+                  onClick={() => setSearchOpen(false)}
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{result.title}</p>
+                    <p className="text-xs text-gray-500">{result.subtitle}</p>
+                  </div>
+                </Link>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setNotificationsOpen(!notificationsOpen)}
+          >
+            <Bell className="h-5 w-5" />
+            {unreadCount() > 0 && (
+              <span className="absolute -top-0.5 -left-0.5 h-4 w-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {unreadCount()}
+              </span>
+            )}
+          </Button>
+
+          <AnimatePresence>
+            {notificationsOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className="absolute left-0 top-full mt-2 w-80 bg-white rounded-xl border border-gray-200 shadow-lg z-50"
+              >
+                <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">התראות</h3>
+                  <button
+                    onClick={markAllNotificationsRead}
+                    className="text-xs text-primary-600 hover:text-primary-700"
+                  >
+                    סמן הכל כנקרא
+                  </button>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.map((notif) => (
+                    <button
+                      key={notif.id}
+                      onClick={() => markNotificationRead(notif.id)}
+                      className={cn(
+                        "w-full text-right px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50",
+                        !notif.read && "bg-primary-50/50"
+                      )}
+                    >
+                      <p className="text-sm font-medium text-gray-900">{notif.title}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{notif.message}</p>
+                      <p className="text-xs text-gray-400 mt-1">{formatRelative(notif.createdAt)}</p>
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div className="flex items-center gap-2 mr-2 pr-2 border-r border-gray-200">
+          <Avatar src={currentUser.avatarUrl} name={currentUser.name} size="sm" />
+          <div className="hidden lg:block">
+            <p className="text-sm font-medium text-gray-900 leading-tight">{currentUser.name}</p>
+            <p className="text-xs text-gray-400 leading-tight">{currentUser.role}</p>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}

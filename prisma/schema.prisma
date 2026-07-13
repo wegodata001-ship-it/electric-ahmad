@@ -1,0 +1,456 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum ProjectStatus {
+  active
+  completed
+  on_hold
+  planning
+}
+
+enum BoqItemStatus {
+  not_started
+  in_progress
+  completed
+  on_hold
+}
+
+enum EmployeeStatus {
+  active
+  inactive
+  on_leave
+}
+
+enum EmployeeRole {
+  worker
+  foreman
+  engineer
+  manager
+  admin
+}
+
+enum DocumentType {
+  pdf
+  excel
+  word
+  dwg
+  image
+  video
+  other
+}
+
+enum InvoiceStatus {
+  draft
+  submitted
+  approved
+  paid
+  rejected
+}
+
+enum NotificationType {
+  report
+  item_completed
+  document
+  invoice
+  system
+  employee
+}
+
+enum ActivityType {
+  report_created
+  quantity_updated
+  document_uploaded
+  invoice_created
+  status_changed
+  employee_assigned
+  project_updated
+}
+
+enum MediaType {
+  image
+  video
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  UPLOAD
+}
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+model User {
+  id         String   @id @default(cuid())
+  supabaseId String?  @unique
+  email      String   @unique
+  name       String
+  role       String   @default("admin")
+  avatarUrl  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employee Employee?
+
+  ownedProjects     Project[]  @relation("ProjectOwner")
+  createdProjects   Project[]  @relation("ProjectCreatedBy")
+  updatedProjects   Project[]  @relation("ProjectUpdatedBy")
+  createdBoqItems   BoqItem[]  @relation("BoqCreatedBy")
+  updatedBoqItems   BoqItem[]  @relation("BoqUpdatedBy")
+  createdReports    WorkReport[] @relation("ReportCreatedBy")
+  updatedReports    WorkReport[] @relation("ReportUpdatedBy")
+  uploadedDocuments Document[] @relation("DocumentUploadedBy")
+  createdDocuments  Document[] @relation("DocumentCreatedBy")
+  updatedDocuments  Document[] @relation("DocumentUpdatedBy")
+  uploadedGallery   GalleryItem[] @relation("GalleryUploadedBy")
+  createdInvoices   PartialInvoice[] @relation("InvoiceCreatedBy")
+  updatedInvoices   PartialInvoice[] @relation("InvoiceUpdatedBy")
+  activities        Activity[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+}
+
+// ─── Employees ───────────────────────────────────────────────────────────────
+
+model Employee {
+  id                String         @id @default(cuid())
+  firstName         String
+  lastName          String
+  phone             String
+  email             String         @unique
+  role              EmployeeRole
+  status            EmployeeStatus @default(active)
+  avatarUrl         String?
+  avatarPath        String?
+  avatarBucket      String?
+  completedQuantity Int            @default(0)
+  openQuantity      Int            @default(0)
+  joinedAt          DateTime
+  userId            String?        @unique
+  user              User?          @relation(fields: [userId], references: [id])
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  foremanProjects Project[]         @relation("ProjectForeman")
+  projectLinks    ProjectEmployee[]
+  reports         WorkReport[]
+  galleryItems    GalleryItem[]
+}
+
+model ProjectEmployee {
+  projectId  String
+  employeeId String
+  assignedAt DateTime @default(now())
+
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, employeeId])
+  @@index([employeeId])
+}
+
+// ─── Projects ──────────────────────────────────────────────────────────────────
+
+model Project {
+  id             String        @id @default(cuid())
+  name           String
+  contractNumber String        @unique
+  contractor     String
+  location       String
+  foremanId      String
+  foreman        Employee      @relation("ProjectForeman", fields: [foremanId], references: [id])
+  status         ProjectStatus @default(active)
+  contractValue  Decimal       @db.Decimal(14, 2)
+  completedValue Decimal       @default(0) @db.Decimal(14, 2)
+  progress       Float         @default(0)
+  imageUrl       String?
+  imagePath      String?
+  imageBucket    String?
+  startDate      DateTime
+  endDate        DateTime
+  description    String?
+  ownerId        String
+  owner          User          @relation("ProjectOwner", fields: [ownerId], references: [id])
+  createdById    String
+  createdBy      User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+  updatedById    String
+  updatedBy      User          @relation("ProjectUpdatedBy", fields: [updatedById], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  boqItems      BoqItem[]
+  reports       WorkReport[]
+  documents     Document[]
+  invoices      PartialInvoice[]
+  activities    Activity[]
+  employees     ProjectEmployee[]
+  galleryItems  GalleryItem[]
+  notifications Notification[]
+
+  @@index([status])
+  @@index([foremanId])
+  @@index([ownerId])
+}
+
+// ─── BOQ ─────────────────────────────────────────────────────────────────────
+
+model BoqItem {
+  id                String        @id @default(cuid())
+  projectId         String
+  project           Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  code              String
+  description       String
+  unit              String
+  contractQuantity  Decimal       @db.Decimal(12, 4)
+  completedQuantity Decimal       @default(0) @db.Decimal(12, 4)
+  remainingQuantity Decimal       @default(0) @db.Decimal(12, 4)
+  unitPrice         Decimal       @db.Decimal(12, 2)
+  completedValue    Decimal       @default(0) @db.Decimal(14, 2)
+  remainingValue    Decimal       @default(0) @db.Decimal(14, 2)
+  progress          Float         @default(0)
+  status            BoqItemStatus @default(not_started)
+  parentId          String?
+  parent            BoqItem?      @relation("BoqHierarchy", fields: [parentId], references: [id])
+  children          BoqItem[]     @relation("BoqHierarchy")
+  level             Int           @default(0)
+  createdById       String
+  createdBy         User          @relation("BoqCreatedBy", fields: [createdById], references: [id])
+  updatedById       String
+  updatedBy         User          @relation("BoqUpdatedBy", fields: [updatedById], references: [id])
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  reports      WorkReport[]
+  invoiceItems InvoiceItem[]
+  galleryItems GalleryItem[]
+
+  @@index([projectId])
+  @@index([code])
+  @@index([status])
+}
+
+// ─── Work Reports ──────────────────────────────────────────────────────────────
+
+model WorkReport {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  boqItemId   String
+  boqItem     BoqItem  @relation(fields: [boqItemId], references: [id])
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  quantity    Decimal  @db.Decimal(12, 4)
+  notes       String?
+  reportedAt  DateTime
+  createdById String
+  createdBy   User     @relation("ReportCreatedBy", fields: [createdById], references: [id])
+  updatedById String
+  updatedBy   User     @relation("ReportUpdatedBy", fields: [updatedById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  media        ReportMedia[]
+  galleryItems GalleryItem[]
+
+  @@index([projectId])
+  @@index([boqItemId])
+  @@index([employeeId])
+  @@index([reportedAt])
+}
+
+model ReportMedia {
+  id           String    @id @default(cuid())
+  reportId     String
+  report       WorkReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  type         MediaType
+  name         String
+  extension    String
+  size         Int
+  bucket       String
+  path         String
+  url          String
+  thumbnailUrl String?
+  thumbnailPath String?
+  createdAt    DateTime  @default(now())
+
+  @@index([reportId])
+}
+
+// ─── Documents ─────────────────────────────────────────────────────────────────
+
+model Document {
+  id           String       @id @default(cuid())
+  projectId    String
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  type         DocumentType
+  extension    String
+  size         Int
+  bucket       String
+  path         String
+  url          String
+  version      Int          @default(1)
+  uploadedById String
+  uploadedBy   User         @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+  ownerId      String
+  createdById  String
+  createdBy    User         @relation("DocumentCreatedBy", fields: [createdById], references: [id])
+  updatedById  String
+  updatedBy    User         @relation("DocumentUpdatedBy", fields: [updatedById], references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  versions DocumentVersion[]
+
+  @@index([projectId])
+  @@index([type])
+}
+
+model DocumentVersion {
+  id           String   @id @default(cuid())
+  documentId   String
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version      Int
+  size         Int
+  bucket       String
+  path         String
+  url          String
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  @@index([documentId])
+}
+
+// ─── Partial Invoices ──────────────────────────────────────────────────────────
+
+model PartialInvoice {
+  id            String        @id @default(cuid())
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  invoiceNumber String        @unique
+  amount        Decimal       @db.Decimal(14, 2)
+  status        InvoiceStatus @default(draft)
+  date          DateTime
+  dueDate       DateTime
+  notes         String?
+  bucket        String?
+  path          String?
+  url           String?
+  ownerId       String
+  createdById   String
+  createdBy     User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedById   String
+  updatedBy     User          @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items InvoiceItem[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model InvoiceItem {
+  id        String         @id @default(cuid())
+  invoiceId String
+  invoice   PartialInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  boqItemId String
+  boqItem   BoqItem        @relation(fields: [boqItemId], references: [id])
+  code      String
+  description String
+  quantity  Decimal        @db.Decimal(12, 4)
+  unitPrice Decimal        @db.Decimal(12, 2)
+  total     Decimal        @db.Decimal(14, 2)
+
+  @@index([invoiceId])
+  @@index([boqItemId])
+}
+
+// ─── Gallery ───────────────────────────────────────────────────────────────────
+
+model GalleryItem {
+  id            String    @id @default(cuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type          MediaType
+  title         String
+  bucket        String
+  path          String
+  url           String
+  thumbnailUrl  String
+  thumbnailPath String?
+  boqItemId     String?
+  boqItem       BoqItem?  @relation(fields: [boqItemId], references: [id])
+  reportId      String?
+  report        WorkReport? @relation(fields: [reportId], references: [id])
+  employeeId    String?
+  employee      Employee? @relation(fields: [employeeId], references: [id])
+  uploadedById  String
+  uploadedBy    User      @relation("GalleryUploadedBy", fields: [uploadedById], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([projectId])
+  @@index([type])
+}
+
+// ─── Activity & Notifications ──────────────────────────────────────────────────
+
+model Activity {
+  id          String       @id @default(cuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        ActivityType
+  title       String
+  description String
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  metadata    String?
+  createdAt   DateTime     @default(now())
+
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  link      String?
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+  @@index([read])
+}
+
+// ─── Audit Log ─────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  action     AuditAction
+  entityType String
+  entityId   String
+  userId     String
+  user       User        @relation(fields: [userId], references: [id])
+  metadata   String?
+  createdAt  DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
