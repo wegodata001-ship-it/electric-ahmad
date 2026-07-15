@@ -127,7 +127,7 @@ export function ProjectDetailPage({ projectId }: ProjectDetailPageProps) {
             תעודת משלוח
           </Button>
         </Link>
-        <Link href={`/reports`}>
+        <Link href={`/reports?projectId=${project.id}`}>
           <Button variant="outline" size="sm">
             דיווחים
           </Button>
