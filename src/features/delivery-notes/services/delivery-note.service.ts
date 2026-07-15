@@ -1,4 +1,8 @@
-import type { DeliveryNote, DeliveryNoteAttachment } from "@/types";
+import type {
+  DeliveryNote,
+  DeliveryNoteAttachment,
+  DeliveryNoteVersion,
+} from "@/types";
 import { apiClient } from "@/lib/api/client";
 
 export type CreateDeliveryNotePayload = {
@@ -64,6 +68,19 @@ export const deliveryNoteService = {
     return apiClient.post<DeliveryNote>("/api/delivery-notes", payload);
   },
 
+  async update(
+    id: string,
+    payload: CreateDeliveryNotePayload
+  ): Promise<DeliveryNote> {
+    return apiClient.patch<DeliveryNote>(`/api/delivery-notes/${id}`, payload);
+  },
+
+  async getVersions(id: string): Promise<DeliveryNoteVersion[]> {
+    return apiClient.get<DeliveryNoteVersion[]>(
+      `/api/delivery-notes/${id}/versions`
+    );
+  },
+
   async uploadAttachment(
     noteId: string,
     file: File
@@ -73,6 +90,15 @@ export const deliveryNoteService = {
     return apiClient.upload<DeliveryNoteAttachment>(
       `/api/delivery-notes/${noteId}/attachments`,
       formData
+    );
+  },
+
+  async deleteAttachment(
+    noteId: string,
+    attachmentId: string
+  ): Promise<{ ok: boolean }> {
+    return apiClient.delete<{ ok: boolean }>(
+      `/api/delivery-notes/${noteId}/attachments/${attachmentId}`
     );
   },
 };

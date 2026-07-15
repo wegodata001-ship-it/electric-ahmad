@@ -47,6 +47,31 @@ export const invoiceService = {
     return apiClient.post<PartialInvoice>("/api/partial-invoices", payload);
   },
 
+  async update(
+    id: string,
+    payload: {
+      date?: string;
+      dueDate?: string;
+      billingMonth?: string;
+      billTo?: string;
+      contractor?: string;
+      notes?: string;
+      status?: string;
+      items: {
+        boqItemId: string;
+        quantity: number;
+        unitPrice?: number;
+        description?: string;
+        unit?: string;
+      }[];
+    }
+  ): Promise<PartialInvoice> {
+    return apiClient.patch<PartialInvoice>(
+      `/api/partial-invoices/${id}`,
+      payload
+    );
+  },
+
   async sendForApproval(invoiceId: string): Promise<ProjectInvoiceApproval> {
     return apiClient.post<ProjectInvoiceApproval>(
       `/api/partial-invoices/${invoiceId}/send-for-approval`

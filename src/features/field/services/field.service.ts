@@ -1,5 +1,12 @@
 import { apiClient } from "@/lib/api/client";
-import type { FieldCrewMember, WorkJournal } from "@/types";
+import type {
+  FieldAttendanceHistoryEntry,
+  FieldAttendancePersonalSummary,
+  FieldCrewHoursSummary,
+  FieldCrewMember,
+  FieldCrewTimeEntry,
+  WorkJournal,
+} from "@/types";
 
 export type FieldDashboard = {
   foreman: {
@@ -96,12 +103,73 @@ export const fieldService = {
     });
   },
 
+  getCrewTimeEntries(crewMemberId: string) {
+    return apiClient.get<{
+      entries: FieldCrewTimeEntry[];
+      summary: FieldCrewHoursSummary;
+    }>(`/api/field/crew/${crewMemberId}/time-entries`);
+  },
+
+  createCrewTimeEntry(
+    crewMemberId: string,
+    body: {
+      date: string;
+      startTime?: string;
+      endTime?: string;
+      notes?: string;
+    }
+  ) {
+    return apiClient.post<{
+      entry: FieldCrewTimeEntry;
+      summary: FieldCrewHoursSummary;
+    }>(`/api/field/crew/${crewMemberId}/time-entries`, body);
+  },
+
+  updateCrewTimeEntry(
+    entryId: string,
+    body: {
+      date?: string;
+      startTime?: string;
+      endTime?: string;
+      notes?: string;
+    }
+  ) {
+    return apiClient.put<{
+      entry: FieldCrewTimeEntry;
+      summary: FieldCrewHoursSummary;
+    }>(`/api/field/crew/time-entries/${entryId}`, body);
+  },
+
+  deleteCrewTimeEntry(entryId: string) {
+    return apiClient.delete<{
+      ok: boolean;
+      summary: FieldCrewHoursSummary;
+      crewMemberId: string;
+    }>(`/api/field/crew/time-entries/${entryId}`);
+  },
+
+  getAttendanceHistory(params?: {
+    period?: "today" | "week" | "month" | "range" | "all";
+    from?: string;
+    to?: string;
+  }) {
+    const q = new URLSearchParams();
+    if (params?.period) q.set("period", params.period);
+    if (params?.from) q.set("from", params.from);
+    if (params?.to) q.set("to", params.to);
+    const qs = q.toString();
+    return apiClient.get<{
+      entries: FieldAttendanceHistoryEntry[];
+      summary: FieldAttendancePersonalSummary;
+    }>(`/api/field/attendance/history${qs ? `?${qs}` : ""}`);
+  },
+
   listJournals() {
-    return apiClient.get<WorkJournal[]>("/api/work-journals");
+    return apiClient.get<WorkJournal[]>("/api/field/work-journals");
   },
 
   getJournal(id: string) {
-    return apiClient.get<WorkJournal>(`/api/work-journals/${id}`);
+    return apiClient.get<WorkJournal>(`/api/field/work-journals/${id}`);
   },
 
   createJournal(
@@ -111,20 +179,22 @@ export const fieldService = {
       status?: "draft" | "in_progress";
     }
   ) {
-    return apiClient.post<WorkJournal>("/api/work-journals", body);
+    return apiClient.post<WorkJournal>("/api/field/work-journals", body);
   },
 
   saveJournal(id: string, body: JournalSaveBody) {
-    return apiClient.put<WorkJournal>(`/api/work-journals/${id}`, body);
+    return apiClient.put<WorkJournal>(`/api/field/work-journals/${id}`, body);
   },
 
   submitJournal(id: string) {
-    return apiClient.post<WorkJournal>(`/api/work-journals/${id}/submit`);
+    return apiClient.post<WorkJournal>(
+      `/api/field/work-journals/${id}/submit`
+    );
   },
 
   uploadMedia(id: string, file: File) {
     const fd = new FormData();
     fd.append("file", file);
-    return apiClient.upload(`/api/work-journals/${id}/media`, fd);
+    return apiClient.upload(`/api/field/work-journals/${id}/media`, fd);
   },
 };

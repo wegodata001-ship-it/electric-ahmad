@@ -82,6 +82,47 @@ export interface FieldCrewMember {
   updatedAt: string;
 }
 
+/** Manual timesheet row for a crew worker (entered by foreman). */
+export interface FieldCrewTimeEntry {
+  id: string;
+  crewMemberId: string;
+  managerId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  totalHours: number;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FieldCrewHoursSummary {
+  today: number;
+  week: number;
+  month: number;
+  total: number;
+}
+
+export interface FieldAttendanceHistoryEntry {
+  id: string;
+  foremanId: string;
+  projectId: string | null;
+  date: string;
+  checkedInAt: string;
+  checkedOutAt: string | null;
+  checkIn: string;
+  checkOut: string;
+  hours: number;
+}
+
+export interface FieldAttendancePersonalSummary {
+  workDays: number;
+  monthHours: number;
+  avgPerDay: number;
+  lastCheckIn: { at: string; date: string; time: string } | null;
+  lastCheckOut: { at: string; date: string; time: string } | null;
+}
+
 export interface WorkJournalBoqLineRow {
   id: string;
   boqItemId: string;
@@ -363,6 +404,7 @@ export interface PartialInvoice {
 }
 
 export interface InvoiceItem {
+  id?: string;
   boqItemId: string;
   code: string;
   description: string;
@@ -479,11 +521,29 @@ export interface Client {
   updatedAt: string;
 }
 
+export interface DeliveryNoteChange {
+  field: string;
+  label: string;
+  from: string;
+  to: string;
+}
+
+export interface DeliveryNoteVersion {
+  id: string;
+  deliveryNoteId: string;
+  version: number;
+  changes: DeliveryNoteChange[];
+  editedById: string;
+  editedByName: string;
+  createdAt: string;
+}
+
 export interface DeliveryNote {
   id: string;
   noteNumber: string;
   sequenceNumber: number;
   status: DeliveryNoteStatus;
+  currentVersion?: number;
   date: string;
   departureTime?: string | null;
   client: string;
@@ -516,6 +576,8 @@ export interface DeliveryNote {
   qrCodePayload?: string | null;
   barcodePayload?: string | null;
   url?: string | null;
+  emailSentAt?: string | null;
+  whatsappSentAt?: string | null;
   items: DeliveryNoteItem[];
   attachments: DeliveryNoteAttachment[];
   createdAt: string;

@@ -6,6 +6,7 @@ import {
   fieldService,
   type FieldDashboard,
 } from "@/features/field/services/field.service";
+import Link from "next/link";
 
 export function FieldDashboardPage() {
   const router = useRouter();
@@ -92,6 +93,14 @@ export function FieldDashboardPage() {
     return <p className="text-center text-gray-400 py-16 text-lg">טוען...</p>;
   }
 
+  const checkInLabel =
+    data.checkedIn && data.attendance
+      ? new Date(data.attendance.checkedInAt).toLocaleTimeString("he-IL", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : null;
+
   return (
     <div className="space-y-4 lg:space-y-6">
       <section className="rounded-2xl bg-white border border-gray-200 p-5 lg:p-8">
@@ -101,6 +110,51 @@ export function FieldDashboardPage() {
         <p className="text-base text-gray-500 mt-1">
           דיווח יומי פשוט — בחר פרויקט, סמן עובדים, שלח למשרד
         </p>
+      </section>
+
+      {/* Personal attendance — optional */}
+      <section className="rounded-2xl bg-white border border-gray-200 p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-gray-400 mb-1">
+              סטטוס נוכחי
+            </p>
+            {data.checkedIn ? (
+              <p className="text-lg font-bold text-[#1e40af]">
+                🔵 בעבודה מאז {checkInLabel}
+              </p>
+            ) : (
+              <p className="text-lg font-bold text-emerald-700">
+                🟢 לא בעבודה
+              </p>
+            )}
+            <p className="text-xs text-gray-400 mt-1">
+              אופציונלי · אישי למנהל העבודה בלבד
+            </p>
+          </div>
+          <Link
+            href="/field/profile"
+            className="text-sm font-semibold text-[#1e40af] underline-offset-2 hover:underline"
+          >
+            היסטוריית כניסות
+          </Link>
+        </div>
+        <button
+          type="button"
+          onClick={toggleAttendance}
+          disabled={busy}
+          className={`w-full h-16 rounded-2xl text-lg font-bold disabled:opacity-50 ${
+            data.checkedIn
+              ? "border-2 border-gray-300 bg-white text-gray-800"
+              : "bg-[#1e40af] text-white"
+          }`}
+        >
+          {busy
+            ? "מעדכן..."
+            : data.checkedIn
+              ? "יציאה מהעבודה"
+              : "כניסה לעבודה"}
+        </button>
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -171,33 +225,6 @@ export function FieldDashboardPage() {
           </div>
         </section>
       )}
-
-      <section className="rounded-2xl bg-white border border-gray-200 p-5">
-        <p className="text-sm text-gray-500 mb-3">
-          כניסה / יציאה — אופציונלי, לא חובה
-        </p>
-        <button
-          type="button"
-          onClick={toggleAttendance}
-          disabled={busy}
-          className="w-full h-14 rounded-2xl border-2 border-gray-300 bg-white text-base font-semibold disabled:opacity-50"
-        >
-          {busy
-            ? "מעדכן..."
-            : data.checkedIn
-              ? "יציאה מהעבודה"
-              : "כניסה לעבודה"}
-        </button>
-        {data.checkedIn && data.attendance && (
-          <p className="text-center text-sm text-gray-500 mt-2">
-            נכנסת ב־
-            {new Date(data.attendance.checkedInAt).toLocaleTimeString("he-IL", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </p>
-        )}
-      </section>
 
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">

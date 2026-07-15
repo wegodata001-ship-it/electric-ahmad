@@ -169,8 +169,7 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
           </Button>
           <Button
             variant="outline"
-            disabled
-            title="עריכה תתווסף בשלב הבא — החיובים כבר ננעלו"
+            onClick={() => router.push(`/invoices/${invoice.id}/edit`)}
           >
             <Pencil className="h-4 w-4" />
             עריכה

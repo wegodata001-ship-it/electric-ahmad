@@ -19,11 +19,15 @@ function isPublicFieldPath(pathname: string): boolean {
 function isPublicOfficePath(pathname: string): boolean {
   return (
     pathname === "/login" ||
+    pathname === "/manager" ||
+    pathname === "/manager/" ||
     pathname === "/api/auth/login" ||
-    pathname === "/api/auth/logout"
+    pathname === "/api/auth/logout" ||
+    pathname === "/api/health"
   );
 }
 
+/** Field UI + all Field APIs (including journals under /api/field/*) */
 function isFieldPath(pathname: string): boolean {
   return (
     pathname === "/field" ||
@@ -35,6 +39,15 @@ function isFieldPath(pathname: string): boolean {
 
 function isWorkerPath(pathname: string): boolean {
   return pathname === "/worker" || pathname.startsWith("/worker/");
+}
+
+function isOfficeAliasPath(pathname: string): boolean {
+  return (
+    pathname === "/project-manager" ||
+    pathname === "/project-manager/" ||
+    pathname === "/manager" ||
+    pathname === "/manager/"
+  );
 }
 
 async function handleFieldAuth(request: NextRequest, pathname: string) {
@@ -58,7 +71,7 @@ async function handleFieldAuth(request: NextRequest, pathname: string) {
   if (!session) {
     if (isFieldApi) {
       return NextResponse.json(
-        { success: false, error: "נדרשת התחברות" },
+        { success: false, error: "נדרשת התחברות למערכת מנהל העבודה" },
         { status: 401 }
       );
     }
@@ -80,17 +93,27 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       if (session) {
         const next = request.nextUrl.searchParams.get("next");
         const dest =
-          next && next.startsWith("/") && !next.startsWith("//")
+          next &&
+          next.startsWith("/") &&
+          !next.startsWith("//") &&
+          next !== "/login"
             ? next
             : "/dashboard";
         return NextResponse.redirect(new URL(dest, request.url));
       }
     }
+    if (pathname === "/manager" || pathname === "/manager/") {
+      const token = request.cookies.get(OFFICE_SESSION_COOKIE)?.value;
+      const session = await verifyOfficeSession(token);
+      if (session) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
     return NextResponse.next();
   }
 
-  // Alias: /project-manager → dashboard (still requires session below)
-  if (pathname === "/project-manager" || pathname === "/project-manager/") {
+  if (isOfficeAliasPath(pathname)) {
     const token = request.cookies.get(OFFICE_SESSION_COOKIE)?.value;
     const session = await verifyOfficeSession(token);
     if (!session) {
@@ -107,7 +130,7 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
   if (!session) {
     if (isApi) {
       return NextResponse.json(
-        { success: false, error: "נדרשת התחברות" },
+        { success: false, error: "נדרשת התחברות למערכת מנהל הפרויקט" },
         { status: 401 }
       );
     }
@@ -119,14 +142,18 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
   return NextResponse.next();
 }
 
-export async function middleware(request: NextRequest) {
+/**
+ * Next.js 16 Proxy (replaces deprecated middleware.ts).
+ * Auth failures → redirect (pages) or 401 (APIs). Never 404.
+ */
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Field system first — never falls through to office session checks
   if (isFieldPath(pathname)) {
     return handleFieldAuth(request, pathname);
   }
 
-  // Worker app remains separate for now
   if (isWorkerPath(pathname)) {
     return NextResponse.next();
   }
@@ -137,9 +164,9 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Protect field + office pages/APIs.
-     * Skip Next internals and static files.
+     * Run on app routes + APIs.
+     * Skip Next internals, generated icons, and static files (with extensions).
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|.*\\..*).*)",
   ],
 };

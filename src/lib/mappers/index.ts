@@ -54,6 +54,7 @@ type InvoiceWithRelations = PrismaPartialInvoice & {
     foreman?: { firstName: string; lastName: string };
   };
   items: {
+    id: string;
     boqItemId: string;
     code: string;
     description: string;
@@ -230,6 +231,7 @@ export function mapPartialInvoice(row: InvoiceWithRelations): PartialInvoice {
     date: row.date.toISOString(),
     dueDate: row.dueDate.toISOString(),
     includedItems: row.items.map((item) => ({
+      id: item.id,
       boqItemId: item.boqItemId,
       code: item.code,
       description: item.description,

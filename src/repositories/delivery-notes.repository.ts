@@ -39,6 +39,9 @@ function mapNote(row: {
   qrCodePayload: string | null;
   barcodePayload: string | null;
   url: string | null;
+  emailSentAt?: Date | null;
+  whatsappSentAt?: Date | null;
+  currentVersion?: number;
   createdAt: Date;
   updatedAt: Date;
   items: {
@@ -99,6 +102,9 @@ function mapNote(row: {
     qrCodePayload: row.qrCodePayload,
     barcodePayload: row.barcodePayload,
     url: row.url,
+    emailSentAt: row.emailSentAt?.toISOString() ?? null,
+    whatsappSentAt: row.whatsappSentAt?.toISOString() ?? null,
+    currentVersion: row.currentVersion ?? 1,
     items: row.items
       .slice()
       .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -139,6 +145,112 @@ const noteInclude = {
   items: true,
   attachments: true,
 } as const;
+
+const FIELD_LABELS: Record<string, string> = {
+  date: "תאריך",
+  departureTime: "שעת יציאה",
+  client: "לקוח",
+  projectId: "פרויקט",
+  projectName: "פרויקט",
+  orderNumber: "מספר הזמנה / עבודה",
+  contactName: "איש קשר",
+  phone: "טלפון",
+  phoneSecondary: "טלפון נוסף",
+  address: "כתובת",
+  city: "עיר",
+  notes: "הערות",
+  driverName: "נהג",
+  vehicle: "רכב",
+  vehicleNumber: "מספר רכב",
+  externalCarrier: "מוביל חיצוני",
+  deliveryTime: "שעת מסירה",
+  destination: "יעד",
+  destinationAddress: "כתובת יעד",
+  driverNotes: "הערות לנהג",
+  items: "פריטים",
+};
+
+function norm(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "boolean") return v ? "כן" : "לא";
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) {
+    return v.slice(0, 10);
+  }
+  return String(v);
+}
+
+function diffDeliveryNotes(
+  before: ReturnType<typeof mapNote>,
+  after: ReturnType<typeof mapNote>
+) {
+  const changes: { field: string; label: string; from: string; to: string }[] =
+    [];
+  const scalarKeys = [
+    "date",
+    "departureTime",
+    "client",
+    "projectName",
+    "orderNumber",
+    "contactName",
+    "phone",
+    "phoneSecondary",
+    "address",
+    "city",
+    "notes",
+    "driverName",
+    "vehicle",
+    "vehicleNumber",
+    "externalCarrier",
+    "deliveryTime",
+    "destination",
+    "destinationAddress",
+    "driverNotes",
+  ] as const;
+
+  for (const key of scalarKeys) {
+    const from = norm(before[key]);
+    const to = norm(after[key]);
+    if (from !== to) {
+      changes.push({
+        field: key,
+        label: FIELD_LABELS[key] ?? key,
+        from: from || "—",
+        to: to || "—",
+      });
+    }
+  }
+
+  const beforeItems = JSON.stringify(
+    before.items.map((i) => ({
+      sku: i.sku,
+      description: i.description,
+      unit: i.unit,
+      quantity: i.quantity,
+      packageNumber: i.packageNumber,
+      notes: i.notes,
+    }))
+  );
+  const afterItems = JSON.stringify(
+    after.items.map((i) => ({
+      sku: i.sku,
+      description: i.description,
+      unit: i.unit,
+      quantity: i.quantity,
+      packageNumber: i.packageNumber,
+      notes: i.notes,
+    }))
+  );
+  if (beforeItems !== afterItems) {
+    changes.push({
+      field: "items",
+      label: "פריטים",
+      from: `${before.items.length} שורות`,
+      to: `${after.items.length} שורות`,
+    });
+  }
+
+  return changes;
+}
 
 export type CreateDeliveryNoteInput = {
   date: string;
@@ -308,7 +420,223 @@ export class DeliveryNotesRepository {
       metadata: { noteNumber, itemCount: input.items.length },
     });
 
-    return mapNote(created);
+    const mapped = mapNote(created);
+    await prisma.deliveryNoteVersion.create({
+      data: {
+        deliveryNoteId: created.id,
+        version: 1,
+        changesJson: JSON.stringify([
+          {
+            field: "_created",
+            label: "יצירה",
+            from: "",
+            to: "תעודה נוצרה",
+          },
+        ]),
+        snapshotJson: JSON.stringify(mapped),
+        editedById: userId,
+      },
+    });
+
+    return mapped;
+  }
+
+  static async update(
+    id: string,
+    input: CreateDeliveryNoteInput,
+    userId: string
+  ) {
+    const existing = await prisma.deliveryNote.findUnique({
+      where: { id },
+      include: noteInclude,
+    });
+    if (!existing) throw new Error("תעודת משלוח לא נמצאה");
+    if (!input.client?.trim()) throw new Error("לקוח חובה");
+    if (!input.items?.length) throw new Error("יש להוסיף לפחות פריט אחד");
+
+    for (const item of input.items) {
+      if (!item.description?.trim()) throw new Error("תיאור פריט חובה");
+      if (!(Number(item.quantity) > 0)) {
+        throw new Error("כמות פריט חייבת להיות חיובית");
+      }
+    }
+
+    const before = mapNote(existing);
+    const nextVersion = (existing.currentVersion ?? 1) + 1;
+
+    await prisma.deliveryNoteItem.deleteMany({
+      where: { deliveryNoteId: id },
+    });
+
+    const updated = await prisma.deliveryNote.update({
+      where: { id },
+      data: {
+        // noteNumber / sequenceNumber intentionally unchanged
+        date: input.date ? new Date(input.date) : existing.date,
+        departureTime: input.departureTime?.trim() || null,
+        client: input.client.trim(),
+        clientId: input.clientId || null,
+        projectId: input.projectId || null,
+        orderNumber: input.orderNumber?.trim() || null,
+        contactName: input.contactName?.trim() || null,
+        phone: input.phone?.trim() || null,
+        phoneSecondary: input.phoneSecondary?.trim() || null,
+        address: input.address?.trim() || null,
+        city: input.city?.trim() || null,
+        notes: input.notes?.trim() || null,
+        driverName: input.driverName?.trim() || null,
+        vehicle: input.vehicle?.trim() || null,
+        vehicleNumber: input.vehicleNumber?.trim() || null,
+        externalCarrier: Boolean(input.externalCarrier),
+        deliveryTime: input.deliveryTime?.trim() || null,
+        destination: input.destination?.trim() || null,
+        destinationAddress: input.destinationAddress?.trim() || null,
+        driverNotes: input.driverNotes?.trim() || null,
+        senderSigned: Boolean(input.senderSigned),
+        receiverSigned: Boolean(input.receiverSigned),
+        receiverName: input.receiverName?.trim() || null,
+        receivedAt: input.receivedAt ? new Date(input.receivedAt) : null,
+        equipmentCheckedIntact: Boolean(input.equipmentCheckedIntact),
+        receivedComplete: Boolean(input.receivedComplete),
+        receivedWithNotes: Boolean(input.receivedWithNotes),
+        receiptNotes: input.receiptNotes?.trim() || null,
+        currentVersion: nextVersion,
+        updatedById: userId,
+        items: {
+          create: input.items.map((item, index) => ({
+            sku: item.sku?.trim() || null,
+            description: item.description.trim(),
+            unit: item.unit?.trim() || "יח'",
+            quantity: Number(item.quantity),
+            packageNumber: item.packageNumber?.trim() || null,
+            serialNumber: item.serialNumber?.trim() || null,
+            notes: item.notes?.trim() || null,
+            sortOrder: index + 1,
+          })),
+        },
+      },
+      include: noteInclude,
+    });
+
+    const after = mapNote(updated);
+    const changes = diffDeliveryNotes(before, after);
+
+    await prisma.deliveryNoteVersion.create({
+      data: {
+        deliveryNoteId: id,
+        version: nextVersion,
+        changesJson: JSON.stringify(
+          changes.length
+            ? changes
+            : [
+                {
+                  field: "_touch",
+                  label: "שמירה",
+                  from: "",
+                  to: "נשמר ללא שינוי שדות",
+                },
+              ]
+        ),
+        snapshotJson: JSON.stringify(after),
+        editedById: userId,
+      },
+    });
+
+    await AuditRepository.log({
+      action: "UPDATE",
+      entityType: "DeliveryNote",
+      entityId: id,
+      userId,
+      metadata: {
+        noteNumber: existing.noteNumber,
+        version: nextVersion,
+        changedFields: changes.map((c) => c.field),
+      },
+    });
+
+    if (existing.projectId || input.projectId) {
+      await prisma.activity.create({
+        data: {
+          projectId: (input.projectId || existing.projectId)!,
+          type: "delivery_note_created",
+          title: "תעודת משלוח עודכנה",
+          description: `עודכנה תעודת משלוח ${existing.noteNumber} (גרסה ${nextVersion})`,
+          userId,
+          metadata: JSON.stringify({
+            deliveryNoteId: id,
+            noteNumber: existing.noteNumber,
+            version: nextVersion,
+          }),
+        },
+      });
+    }
+
+    return after;
+  }
+
+  static async listVersions(deliveryNoteId: string) {
+    let rows = await prisma.deliveryNoteVersion.findMany({
+      where: { deliveryNoteId },
+      include: { editedBy: { select: { name: true } } },
+      orderBy: { version: "desc" },
+    });
+
+    // Backward compatible: seed version 1 for notes created before versioning
+    if (rows.length === 0) {
+      const note = await this.findById(deliveryNoteId);
+      if (note) {
+        await prisma.deliveryNoteVersion.create({
+          data: {
+            deliveryNoteId,
+            version: 1,
+            changesJson: JSON.stringify([
+              {
+                field: "_created",
+                label: "יצירה",
+                from: "",
+                to: "תעודה נוצרה",
+              },
+            ]),
+            snapshotJson: JSON.stringify(note),
+            editedById: (
+              await prisma.deliveryNote.findUnique({
+                where: { id: deliveryNoteId },
+                select: { createdById: true },
+              })
+            )!.createdById,
+          },
+        });
+        rows = await prisma.deliveryNoteVersion.findMany({
+          where: { deliveryNoteId },
+          include: { editedBy: { select: { name: true } } },
+          orderBy: { version: "desc" },
+        });
+      }
+    }
+
+    return rows.map((r) => ({
+      id: r.id,
+      deliveryNoteId: r.deliveryNoteId,
+      version: r.version,
+      changes: JSON.parse(r.changesJson || "[]") as {
+        field: string;
+        label: string;
+        from: string;
+        to: string;
+      }[],
+      editedById: r.editedById,
+      editedByName: r.editedBy.name,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  static async deleteAttachment(deliveryNoteId: string, attachmentId: string) {
+    const att = await prisma.deliveryNoteAttachment.findFirst({
+      where: { id: attachmentId, deliveryNoteId },
+    });
+    if (!att) throw new Error("קובץ לא נמצא");
+    await prisma.deliveryNoteAttachment.delete({ where: { id: attachmentId } });
+    return { ok: true };
   }
 
   static async addAttachment(

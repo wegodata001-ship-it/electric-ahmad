@@ -29,6 +29,23 @@ export type CreatePartialInvoiceInput = {
   items: { boqItemId: string; quantity: number }[];
 };
 
+export type UpdatePartialInvoiceInput = {
+  date?: string;
+  dueDate?: string;
+  billingMonth?: string;
+  billTo?: string;
+  contractor?: string;
+  notes?: string;
+  status?: CreatePartialInvoiceInput["status"];
+  items: {
+    boqItemId: string;
+    quantity: number;
+    unitPrice?: number;
+    description?: string;
+    unit?: string;
+  }[];
+};
+
 export class PartialInvoicesRepository {
   static invoiceInclude = {
     project: {
@@ -273,5 +290,293 @@ export class PartialInvoicesRepository {
     });
 
     return mapPartialInvoice(created);
+  }
+
+  /**
+   * Update invoice content without changing invoiceNumber / sequenceNumber / projectId.
+   * Reverses old BOQ invoiced qty, applies new lines, recomputes totals + project financials.
+   */
+  static async update(
+    id: string,
+    input: UpdatePartialInvoiceInput,
+    userId: string
+  ) {
+    if (!input.items?.length) {
+      throw new Error("יש להוסיף לפחות סעיף אחד לחשבון");
+    }
+
+    const existing = await prisma.partialInvoice.findUnique({
+      where: { id },
+      include: { items: true, project: true },
+    });
+    if (!existing) throw new Error("חשבון לא נמצא");
+
+    const projectId = existing.projectId;
+    const project = existing.project;
+
+    const boqIds = [...new Set(input.items.map((i) => i.boqItemId))];
+    const boqRows = await prisma.boqItem.findMany({
+      where: { id: { in: boqIds }, projectId },
+    });
+    if (boqRows.length !== boqIds.length) {
+      throw new Error("חלק מסעיפי כתב הכמויות לא נמצאו בפרויקט");
+    }
+    const boqById = new Map(boqRows.map((b) => [b.id, b]));
+
+    const oldQtyByBoq = new Map<string, number>();
+    for (const item of existing.items) {
+      oldQtyByBoq.set(
+        item.boqItemId,
+        (oldQtyByBoq.get(item.boqItemId) ?? 0) + Number(item.quantity)
+      );
+    }
+
+    // Validate availability as if this invoice's old quantities were released
+    for (const line of input.items) {
+      const boq = boqById.get(line.boqItemId)!;
+      const executed = Number(boq.completedQuantity);
+      const invoiced = Number(boq.invoicedQuantity);
+      const released = oldQtyByBoq.get(line.boqItemId) ?? 0;
+      const available = availableForInvoice(executed, invoiced - released);
+      const qty = Number(line.quantity);
+      if (!(qty > 0)) {
+        throw new Error(`כמות לא תקינה לסעיף ${boq.code}`);
+      }
+      if (qty > available + 1e-9) {
+        throw new Error(
+          `לא ניתן לחייב כפול בסעיף ${boq.code}: זמין ${available}, בוקש ${qty}`
+        );
+      }
+    }
+
+    const invoiceDate = input.date ? new Date(input.date) : existing.date;
+    const dueDate = input.dueDate
+      ? new Date(input.dueDate)
+      : existing.dueDate;
+    const billingMonth =
+      input.billingMonth?.trim() ||
+      existing.billingMonth ||
+      formatBillingMonth(invoiceDate);
+
+    const beforeSnapshot = {
+      date: existing.date.toISOString().slice(0, 10),
+      billingMonth: existing.billingMonth,
+      billTo: existing.billTo,
+      contractor: existing.contractor,
+      notes: existing.notes,
+      status: existing.status,
+      amount: Number(existing.amount),
+      itemCount: existing.items.length,
+      items: existing.items.map((i) => ({
+        boqItemId: i.boqItemId,
+        code: i.code,
+        description: i.description,
+        unit: i.unit,
+        quantity: Number(i.quantity),
+        unitPrice: Number(i.unitPrice),
+        total: Number(i.total),
+      })),
+    };
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // 1) Reverse old invoiced quantities
+      for (const [boqItemId, qty] of oldQtyByBoq) {
+        const boq = await tx.boqItem.findUnique({ where: { id: boqItemId } });
+        if (!boq) continue;
+        await tx.boqItem.update({
+          where: { id: boqItemId },
+          data: {
+            invoicedQuantity: Math.max(0, Number(boq.invoicedQuantity) - qty),
+            updatedById: userId,
+          },
+        });
+      }
+
+      // Reload BOQ after reverse for previousQuantity snapshots
+      const freshBoq = await tx.boqItem.findMany({
+        where: { id: { in: boqIds }, projectId },
+      });
+      const freshById = new Map(freshBoq.map((b) => [b.id, b]));
+
+      const lineData = input.items.map((line) => {
+        const boq = freshById.get(line.boqItemId)!;
+        const contractQuantity = Number(boq.contractQuantity);
+        const previousQuantity = Number(boq.invoicedQuantity);
+        const currentQuantity = Number(line.quantity);
+        const unitPrice =
+          line.unitPrice != null && Number.isFinite(Number(line.unitPrice))
+            ? Number(line.unitPrice)
+            : Number(boq.unitPrice);
+        const calc = computeInvoiceLine({
+          contractQuantity,
+          previousQuantity,
+          currentQuantity,
+          unitPrice,
+        });
+
+        return {
+          boqItemId: boq.id,
+          code: boq.code,
+          description:
+            line.description?.trim() ||
+            cleanBoqDescription(boq.description) ||
+            boq.description,
+          unit: line.unit?.trim() || boq.unit,
+          contractQuantity,
+          previousQuantity,
+          quantity: currentQuantity,
+          cumulativeQuantity: calc.cumulativeQuantity,
+          quantityPercent: calc.quantityPercent,
+          unitPrice,
+          total: calc.currentAmount,
+          cumulativeAmount: calc.cumulativeAmount,
+          financialPercent: calc.financialPercent,
+        };
+      });
+
+      const amount = lineData.reduce((s, l) => s + l.total, 0);
+      const vatPercent =
+        project.vatPercent != null ? Number(project.vatPercent) : null;
+      let subtotal: number | null = amount;
+      let vatAmount: number | null = null;
+      let totalWithVat: number | null = amount;
+      if (vatPercent != null && Number.isFinite(vatPercent)) {
+        vatAmount = Math.round(amount * (vatPercent / 100) * 100) / 100;
+        totalWithVat = Math.round((amount + vatAmount) * 100) / 100;
+      }
+
+      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+
+      const invoice = await tx.partialInvoice.update({
+        where: { id },
+        data: {
+          // invoiceNumber + sequenceNumber + projectId unchanged
+          billingMonth,
+          billTo:
+            input.billTo !== undefined
+              ? input.billTo.trim() || null
+              : existing.billTo,
+          contractor:
+            input.contractor !== undefined
+              ? input.contractor.trim() || null
+              : existing.contractor,
+          amount,
+          subtotal,
+          vatPercent,
+          vatAmount,
+          totalWithVat,
+          status: input.status ?? existing.status,
+          date: invoiceDate,
+          dueDate,
+          notes:
+            input.notes !== undefined
+              ? input.notes.trim() || null
+              : existing.notes,
+          updatedById: userId,
+          items: { create: lineData },
+        },
+        include: this.invoiceInclude,
+      });
+
+      for (const line of lineData) {
+        const boq = freshById.get(line.boqItemId)!;
+        await tx.boqItem.update({
+          where: { id: line.boqItemId },
+          data: {
+            invoicedQuantity:
+              Number(boq.invoicedQuantity) + Number(line.quantity),
+            updatedById: userId,
+          },
+        });
+      }
+
+      const allBoq = await tx.boqItem.findMany({ where: { projectId } });
+      const invoicedValue = allBoq.reduce(
+        (sum, item) =>
+          sum + Number(item.invoicedQuantity) * Number(item.unitPrice),
+        0
+      );
+      const contractValue = Number(project.contractValue) || 0;
+      const financialProgress =
+        contractValue > 0
+          ? Math.round((invoicedValue / contractValue) * 1000) / 10
+          : 0;
+
+      await tx.project.update({
+        where: { id: projectId },
+        data: {
+          invoicedValue,
+          financialProgress,
+          updatedById: userId,
+        },
+      });
+
+      await tx.activity.create({
+        data: {
+          projectId,
+          type: "invoice_created",
+          title: `עודכן חשבון ${existing.sequenceNumber}`,
+          description: `חשבון ${existing.invoiceNumber} עודכן · סכום ${amount.toLocaleString("he-IL")} ₪`,
+          userId,
+          metadata: JSON.stringify({
+            invoiceId: id,
+            sequenceNumber: existing.sequenceNumber,
+            amount,
+            action: "update",
+          }),
+        },
+      });
+
+      return invoice;
+    });
+
+    const afterSnapshot = {
+      date: updated.date.toISOString().slice(0, 10),
+      billingMonth: updated.billingMonth,
+      billTo: updated.billTo,
+      contractor: updated.contractor,
+      notes: updated.notes,
+      status: updated.status,
+      amount: Number(updated.amount),
+      itemCount: updated.items.length,
+      items: updated.items.map((i) => ({
+        boqItemId: i.boqItemId,
+        code: i.code,
+        description: i.description,
+        unit: i.unit,
+        quantity: Number(i.quantity),
+        unitPrice: Number(i.unitPrice),
+        total: Number(i.total),
+      })),
+    };
+
+    const changedFields: string[] = [];
+    for (const key of Object.keys(beforeSnapshot) as (keyof typeof beforeSnapshot)[]) {
+      if (key === "items") {
+        if (JSON.stringify(beforeSnapshot.items) !== JSON.stringify(afterSnapshot.items)) {
+          changedFields.push("items");
+        }
+        continue;
+      }
+      if (String(beforeSnapshot[key] ?? "") !== String(afterSnapshot[key] ?? "")) {
+        changedFields.push(key);
+      }
+    }
+
+    await AuditRepository.log({
+      action: "UPDATE",
+      entityType: "PartialInvoice",
+      entityId: id,
+      userId,
+      metadata: {
+        invoiceNumber: existing.invoiceNumber,
+        sequenceNumber: existing.sequenceNumber,
+        changedFields,
+        before: beforeSnapshot,
+        after: afterSnapshot,
+      },
+    });
+
+    return mapPartialInvoice(updated);
   }
 }

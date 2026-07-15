@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: "/manager",
+        destination: "/login",
+        permanent: false,
+      },
+      {
         source: "/partial-invoices",
         destination: "/invoices",
         permanent: false,

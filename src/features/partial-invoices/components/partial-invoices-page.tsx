@@ -20,6 +20,7 @@ import {
   Eye,
   Printer,
   FileText,
+  Pencil,
 } from "lucide-react";
 
 export function PartialInvoicesPage() {
@@ -167,6 +168,14 @@ export function PartialInvoicesPage() {
                   onClick={() => router.push(`/invoices/${invoice.id}`)}
                 >
                   <Eye className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="עריכה"
+                  onClick={() => router.push(`/invoices/${invoice.id}/edit`)}
+                >
+                  <Pencil className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="ghost"

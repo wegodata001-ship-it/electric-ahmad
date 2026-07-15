@@ -161,6 +161,7 @@ model User {
   createdApprovals  ProjectInvoiceApproval[] @relation("ApprovalCreatedBy")
   createdDeliveryNotes  DeliveryNote[] @relation("DeliveryNoteCreatedBy")
   updatedDeliveryNotes  DeliveryNote[] @relation("DeliveryNoteUpdatedBy")
+  deliveryNoteVersions  DeliveryNoteVersion[] @relation("DeliveryNoteVersionEditedBy")
   activities        Activity[]
   notifications     Notification[]
   auditLogs         AuditLog[]
@@ -699,6 +700,9 @@ model DeliveryNote {
   path   String?
   url    String?
 
+  /** Document revision counter (noteNumber never changes) */
+  currentVersion Int @default(1)
+
   ownerId     String
   createdById String
   createdBy   User     @relation("DeliveryNoteCreatedBy", fields: [createdById], references: [id])
@@ -709,11 +713,31 @@ model DeliveryNote {
 
   items       DeliveryNoteItem[]
   attachments DeliveryNoteAttachment[]
+  versions    DeliveryNoteVersion[]
 
   @@index([projectId])
   @@index([clientId])
   @@index([date])
   @@index([status])
+}
+
+/** Edit history for delivery notes — additive, does not alter noteNumber */
+model DeliveryNoteVersion {
+  id             String       @id @default(cuid())
+  deliveryNoteId String
+  deliveryNote   DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+  version        Int
+  /** JSON: [{ field, label, from, to }] */
+  changesJson    String       @default("[]")
+  /** JSON snapshot of note after this version */
+  snapshotJson   String       @default("{}")
+  editedById     String
+  editedBy       User         @relation("DeliveryNoteVersionEditedBy", fields: [editedById], references: [id])
+  createdAt      DateTime     @default(now())
+
+  @@unique([deliveryNoteId, version])
+  @@index([deliveryNoteId])
+  @@index([createdAt])
 }
 
 model DeliveryNoteItem {
@@ -843,9 +867,31 @@ model FieldCrewMember {
   updatedAt  DateTime @updatedAt
 
   journalRows WorkJournalWorker[]
+  timeEntries FieldCrewTimeEntry[]
 
   @@index([managerId])
   @@index([status])
+}
+
+/** Manual timesheet rows entered by foreman for crew (no worker login). */
+model FieldCrewTimeEntry {
+  id           String          @id @default(cuid())
+  crewMemberId String
+  crewMember   FieldCrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+  /** Denormalized owner for auth / listing */
+  managerId    String
+  date         DateTime        @db.Date
+  startTime    String?
+  endTime      String?
+  totalHours   Float           @default(0)
+  notes        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([crewMemberId])
+  @@index([managerId])
+  @@index([date])
+  @@index([crewMemberId, date])
 }
 
 // ─── Field Work Journals (Simple Field App) ───────────────────────────────────
