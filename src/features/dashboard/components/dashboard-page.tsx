@@ -14,8 +14,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent, Progress } from "@/components/ui";
 import { dashboardService, projectService } from "@/services";
 import { activityService } from "@/features/activity/services/activity.service";
-import { reportService } from "@/features/reports/services/report.service";
-import type { DashboardKPIs, Project, Activity, DailyReport } from "@/types";
+import type { DashboardKPIs, Project, Activity } from "@/types";
 import { formatCurrency, formatPercent, formatRelative } from "@/utils/format";
 import {
   BarChart,
@@ -92,7 +91,6 @@ export function DashboardPage() {
   const [chartData, setChartData] = useState<{ name: string; completed: number; remaining: number }[]>([]);
   const [progressData, setProgressData] = useState<{ month: string; planned: number; actual: number }[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [recentReports, setRecentReports] = useState<DailyReport[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -101,14 +99,12 @@ export function DashboardPage() {
       dashboardService.getChartData(),
       dashboardService.getProgressData(),
       activityService.getRecent(8),
-      reportService.getRecent(5),
-    ]).then(([k, p, c, pr, a, r]) => {
+    ]).then(([k, p, c, pr, a]) => {
       setKpis(k);
       setProjects(p);
       setChartData(c);
       setProgressData(pr);
       setActivities(a);
-      setRecentReports(r);
     });
   }, []);
 
@@ -202,9 +198,15 @@ export function DashboardPage() {
               {projects.map((project) => (
                 <Link key={project.id} href={`/projects/${project.id}`}>
                   <div className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                    <div className="relative h-12 w-12 rounded-lg overflow-hidden flex-shrink-0">
-                      <Image src={project.imageUrl} alt={project.name} fill className="object-cover" unoptimized />
-                    </div>
+                    {project.imageUrl?.trim() ? (
+                      <div className="relative h-12 w-12 rounded-lg overflow-hidden flex-shrink-0">
+                        <Image src={project.imageUrl} alt={project.name} fill className="object-cover" unoptimized />
+                      </div>
+                    ) : (
+                      <div className="h-12 w-12 rounded-lg bg-primary-100 flex items-center justify-center flex-shrink-0">
+                        <Building2 className="h-6 w-6 text-primary-600" />
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{project.name}</p>
                       <p className="text-xs text-gray-500">{project.contractNumber}</p>

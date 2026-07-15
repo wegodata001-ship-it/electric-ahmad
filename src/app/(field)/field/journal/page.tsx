@@ -1,5 +1,5 @@
-import { FieldJournalListPage } from "@/features/field/components/field-journal-list-page";
+import { WmListPage } from "@/features/work-management/components/wm-list-page";
 
-export default function Page() {
-  return <FieldJournalListPage />;
+export default function FieldJournalPage() {
+  return <WmListPage />;
 }

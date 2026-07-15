@@ -15,7 +15,7 @@ export function CreatePartialInvoicePage() {
   const searchParams = useSearchParams();
   const projectIdParam = searchParams.get("projectId");
 
-  const { projectId: draftProjectId, lines, setQuantity, removeLine, clear } =
+  const { projectId: draftProjectId, lines, setQuantity, removeLine, clear, setLines } =
     useInvoiceDraftStore();
 
   const projectId = projectIdParam || draftProjectId;
@@ -30,6 +30,7 @@ export function CreatePartialInvoicePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingMeta, setLoadingMeta] = useState(true);
+  const [loadingUninvoiced, setLoadingUninvoiced] = useState(false);
 
   useEffect(() => {
     if (!projectId) {
@@ -51,6 +52,44 @@ export function CreatePartialInvoicePage() {
       )
       .finally(() => setLoadingMeta(false));
   }, [projectId]);
+
+  // Auto-load uninvoiced items when project changes
+  useEffect(() => {
+    if (!projectId || lines.length > 0) return;
+
+    const loadUninvoicedItems = async () => {
+      setLoadingUninvoiced(true);
+      try {
+        const response = await fetch(`/api/projects/${projectId}/execution-reports/uninvoiced`);
+        if (!response.ok) throw new Error("Failed to load uninvoiced items");
+        
+        const uninvoicedData = await response.json();
+        
+        if (uninvoicedData.length > 0) {
+          // Convert uninvoiced items to draft lines
+          const draftLines = uninvoicedData.map((item: any) => ({
+            boqItemId: item.boqItemId,
+            code: item.boqItem.code,
+            description: item.boqItem.description,
+            unit: item.boqItem.unit,
+            contractQuantity: item.boqItem.contractQuantity,
+            invoicedQuantity: item.totalInvoiced,
+            availableForInvoice: item.pendingInvoice,
+            quantity: item.pendingInvoice, // Auto-fill with pending quantity
+            unitPrice: item.boqItem.unitPrice,
+          }));
+          
+          setLines(draftLines);
+        }
+      } catch (err) {
+        console.error("Error loading uninvoiced items:", err);
+      } finally {
+        setLoadingUninvoiced(false);
+      }
+    };
+
+    loadUninvoicedItems();
+  }, [projectId, lines.length, setLines]);
 
   const computedLines = useMemo(() => {
     return lines.map((line) => {

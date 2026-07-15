@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
         projectId,
         type: "project_updated",
         title: "פרויקט אושר מ-PDF",
-        description: `אושרו ${boqItems.length} סעיפי BOQ מניתוח Gemini`,
+        description: `אושרו ${boqItems.length} סעיפי BOQ מניתוח AI`,
         userId,
       },
     });

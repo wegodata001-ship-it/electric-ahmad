@@ -10,8 +10,8 @@ const heebo = Heebo({
 });
 
 export const metadata: Metadata = {
-  title: "WEGO ELECTRIC - ניהול פרויקטי חשמל",
-  description: "מערכת ניהול פרויקטי חשמל מתקדמת",
+  title: "ניהול פרויקטי חשמל",
+  description: "מערכת ניהול פרויקטי חשמל",
 };
 
 export default function RootLayout({

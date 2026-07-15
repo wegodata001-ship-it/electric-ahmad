@@ -142,8 +142,9 @@ export function EditDeliveryNotePage({ noteId }: { noteId: string }) {
       }
 
       const updated = await deliveryNoteService.update(noteId, {
+        noteNumber: note.noteNumber,
         date,
-        departureTime,
+        status: note.status,
         client,
         clientId,
         projectId: projectId || null,
@@ -154,7 +155,10 @@ export function EditDeliveryNotePage({ noteId }: { noteId: string }) {
         address,
         city,
         notes,
+        receiverName: note.receiverName ?? undefined,
+        receivedAt: note.receivedAt ?? undefined,
         driverName,
+        driverPhone: note.driverPhone ?? undefined,
         vehicle,
         vehicleNumber,
         externalCarrier,
@@ -162,14 +166,6 @@ export function EditDeliveryNotePage({ noteId }: { noteId: string }) {
         destination,
         destinationAddress,
         driverNotes,
-        senderSigned: note.senderSigned,
-        receiverSigned: note.receiverSigned,
-        receiverName: note.receiverName ?? undefined,
-        receivedAt: note.receivedAt,
-        equipmentCheckedIntact: note.equipmentCheckedIntact,
-        receivedComplete: note.receivedComplete,
-        receivedWithNotes: note.receivedWithNotes,
-        receiptNotes: note.receiptNotes ?? undefined,
         items: activeLines.map((l) => ({
           sku: l.sku || undefined,
           description: l.description,

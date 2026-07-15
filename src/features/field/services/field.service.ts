@@ -5,7 +5,6 @@ import type {
   FieldCrewHoursSummary,
   FieldCrewMember,
   FieldCrewTimeEntry,
-  WorkJournal,
 } from "@/types";
 
 export type FieldDashboard = {
@@ -23,7 +22,7 @@ export type FieldDashboard = {
     contractor: string;
   }[];
   crewCount: number;
-  openJournal: WorkJournal | null;
+  openJournal: null; // removed WorkJournal
   attendance: {
     id: string;
     checkedInAt: string;
@@ -162,39 +161,5 @@ export const fieldService = {
       entries: FieldAttendanceHistoryEntry[];
       summary: FieldAttendancePersonalSummary;
     }>(`/api/field/attendance/history${qs ? `?${qs}` : ""}`);
-  },
-
-  listJournals() {
-    return apiClient.get<WorkJournal[]>("/api/field/work-journals");
-  },
-
-  getJournal(id: string) {
-    return apiClient.get<WorkJournal>(`/api/field/work-journals/${id}`);
-  },
-
-  createJournal(
-    body: JournalSaveBody & {
-      projectId: string;
-      date: string;
-      status?: "draft" | "in_progress";
-    }
-  ) {
-    return apiClient.post<WorkJournal>("/api/field/work-journals", body);
-  },
-
-  saveJournal(id: string, body: JournalSaveBody) {
-    return apiClient.put<WorkJournal>(`/api/field/work-journals/${id}`, body);
-  },
-
-  submitJournal(id: string) {
-    return apiClient.post<WorkJournal>(
-      `/api/field/work-journals/${id}/submit`
-    );
-  },
-
-  uploadMedia(id: string, file: File) {
-    const fd = new FormData();
-    fd.append("file", file);
-    return apiClient.upload(`/api/field/work-journals/${id}/media`, fd);
   },
 };

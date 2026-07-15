@@ -56,20 +56,6 @@ export type ActivityType =
   | "project_updated"
   | "delivery_note_created";
 
-export type WorkJournalStatus = "draft" | "in_progress" | "submitted";
-
-export interface WorkJournalWorkerRow {
-  id: string;
-  crewMemberId: string;
-  workerName: string;
-  profession: string;
-  startTime: string;
-  endTime: string;
-  totalHours: number;
-  status: string;
-  note: string;
-}
-
 export interface FieldCrewMember {
   id: string;
   managerId: string;
@@ -121,55 +107,6 @@ export interface FieldAttendancePersonalSummary {
   avgPerDay: number;
   lastCheckIn: { at: string; date: string; time: string } | null;
   lastCheckOut: { at: string; date: string; time: string } | null;
-}
-
-export interface WorkJournalBoqLineRow {
-  id: string;
-  boqItemId: string;
-  code: string;
-  description: string;
-  unit: string;
-  quantity: number;
-  note: string;
-  executionId?: string | null;
-}
-
-export interface WorkJournalMediaRow {
-  id: string;
-  type: "image" | "video";
-  name: string;
-  url: string;
-  thumbnailUrl: string;
-  size: number;
-  createdAt: string;
-}
-
-export interface WorkJournal {
-  id: string;
-  foremanId: string;
-  foremanName: string;
-  projectId: string;
-  projectName: string;
-  projectLocation: string;
-  projectContractor: string;
-  date: string;
-  clientName: string;
-  address: string;
-  workArea: string;
-  generalNotes: string;
-  actionsPerformed: string;
-  exceptions: string;
-  equipment: string;
-  notes: string;
-  signatureData: string;
-  signedAt: string | null;
-  status: WorkJournalStatus;
-  submittedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  workers: WorkJournalWorkerRow[];
-  lines: WorkJournalBoqLineRow[];
-  media: WorkJournalMediaRow[];
 }
 
 export interface ForemanSummary {
@@ -284,75 +221,6 @@ export interface WorkReport {
   videoUrls: string[];
   reportedAt: string;
   createdAt: string;
-}
-
-export type DailyReportStatus =
-  | "submitted"
-  | "approved"
-  | "rejected"
-  | "archived";
-
-export interface DailyReportWorker {
-  id: string;
-  name: string;
-  profession: string;
-  startTime: string;
-  endTime: string;
-  totalHours: number;
-  status: string;
-  note: string;
-}
-
-export interface DailyReport {
-  id: string;
-  workJournalId: string;
-  projectId: string;
-  projectName: string;
-  clientName: string;
-  address: string;
-  foremanId: string;
-  foremanName: string;
-  foremanPhone: string;
-  foremanStatus: string;
-  status: DailyReportStatus;
-  date: string;
-  submittedAt: string;
-  approvedAt: string | null;
-  officeNotes: string;
-  workArea: string;
-  generalNotes: string;
-  actionsPerformed: string;
-  exceptions: string;
-  equipment: string;
-  notes: string;
-  signatureData: string;
-  signedAt: string | null;
-  journalStatus: string;
-  startTime: string | null;
-  endTime: string | null;
-  totalHours: number;
-  dayCompleted: boolean;
-  workersCount: number;
-  workers: DailyReportWorker[];
-  lines: {
-    id: string;
-    code: string;
-    description: string;
-    unit: string;
-    quantity: number;
-    note: string;
-  }[];
-  media: {
-    id: string;
-    type: "image" | "video";
-    name: string;
-    url: string;
-    thumbnailUrl: string;
-  }[];
-  photoUrls: string[];
-  videoUrls: string[];
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface Document {
@@ -478,10 +346,11 @@ export interface SearchResult {
 
 export type DeliveryNoteStatus =
   | "draft"
-  | "issued"
-  | "in_transit"
+  | "sent"
   | "delivered"
-  | "cancelled";
+  | "cancelled"
+  | "issued"
+  | "in_transit";
 
 export interface DeliveryNoteItem {
   id: string;
@@ -558,6 +427,7 @@ export interface DeliveryNote {
   city?: string | null;
   notes?: string | null;
   driverName?: string | null;
+  driverPhone?: string | null;
   vehicle?: string | null;
   vehicleNumber?: string | null;
   externalCarrier?: boolean;

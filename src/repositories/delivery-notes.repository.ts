@@ -21,6 +21,7 @@ function mapNote(row: {
   city: string | null;
   notes: string | null;
   driverName: string | null;
+  driverPhone?: string | null;
   vehicle: string | null;
   vehicleNumber: string | null;
   externalCarrier: boolean;
@@ -84,6 +85,7 @@ function mapNote(row: {
     city: row.city,
     notes: row.notes,
     driverName: row.driverName,
+    driverPhone: row.driverPhone ?? null,
     vehicle: row.vehicle,
     vehicleNumber: row.vehicleNumber,
     externalCarrier: row.externalCarrier,
@@ -253,8 +255,9 @@ function diffDeliveryNotes(
 }
 
 export type CreateDeliveryNoteInput = {
+  noteNumber?: string;
   date: string;
-  departureTime?: string;
+  status?: DeliveryNoteStatus;
   client: string;
   clientId?: string | null;
   projectId?: string | null;
@@ -265,7 +268,10 @@ export type CreateDeliveryNoteInput = {
   address?: string;
   city?: string;
   notes?: string;
+  receiverName?: string;
+  receivedAt?: string;
   driverName?: string;
+  driverPhone?: string;
   vehicle?: string;
   vehicleNumber?: string;
   externalCarrier?: boolean;
@@ -273,15 +279,6 @@ export type CreateDeliveryNoteInput = {
   destination?: string;
   destinationAddress?: string;
   driverNotes?: string;
-  senderSigned?: boolean;
-  receiverSigned?: boolean;
-  receiverName?: string;
-  receivedAt?: string | null;
-  equipmentCheckedIntact?: boolean;
-  receivedComplete?: boolean;
-  receivedWithNotes?: boolean;
-  receiptNotes?: string;
-  status?: DeliveryNoteStatus;
   items: {
     sku?: string;
     description: string;
@@ -340,7 +337,8 @@ export class DeliveryNotesRepository {
 
     const sequenceNumber = await this.nextSequence();
     const year = new Date(input.date || Date.now()).getFullYear();
-    const noteNumber = `DN-${year}-${String(sequenceNumber).padStart(4, "0")}`;
+    const autoNoteNumber = `DN-${year}-${String(sequenceNumber).padStart(4, "0")}`;
+    const noteNumber = input.noteNumber?.trim() || autoNoteNumber;
     // Future QR / barcode payloads prepared at create time
     const qrCodePayload = `wego:dn:${noteNumber}`;
     const barcodePayload = noteNumber;
@@ -349,9 +347,8 @@ export class DeliveryNotesRepository {
       data: {
         noteNumber,
         sequenceNumber,
-        status: input.status ?? "issued",
+        status: input.status ?? "draft",
         date: input.date ? new Date(input.date) : new Date(),
-        departureTime: input.departureTime?.trim() || null,
         client: input.client.trim(),
         clientId: input.clientId || null,
         projectId: input.projectId || null,
@@ -362,7 +359,10 @@ export class DeliveryNotesRepository {
         address: input.address?.trim() || null,
         city: input.city?.trim() || null,
         notes: input.notes?.trim() || null,
+        receiverName: input.receiverName?.trim() || null,
+        receivedAt: input.receivedAt ? new Date(input.receivedAt) : null,
         driverName: input.driverName?.trim() || null,
+        driverPhone: input.driverPhone?.trim() || null,
         vehicle: input.vehicle?.trim() || null,
         vehicleNumber: input.vehicleNumber?.trim() || null,
         externalCarrier: Boolean(input.externalCarrier),
@@ -370,14 +370,6 @@ export class DeliveryNotesRepository {
         destination: input.destination?.trim() || null,
         destinationAddress: input.destinationAddress?.trim() || null,
         driverNotes: input.driverNotes?.trim() || null,
-        senderSigned: Boolean(input.senderSigned),
-        receiverSigned: Boolean(input.receiverSigned),
-        receiverName: input.receiverName?.trim() || null,
-        receivedAt: input.receivedAt ? new Date(input.receivedAt) : null,
-        equipmentCheckedIntact: Boolean(input.equipmentCheckedIntact),
-        receivedComplete: Boolean(input.receivedComplete),
-        receivedWithNotes: Boolean(input.receivedWithNotes),
-        receiptNotes: input.receiptNotes?.trim() || null,
         qrCodePayload,
         barcodePayload,
         ownerId: userId,
@@ -473,7 +465,7 @@ export class DeliveryNotesRepository {
       data: {
         // noteNumber / sequenceNumber intentionally unchanged
         date: input.date ? new Date(input.date) : existing.date,
-        departureTime: input.departureTime?.trim() || null,
+        status: input.status ?? existing.status,
         client: input.client.trim(),
         clientId: input.clientId || null,
         projectId: input.projectId || null,
@@ -484,7 +476,10 @@ export class DeliveryNotesRepository {
         address: input.address?.trim() || null,
         city: input.city?.trim() || null,
         notes: input.notes?.trim() || null,
+        receiverName: input.receiverName?.trim() || null,
+        receivedAt: input.receivedAt ? new Date(input.receivedAt) : null,
         driverName: input.driverName?.trim() || null,
+        driverPhone: input.driverPhone?.trim() || null,
         vehicle: input.vehicle?.trim() || null,
         vehicleNumber: input.vehicleNumber?.trim() || null,
         externalCarrier: Boolean(input.externalCarrier),
@@ -492,14 +487,6 @@ export class DeliveryNotesRepository {
         destination: input.destination?.trim() || null,
         destinationAddress: input.destinationAddress?.trim() || null,
         driverNotes: input.driverNotes?.trim() || null,
-        senderSigned: Boolean(input.senderSigned),
-        receiverSigned: Boolean(input.receiverSigned),
-        receiverName: input.receiverName?.trim() || null,
-        receivedAt: input.receivedAt ? new Date(input.receivedAt) : null,
-        equipmentCheckedIntact: Boolean(input.equipmentCheckedIntact),
-        receivedComplete: Boolean(input.receivedComplete),
-        receivedWithNotes: Boolean(input.receivedWithNotes),
-        receiptNotes: input.receiptNotes?.trim() || null,
         currentVersion: nextVersion,
         updatedById: userId,
         items: {

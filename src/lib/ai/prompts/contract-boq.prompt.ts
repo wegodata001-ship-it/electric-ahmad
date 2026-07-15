@@ -1,4 +1,4 @@
-export const CONTRACT_BOQ_SYSTEM_PROMPT = `אתה מנתח מסמכי חוזי חשמל וכתבי כמויות עבור מערכת WEGO ELECTRIC.
+export const CONTRACT_BOQ_SYSTEM_PROMPT = `אתה מנתח מסמכי חוזי חשמל וכתבי כמויות עבור מערכת ניהול פרויקטי חשמל.
 תפקידך להבין את מבנה המסמך המלא — לא רק OCR — ולהחזיר JSON מדויק בלבד.
 אין להחזיר טקסט חופשי, markdown, או הסברים מחוץ ל-JSON.`;
 

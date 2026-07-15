@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 const STEPS = [
   { id: "upload", label: "הקובץ הועלה" },
   { id: "saved", label: "נשמר בשרת" },
-  { id: "gemini", label: "Gemini מנתח את המסמך..." },
+  { id: "ai", label: "AI מנתח את המסמך..." },
   { id: "project", label: "מזהה פרטי פרויקט..." },
   { id: "boq", label: "קורא כתב כמויות..." },
   { id: "items", label: "יוצר סעיפים..." },
@@ -54,7 +54,7 @@ export function AiAnalyzeProgress({ active, done, failed }: AiAnalyzeProgressPro
             ? "לא הצלחנו לזהות את כל הנתונים"
             : done
               ? "הניתוח הושלם"
-              : "Gemini מנתח את המסמך"}
+              : "AI מנתח את המסמך"}
         </h2>
         <p className="text-sm text-gray-500 mt-1">
           {failed

@@ -35,13 +35,13 @@ export class ForemenRepository {
           where: { project: { status: "active" } },
           select: { projectId: true },
         },
-        workJournals: {
+        workOrders: {
           select: {
             id: true,
             status: true,
             date: true,
             _count: { select: { media: true } },
-            workers: { select: { totalHours: true } },
+            workers: { select: { hours: true } },
           },
         },
         fieldCrewMembers: {
@@ -51,8 +51,8 @@ export class ForemenRepository {
         _count: {
           select: {
             reports: true,
-            dailyReports: true,
             galleryItems: true,
+            workOrders: true,
           },
         },
       },
@@ -64,14 +64,17 @@ export class ForemenRepository {
     const yearStart = new Date(now.getFullYear(), 0, 1);
 
     return foremen.map((f) => {
-      const openJournals = f.workJournals.filter(
-        (j) => j.status === "draft" || j.status === "in_progress"
+      const openJournals = f.workOrders.filter(
+        (j) =>
+          j.status === "draft" ||
+          j.status === "assigned" ||
+          j.status === "in_progress"
       ).length;
-      const closedJournals = f.workJournals.filter(
-        (j) => j.status === "submitted"
+      const closedJournals = f.workOrders.filter(
+        (j) => j.status === "completed"
       ).length;
       const photos =
-        f.workJournals.reduce((sum, j) => sum + j._count.media, 0) +
+        f.workOrders.reduce((sum, j) => sum + j._count.media, 0) +
         f._count.galleryItems;
 
       const teamProjectIds = new Set([
@@ -79,9 +82,9 @@ export class ForemenRepository {
         ...f.projectLinks.map((p) => p.projectId),
       ]);
 
-      const flatWorkers = f.workJournals.flatMap((j) =>
+      const flatWorkers = f.workOrders.flatMap((j) =>
         j.workers.map((w) => ({
-          totalHours: w.totalHours,
+          totalHours: w.hours,
           journal: { date: j.date },
         }))
       );
@@ -107,7 +110,7 @@ export class ForemenRepository {
         teamCount: teamProjectIds.size,
         openJournals,
         closedJournals,
-        reportsCount: f._count.dailyReports || f._count.reports,
+        reportsCount: f._count.workOrders || f._count.reports,
         photosCount: photos,
         crewCount: f.fieldCrewMembers.length,
         hoursThisMonth: hoursInRange(flatWorkers, monthStart, now),
@@ -134,33 +137,15 @@ export class ForemenRepository {
         fieldCrewMembers: {
           orderBy: { name: "asc" },
         },
-        dailyReports: {
-          include: {
-            project: { select: { name: true } },
-            workJournal: {
-              select: {
-                date: true,
-                workers: { select: { totalHours: true } },
-              },
-            },
-          },
-          orderBy: { submittedAt: "desc" },
-          take: 100,
-        },
-        workJournals: {
+        workOrders: {
           include: {
             project: { select: { name: true } },
             workers: true,
-            lines: {
-              include: {
-                boqItem: {
-                  select: { code: true, description: true, unit: true },
-                },
-              },
-            },
+            vehicles: true,
             media: true,
           },
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+          take: 100,
         },
         reports: {
           include: {
@@ -196,9 +181,9 @@ export class ForemenRepository {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const yearStart = new Date(now.getFullYear(), 0, 1);
-    const flatWorkers = emp.workJournals.flatMap((j) =>
+    const flatWorkers = emp.workOrders.flatMap((j) =>
       j.workers.map((w) => ({
-        totalHours: w.totalHours,
+        totalHours: w.hours,
         journal: { date: j.date },
       }))
     );
@@ -219,8 +204,9 @@ export class ForemenRepository {
       joinedAt: emp.joinedAt.toISOString(),
       createdAt: emp.createdAt.toISOString(),
       stats: {
-        journalsCount: emp.workJournals.length,
-        reportsCount: emp.dailyReports.length,
+        journalsCount: emp.workOrders.length,
+        reportsCount: emp.workOrders.filter((o) => o.status === "completed")
+          .length,
         activeCrew: emp.fieldCrewMembers.filter((c) => c.status === "active")
           .length,
         hoursThisMonth: hoursInRange(flatWorkers, monthStart, now),
@@ -237,7 +223,7 @@ export class ForemenRepository {
         status: c.status,
         notes: c.notes ?? "",
       })),
-      journals: emp.workJournals.map((j) => ({
+      journals: emp.workOrders.map((j) => ({
         id: j.id,
         date: j.date.toISOString().slice(0, 10),
         projectId: j.projectId,
@@ -245,47 +231,46 @@ export class ForemenRepository {
         status: j.status,
         workArea: j.workArea,
         notes: j.notes,
-        submittedAt: j.submittedAt?.toISOString() ?? null,
+        submittedAt: j.completedAt?.toISOString() ?? null,
         workers: j.workers.map((w) => ({
-          name: w.workerName,
-          profession: w.profession,
+          name: w.name,
+          profession: w.role,
           startTime: w.startTime,
           endTime: w.endTime,
-          totalHours: w.totalHours,
-          status: w.status,
-          note: w.note,
+          totalHours: w.hours,
+          status: "assigned",
+          note: w.notes,
         })),
-        actionsPerformed: j.actionsPerformed,
-        exceptions: j.exceptions,
-        equipment: j.equipment,
+        actionsPerformed: null,
+        exceptions: null,
+        equipment: j.vehicles.map((v) => v.name).join(", ") || null,
         clientName: j.clientName,
         address: j.address,
-        lines: j.lines.map((l) => ({
-          code: l.boqItem.code,
-          description: l.boqItem.description,
-          unit: l.boqItem.unit,
-          quantity: Number(l.quantity),
-          note: l.note,
-        })),
+        lines: [] as {
+          code: string;
+          description: string;
+          unit: string;
+          quantity: number;
+          note: string | null;
+        }[],
         media: j.media.map((m) => ({
           id: m.id,
-          type: m.type,
+          type: m.kind,
           url: m.url,
           name: m.name,
         })),
       })),
-      dailyReports: emp.dailyReports.map((r) => ({
-        id: r.id,
-        projectName: r.project.name,
-        date: r.workJournal.date.toISOString().slice(0, 10),
-        status: r.status,
-        submittedAt: r.submittedAt.toISOString(),
-        workersCount: r.workJournal.workers.length,
-        totalHours: r.workJournal.workers.reduce(
-          (s, w) => s + (w.totalHours || 0),
-          0
-        ),
-      })),
+      dailyReports: emp.workOrders
+        .filter((o) => o.status === "completed")
+        .map((r) => ({
+          id: r.id,
+          projectName: r.project.name,
+          date: r.date.toISOString().slice(0, 10),
+          status: r.status,
+          submittedAt: (r.completedAt ?? r.updatedAt).toISOString(),
+          workersCount: r.workers.length,
+          totalHours: r.workers.reduce((s, w) => s + (w.hours || 0), 0),
+        })),
       reports: emp.reports.map((r) => ({
         id: r.id,
         projectName: r.project.name,
@@ -305,10 +290,10 @@ export class ForemenRepository {
           source: "gallery" as const,
           createdAt: g.createdAt.toISOString(),
         })),
-        ...emp.workJournals.flatMap((j) =>
+        ...emp.workOrders.flatMap((j) =>
           j.media.map((m) => ({
             id: m.id,
-            type: m.type,
+            type: m.kind,
             url: m.url,
             title: m.name,
             source: "journal" as const,

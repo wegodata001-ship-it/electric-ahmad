@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
         location: "ממתין לזיהוי",
         foremanName: "מנהל עבודה",
         contractValue: 1,
-        description: "טיוטה — ממתין לניתוח Gemini",
+        description: "טיוטה — ממתין לניתוח AI",
         status: "planning",
       },
       userId
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (parseResult.success) {
-      pipelineLog("AI", "Gemini parsing completed", {
+      pipelineLog("AI", "AI parsing completed", {
         itemsDetected: parseResult.itemsDetected,
         missingFields: parseResult.missingFields.length,
         durationMs: parseResult.durationMs,
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
           ? p.contractNumber.trim()
           : draftContractNumber;
 
-      pipelineLog("DATABASE", "Prefilling Project from Gemini JSON...");
+      pipelineLog("DATABASE", "Prefilling Project from AI JSON...");
       try {
         await prisma.project.update({
           where: { id: project.id },

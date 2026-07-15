@@ -175,7 +175,7 @@ export function NewProjectWizard() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">פרויקט חדש מ-PDF</h1>
         <p className="text-sm text-gray-500 mt-1">
-          העלה חוזה או כתב כמויות — Gemini יזהה את הפרטים ואת הסעיפים אוטומטית
+          העלה חוזה או כתב כמויות — AI יזהה את הפרטים ואת הסעיפים אוטומטית
         </p>
       </div>
 
@@ -233,7 +233,7 @@ export function NewProjectWizard() {
           disabled={!file}
           onClick={() => file && runAnalyze(file)}
         >
-          התחל ניתוח עם Gemini
+          התחל ניתוח עם AI
         </Button>
       </div>
     </div>

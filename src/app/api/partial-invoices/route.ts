@@ -28,6 +28,10 @@ export async function POST(request: NextRequest) {
     const items = Array.isArray(body.items) ? body.items : [];
     if (items.length === 0) return apiError("יש להוסיף לפחות סעיף אחד");
 
+    const reportIds = Array.isArray(body.reportIds)
+      ? body.reportIds.map((id: unknown) => String(id)).filter(Boolean)
+      : undefined;
+
     const invoice = await PartialInvoicesRepository.create(
       {
         projectId,
@@ -44,6 +48,7 @@ export async function POST(request: NextRequest) {
             quantity: Number(item.quantity),
           })
         ),
+        reportIds,
       },
       userId
     );

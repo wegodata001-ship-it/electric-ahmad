@@ -27,6 +27,8 @@ export type CreatePartialInvoiceInput = {
     | "approved"
     | "rejected";
   items: { boqItemId: string; quantity: number }[];
+  /** When set, only these execution reports are marked as invoiced. */
+  reportIds?: string[];
 };
 
 export type UpdatePartialInvoiceInput = {
@@ -191,73 +193,97 @@ export class PartialInvoicesRepository {
       totalWithVat = amount;
     }
 
-    const created = await prisma.$transaction(async (tx) => {
-      const invoice = await tx.partialInvoice.create({
-        data: {
-          projectId: input.projectId,
-          invoiceNumber,
-          sequenceNumber,
-          billingMonth,
-          billTo: input.billTo?.trim() || null,
-          contractor:
-            input.contractor?.trim() || project.contractor || null,
-          amount,
-          subtotal,
-          vatPercent,
-          vatAmount,
-          totalWithVat,
-          // New invoices stay draft until office sends to foreman approval
-          status: input.status ?? "draft",
-          date: invoiceDate,
-          dueDate,
-          notes: input.notes?.trim() || null,
-          ownerId: userId,
-          createdById: userId,
-          updatedById: userId,
-          items: {
-            create: lineData,
-          },
-        },
-        include: this.invoiceInclude,
-      });
+    const contractValue = Number(project.contractValue) || 0;
+    const invoicedValue =
+      (Number(project.invoicedValue) || 0) + amount;
+    const financialProgress =
+      contractValue > 0
+        ? Math.round((invoicedValue / contractValue) * 1000) / 10
+        : 0;
 
-      for (const line of lineData) {
-        const boq = boqById.get(line.boqItemId)!;
-        const nextInvoiced =
-          Number(boq.invoicedQuantity) + Number(line.quantity);
-        await tx.boqItem.update({
-          where: { id: line.boqItemId },
+    const boqItemIds = lineData.map((l) => l.boqItemId);
+    const reportWhere = {
+      invoiced: false as const,
+      boqItemId: { in: boqItemIds },
+      report: {
+        projectId: input.projectId,
+        status: "submitted" as const,
+        ...(input.reportIds && input.reportIds.length > 0
+          ? { id: { in: input.reportIds } }
+          : {}),
+      },
+    };
+
+    const created = await prisma.$transaction(
+      async (tx) => {
+        const invoice = await tx.partialInvoice.create({
           data: {
-            invoicedQuantity: nextInvoiced,
+            projectId: input.projectId,
+            invoiceNumber,
+            sequenceNumber,
+            billingMonth,
+            billTo: input.billTo?.trim() || null,
+            contractor:
+              input.contractor?.trim() || project.contractor || null,
+            amount,
+            subtotal,
+            vatPercent,
+            vatAmount,
+            totalWithVat,
+            status: input.status ?? "draft",
+            date: invoiceDate,
+            dueDate,
+            notes: input.notes?.trim() || null,
+            ownerId: userId,
+            createdById: userId,
+            updatedById: userId,
+            items: {
+              create: lineData,
+            },
+          },
+          include: this.invoiceInclude,
+        });
+
+        await Promise.all(
+          lineData.map((line) => {
+            const boq = boqById.get(line.boqItemId)!;
+            return tx.boqItem.update({
+              where: { id: line.boqItemId },
+              data: {
+                invoicedQuantity:
+                  Number(boq.invoicedQuantity) + Number(line.quantity),
+                updatedById: userId,
+              },
+            });
+          })
+        );
+
+        await tx.executionReportItem.updateMany({
+          where: reportWhere,
+          data: {
+            invoiced: true,
+            invoicedAt: new Date(),
+            invoiceId: invoice.id,
+          },
+        });
+
+        await tx.project.update({
+          where: { id: input.projectId },
+          data: {
+            invoicedValue,
+            financialProgress,
             updatedById: userId,
           },
         });
-      }
 
-      const allBoq = await tx.boqItem.findMany({
-        where: { projectId: input.projectId },
-      });
-      const invoicedValue = allBoq.reduce(
-        (sum, item) =>
-          sum + Number(item.invoicedQuantity) * Number(item.unitPrice),
-        0
-      );
-      const contractValue = Number(project.contractValue) || 0;
-      const financialProgress =
-        contractValue > 0
-          ? Math.round((invoicedValue / contractValue) * 1000) / 10
-          : 0;
+        return invoice;
+      },
+      { maxWait: 10_000, timeout: 30_000 }
+    );
 
-      await tx.project.update({
-        where: { id: input.projectId },
-        data: {
-          invoicedValue,
-          financialProgress,
-          updatedById: userId,
-        },
-      });
-
-      await tx.activity.create({
+    // Non-critical side effects — outside the transaction so they never kill the commit
+    void prisma.activity
+      .create({
         data: {
           projectId: input.projectId,
           type: "invoice_created",
@@ -265,15 +291,15 @@ export class PartialInvoicesRepository {
           description: `חשבון חלקי לחודש ${billingMonth} בסך ${amount.toLocaleString("he-IL")} ₪`,
           userId,
           metadata: JSON.stringify({
-            invoiceId: invoice.id,
+            invoiceId: created.id,
             sequenceNumber,
             amount,
           }),
         },
-      });
-
-      return invoice;
-    });
+      })
+      .catch((err) =>
+        console.error("[PartialInvoicesRepository.create] activity log failed", err)
+      );
 
     await AuditRepository.log({
       action: "CREATE",

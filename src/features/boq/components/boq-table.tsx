@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo, useEffect, Fragment } from "react";
-import { useRouter } from "next/navigation";
 import {
   useReactTable,
   getCoreRowModel,
@@ -18,7 +17,6 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
-  Plus,
   ClipboardPlus,
   History,
 } from "lucide-react";
@@ -27,7 +25,6 @@ import { Badge, Button, Progress, Pagination } from "@/components/ui";
 import { formatNumber, formatPercent } from "@/utils/format";
 import { BOQ_STATUS_LABELS, BOQ_STATUS_COLORS } from "@/constants";
 import { cn } from "@/lib/utils";
-import { useInvoiceDraftStore } from "@/store/invoice-draft.store";
 import { BoqExecutionDrawer } from "./boq-execution-drawer";
 import { BoqExecutionHistoryDrawer } from "./boq-execution-history-drawer";
 
@@ -38,8 +35,6 @@ interface BoqTableProps {
 }
 
 export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
-  const router = useRouter();
-  const addFromBoq = useInvoiceDraftStore((s) => s.addFromBoq);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [globalFilter, setGlobalFilter] = useState("");
@@ -51,16 +46,6 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
   useEffect(() => {
     setRows(items);
   }, [items]);
-
-  function handleAddToInvoice(item: BoqItem) {
-    const result = addFromBoq(item);
-    if (!result.ok) {
-      setToast(result.reason ?? "לא ניתן להוסיף");
-      return;
-    }
-    setToast(`נוסף לחשבון: ${item.code} (${item.availableForInvoice} זמין)`);
-    router.push(`/invoices/new?projectId=${item.projectId}`);
-  }
 
   const columns = useMemo<ColumnDef<BoqItem>[]>(
     () => [
@@ -189,10 +174,9 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
       {
         id: "actions",
         header: "פעולות",
-        size: 280,
+        size: 200,
         cell: ({ row }) => {
           const item = row.original;
-          const available = item.availableForInvoice ?? 0;
           return (
             <div className="flex flex-wrap gap-1.5">
               <Button
@@ -202,20 +186,6 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
               >
                 <ClipboardPlus className="h-3.5 w-3.5" />
                 דווח ביצוע
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={available <= 0}
-                onClick={() => handleAddToInvoice(item)}
-                title={
-                  available <= 0
-                    ? "אין כמות זמינה לחשבון"
-                    : `הוסף ${available} לחשבון`
-                }
-              >
-                <Plus className="h-3.5 w-3.5" />
-                הוסף לחשבון
               </Button>
               <Button
                 size="sm"

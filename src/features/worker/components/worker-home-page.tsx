@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { employeeService } from "@/features/employees/services/employee.service";
 import { boqService } from "@/features/boq/services/boq.service";
-import { reportService } from "@/features/reports/services/report.service";
-import type { BoqItem, WorkReport, Employee } from "@/types";
+import type { BoqItem, Employee } from "@/types";
 import { Card, Progress, Badge, Button } from "@/components/ui";
 import { formatNumber } from "@/utils/format";
 import { BOQ_STATUS_LABELS, BOQ_STATUS_COLORS } from "@/constants";
@@ -22,7 +21,6 @@ export function WorkerHomePage() {
       if (w.projectIds.length > 0) {
         boqService.getByProject(w.projectIds[0]).then(setItems);
       }
-      reportService.getByEmployee(w.id);
     });
   }, []);
 

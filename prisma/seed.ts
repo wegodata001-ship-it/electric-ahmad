@@ -27,10 +27,6 @@ async function main() {
   await prisma.auditLog.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.activity.deleteMany();
-  await prisma.workJournalMedia.deleteMany();
-  await prisma.workJournalBoqLine.deleteMany();
-  await prisma.workJournalWorker.deleteMany();
-  await prisma.workJournal.deleteMany();
   await prisma.fieldCrewMember.deleteMany();
   await prisma.fieldAttendance.deleteMany();
   await prisma.reportMedia.deleteMany();

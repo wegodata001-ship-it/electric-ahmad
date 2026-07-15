@@ -21,8 +21,11 @@ export function formatPercent(value: number): string {
   return `${formatNumber(value, 1)}%`;
 }
 
-export function formatDate(date: string | Date): string {
-  return format(new Date(date), "dd/MM/yyyy", { locale: he });
+export function formatDate(date: string | Date | null | undefined): string {
+  if (date == null || date === "") return "—";
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "—";
+  return format(d, "dd/MM/yyyy", { locale: he });
 }
 
 export function formatDateTime(date: string | Date): string {

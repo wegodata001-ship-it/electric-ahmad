@@ -47,8 +47,9 @@ export function CreateDeliveryNotePage() {
   const clientPickerRef = useRef<HTMLDivElement>(null);
 
   const [noteNumber, setNoteNumber] = useState("…");
+  const [noteNumberManual, setNoteNumberManual] = useState(false);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [departureTime, setDepartureTime] = useState(nowTime);
+  const [status, setStatus] = useState<"draft" | "sent" | "delivered">("draft");
   const [client, setClient] = useState("");
   const [clientNumber, setClientNumber] = useState("");
   const [projectId, setProjectId] = useState(projectFromQuery);
@@ -59,8 +60,12 @@ export function CreateDeliveryNotePage() {
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [notes, setNotes] = useState("");
+  const [showMoreClient, setShowMoreClient] = useState(false);
+  const [showMoreProject, setShowMoreProject] = useState(false);
 
+  const [includeDelivery, setIncludeDelivery] = useState(false);
   const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
   const [vehicle, setVehicle] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [externalCarrier, setExternalCarrier] = useState(false);
@@ -69,15 +74,8 @@ export function CreateDeliveryNotePage() {
   const [destinationAddress, setDestinationAddress] = useState("");
   const [driverNotes, setDriverNotes] = useState("");
 
-  const [senderSigned, setSenderSigned] = useState(true);
-  const [receiverSigned, setReceiverSigned] = useState(false);
   const [receiverName, setReceiverName] = useState("");
   const [receivedAt, setReceivedAt] = useState("");
-
-  const [equipmentCheckedIntact, setEquipmentCheckedIntact] = useState(false);
-  const [receivedComplete, setReceivedComplete] = useState(false);
-  const [receivedWithNotes, setReceivedWithNotes] = useState(false);
-  const [receiptNotes, setReceiptNotes] = useState("");
 
   const [lines, setLines] = useState<Line[]>([emptyLine(), emptyLine(), emptyLine()]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -275,8 +273,9 @@ export function CreateDeliveryNotePage() {
       }
 
       const note = await deliveryNoteService.create({
+        noteNumber: noteNumberManual ? noteNumber : undefined,
         date,
-        departureTime,
+        status,
         client,
         clientId,
         projectId: projectId || null,
@@ -287,22 +286,17 @@ export function CreateDeliveryNotePage() {
         address,
         city,
         notes,
-        driverName,
-        vehicle,
-        vehicleNumber,
-        externalCarrier,
-        deliveryTime,
-        destination,
-        destinationAddress,
-        driverNotes,
-        senderSigned,
-        receiverSigned,
-        receiverName,
-        receivedAt: receivedAt || null,
-        equipmentCheckedIntact,
-        receivedComplete,
-        receivedWithNotes,
-        receiptNotes,
+        receiverName: receiverName || undefined,
+        receivedAt: receivedAt || undefined,
+        driverName: includeDelivery ? driverName : undefined,
+        driverPhone: includeDelivery ? driverPhone : undefined,
+        vehicle: includeDelivery ? vehicle : undefined,
+        vehicleNumber: includeDelivery ? vehicleNumber : undefined,
+        externalCarrier: includeDelivery ? externalCarrier : undefined,
+        deliveryTime: includeDelivery ? deliveryTime : undefined,
+        destination: includeDelivery ? destination : undefined,
+        destinationAddress: includeDelivery ? destinationAddress : undefined,
+        driverNotes: includeDelivery ? driverNotes : undefined,
         items: activeLines.map((l) => ({
           sku: l.sku || undefined,
           description: l.description,
@@ -356,19 +350,61 @@ export function CreateDeliveryNotePage() {
         <h2 className="text-base font-semibold text-gray-900 mb-4">פרטי התעודה</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           <Field label="מספר תעודה">
-            <Input value={noteNumber} disabled />
+            <div className="flex gap-2 items-center">
+              <Input
+                value={noteNumber}
+                onChange={(e) => setNoteNumber(e.target.value)}
+                disabled={!noteNumberManual}
+                placeholder="מספר אוטומטי..."
+              />
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={noteNumberManual}
+                  onChange={(e) => setNoteNumberManual(e.target.checked)}
+                />
+                ידני
+              </label>
+            </div>
           </Field>
           <Field label="תאריך *">
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
-          <Field label="שעת יציאה">
+          <Field label="סטטוס">
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as any)}
+              className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-lg"
+            >
+              <option value="draft">טיוטה</option>
+              <option value="sent">נשלח</option>
+              <option value="delivered">נמסר</option>
+            </select>
+          </Field>
+          <Field label="הערות" className="md:col-span-2 lg:col-span-3">
             <Input
-              type="time"
-              value={departureTime}
-              onChange={(e) => setDepartureTime(e.target.value)}
+              value={notes}
+              placeholder="הערות כלליות..."
+              onChange={(e) => setNotes(e.target.value)}
             />
           </Field>
+        </div>
+      </Card>
 
+      <Card padding="lg">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-gray-900">פרטי לקוח</h2>
+          {!showMoreClient && (
+            <button
+              type="button"
+              onClick={() => setShowMoreClient(true)}
+              className="text-xs text-blue-700 hover:underline"
+            >
+              הצג פרטים נוספים ▼
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           <Field label="בחר לקוח *" className="md:col-span-2 lg:col-span-2">
             <div className="flex gap-2 items-start">
               <div className="relative flex-1" ref={clientPickerRef}>
@@ -452,7 +488,98 @@ export function CreateDeliveryNotePage() {
             )}
           </Field>
 
-          <Field label="פרויקט (אופציונלי)">
+          <Field label="טלפון">
+            <Input
+              value={phone}
+              placeholder="טלפון..."
+              disabled={clientReadonly}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </Field>
+
+          {showMoreClient && (
+            <>
+              <LockedField
+                label="איש קשר"
+                locked={clientReadonly}
+                onEdit={() => setClientFieldsLocked(false)}
+              >
+                <Input
+                  value={contactName}
+                  placeholder="בחר איש קשר..."
+                  disabled={clientReadonly}
+                  onChange={(e) => setContactName(e.target.value)}
+                />
+              </LockedField>
+
+              <LockedField
+                label="טלפון נוסף"
+                locked={clientReadonly}
+                onEdit={() => setClientFieldsLocked(false)}
+              >
+                <Input
+                  value={phoneSecondary}
+                  placeholder="טלפון נוסף..."
+                  disabled={clientReadonly}
+                  onChange={(e) => setPhoneSecondary(e.target.value)}
+                />
+              </LockedField>
+
+              <LockedField
+                label="כתובת מלאה"
+                locked={clientReadonly}
+                onEdit={() => setClientFieldsLocked(false)}
+                className="md:col-span-2"
+              >
+                <Input
+                  value={address}
+                  placeholder="בחר כתובת..."
+                  disabled={clientReadonly}
+                  onChange={(e) => setAddress(e.target.value)}
+                />
+              </LockedField>
+
+              <LockedField
+                label="עיר"
+                locked={clientReadonly}
+                onEdit={() => setClientFieldsLocked(false)}
+              >
+                <Input
+                  value={city}
+                  placeholder="עיר..."
+                  disabled={clientReadonly}
+                  onChange={(e) => setCity(e.target.value)}
+                />
+              </LockedField>
+            </>
+          )}
+        </div>
+        {showMoreClient && (
+          <button
+            type="button"
+            onClick={() => setShowMoreClient(false)}
+            className="text-xs text-gray-500 hover:text-gray-700 mt-3"
+          >
+            הסתר פרטים נוספים ▲
+          </button>
+        )}
+      </Card>
+
+      <Card padding="lg">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-gray-900">פרטי פרויקט</h2>
+          {!showMoreProject && (
+            <button
+              type="button"
+              onClick={() => setShowMoreProject(true)}
+              className="text-xs text-blue-700 hover:underline"
+            >
+              הצג פרטי פרויקט ▼
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <Field label="פרויקט (אופציונלי)" className="md:col-span-2 lg:col-span-2">
             <select
               value={projectId}
               onChange={(e) => {
@@ -474,67 +601,50 @@ export function CreateDeliveryNotePage() {
             </select>
           </Field>
 
-          <Field label="מספר הזמנה / מספר עבודה">
-            <Input
-              value={orderNumber}
-              placeholder="מספר הזמנה..."
-              onChange={(e) => setOrderNumber(e.target.value)}
-            />
-          </Field>
-
-          <Field label="מספר לקוח">
-            <Input
-              value={clientNumber}
-              placeholder="מספר לקוח..."
-              disabled={clientReadonly}
-              onChange={(e) => setClientNumber(e.target.value)}
-            />
-          </Field>
-
-          <LockedField
-            label="איש קשר"
-            locked={clientReadonly}
-            onEdit={() => setClientFieldsLocked(false)}
+          {showMoreProject && projectId && (
+            <>
+              <Field label="מספר הזמנה / מספר עבודה">
+                <Input
+                  value={orderNumber}
+                  placeholder="מספר הזמנה..."
+                  onChange={(e) => setOrderNumber(e.target.value)}
+                />
+              </Field>
+              <Field label="יעד">
+                <Input
+                  value={destination}
+                  placeholder="יעד משלוח..."
+                  onChange={(e) => setDestination(e.target.value)}
+                />
+              </Field>
+              <Field label="כתובת יעד" className="md:col-span-2 lg:col-span-2">
+                <Input
+                  value={destinationAddress}
+                  placeholder="בחר כתובת..."
+                  onChange={(e) => setDestinationAddress(e.target.value)}
+                />
+              </Field>
+            </>
+          )}
+        </div>
+        {showMoreProject && (
+          <button
+            type="button"
+            onClick={() => setShowMoreProject(false)}
+            className="text-xs text-gray-500 hover:text-gray-700 mt-3"
           >
-            <Input
-              value={contactName}
-              placeholder="בחר איש קשר..."
-              disabled={clientReadonly}
-              onChange={(e) => setContactName(e.target.value)}
-            />
-          </LockedField>
+            הסתר פרטי פרויקט ▲
+          </button>
+        )}
+      </Card>
 
-          <LockedField
-            label="טלפון"
-            locked={clientReadonly}
-            onEdit={() => setClientFieldsLocked(false)}
-          >
-            <Input
-              value={phone}
-              placeholder="טלפון..."
-              disabled={clientReadonly}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </LockedField>
-
-          <LockedField
-            label="טלפון נוסף"
-            locked={clientReadonly}
-            onEdit={() => setClientFieldsLocked(false)}
-          >
-            <Input
-              value={phoneSecondary}
-              placeholder="טלפון נוסף..."
-              disabled={clientReadonly}
-              onChange={(e) => setPhoneSecondary(e.target.value)}
-            />
-          </LockedField>
-
+      <Card padding="lg">
+        <h2 className="text-base font-semibold text-gray-900 mb-4">כתובת</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <LockedField
             label="כתובת מלאה"
             locked={clientReadonly}
             onEdit={() => setClientFieldsLocked(false)}
-            className="md:col-span-2"
           >
             <Input
               value={address}
@@ -543,7 +653,6 @@ export function CreateDeliveryNotePage() {
               onChange={(e) => setAddress(e.target.value)}
             />
           </LockedField>
-
           <LockedField
             label="עיר"
             locked={clientReadonly}
@@ -556,94 +665,81 @@ export function CreateDeliveryNotePage() {
               onChange={(e) => setCity(e.target.value)}
             />
           </LockedField>
-
-          <LockedField
-            label="הערות כלליות"
-            locked={clientReadonly}
-            onEdit={() => setClientFieldsLocked(false)}
-            className="md:col-span-2 lg:col-span-3"
-          >
-            <Input
-              value={notes}
-              placeholder="הערות קבועות מהכרטיס..."
-              disabled={clientReadonly}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </LockedField>
         </div>
       </Card>
 
-      <Card padding="lg">
-        <h2 className="text-base font-semibold text-gray-900 mb-4">פרטי הובלה</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          <Field label="נהג">
-            <Input
-              value={driverName}
-              placeholder="שם נהג..."
-              onChange={(e) => setDriverName(e.target.value)}
-            />
-          </Field>
-          <Field label="רכב">
-            <Input
-              value={vehicle}
-              placeholder="סוג רכב..."
-              onChange={(e) => setVehicle(e.target.value)}
-            />
-          </Field>
-          <Field label="מספר רכב">
-            <Input
-              value={vehicleNumber}
-              placeholder="מספר רכב..."
-              onChange={(e) => setVehicleNumber(e.target.value)}
-            />
-          </Field>
-          <Field label="מוביל חיצוני">
-            <label className="flex items-center gap-2 h-9 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={externalCarrier}
-                onChange={(e) => setExternalCarrier(e.target.checked)}
+      <div className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          id="includeDelivery"
+          checked={includeDelivery}
+          onChange={(e) => setIncludeDelivery(e.target.checked)}
+          className="h-4 w-4"
+        />
+        <label htmlFor="includeDelivery" className="text-gray-700 cursor-pointer">
+          ✓ כולל פרטי הובלה
+        </label>
+      </div>
+
+      {includeDelivery && (
+        <Card padding="lg">
+          <h2 className="text-base font-semibold text-gray-900 mb-4">פרטי הובלה</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <Field label="נהג">
+              <Input
+                value={driverName}
+                placeholder="שם נהג..."
+                onChange={(e) => setDriverName(e.target.value)}
               />
-              כן
-            </label>
-          </Field>
-          <Field label="שעת יציאה">
-            <Input
-              type="time"
-              value={departureTime}
-              onChange={(e) => setDepartureTime(e.target.value)}
-            />
-          </Field>
-          <Field label="שעת מסירה">
-            <Input
-              type="time"
-              value={deliveryTime}
-              onChange={(e) => setDeliveryTime(e.target.value)}
-            />
-          </Field>
-          <Field label="יעד">
-            <Input
-              value={destination}
-              placeholder="יעד משלוח..."
-              onChange={(e) => setDestination(e.target.value)}
-            />
-          </Field>
-          <Field label="כתובת יעד" className="md:col-span-2">
-            <Input
-              value={destinationAddress}
-              placeholder="בחר כתובת..."
-              onChange={(e) => setDestinationAddress(e.target.value)}
-            />
-          </Field>
-          <Field label="הערות לנהג" className="md:col-span-2 lg:col-span-3">
-            <Input
-              value={driverNotes}
-              placeholder="הערות לנהג..."
-              onChange={(e) => setDriverNotes(e.target.value)}
-            />
-          </Field>
-        </div>
-      </Card>
+            </Field>
+            <Field label="רכב">
+              <Input
+                value={vehicle}
+                placeholder="סוג רכב..."
+                onChange={(e) => setVehicle(e.target.value)}
+              />
+            </Field>
+            <Field label="מספר רכב">
+              <Input
+                value={vehicleNumber}
+                placeholder="מספר רכב..."
+                onChange={(e) => setVehicleNumber(e.target.value)}
+              />
+            </Field>
+            <Field label="טלפון">
+              <Input
+                value={driverPhone}
+                placeholder="טלפון נהג..."
+                onChange={(e) => setDriverPhone(e.target.value)}
+              />
+            </Field>
+            <Field label="שעת מסירה">
+              <Input
+                type="time"
+                value={deliveryTime}
+                onChange={(e) => setDeliveryTime(e.target.value)}
+              />
+            </Field>
+            <Field label="מוביל חיצוני">
+              <label className="flex items-center gap-2 h-9 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={externalCarrier}
+                  onChange={(e) => setExternalCarrier(e.target.checked)}
+                />
+                כן
+              </label>
+            </Field>
+            <Field label="הערות לנהג" className="md:col-span-2 lg:col-span-3">
+              <Input
+                value={driverNotes}
+                placeholder="הערות לנהג..."
+                onChange={(e) => setDriverNotes(e.target.value)}
+              />
+            </Field>
+          </div>
+        </Card>
+      )}
 
       <Card padding="none">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -748,22 +844,6 @@ export function CreateDeliveryNotePage() {
       <Card padding="lg">
         <h2 className="text-base font-semibold text-gray-900 mb-4">חתימות</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={senderSigned}
-              onChange={(e) => setSenderSigned(e.target.checked)}
-            />
-            חתימת מוסר
-          </label>
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={receiverSigned}
-              onChange={(e) => setReceiverSigned(e.target.checked)}
-            />
-            חתימת מקבל
-          </label>
           <Field label="שם מקבל">
             <Input
               value={receiverName}
@@ -781,46 +861,6 @@ export function CreateDeliveryNotePage() {
         <p className="text-xs text-gray-400 mt-3">
           חתימה דיגיטלית תתווסף בעתיד — כרגע סימון ואישור בלבד.
         </p>
-      </Card>
-
-      <Card padding="lg">
-        <h2 className="text-base font-semibold text-gray-900 mb-4">אישור מסירה</h2>
-        <div className="space-y-3 text-sm text-gray-700">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={equipmentCheckedIntact}
-              onChange={(e) => setEquipmentCheckedIntact(e.target.checked)}
-            />
-            הציוד נבדק ונמסר בשלמותו
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={receivedComplete}
-              onChange={(e) => setReceivedComplete(e.target.checked)}
-            />
-            התקבל ללא חוסרים
-          </label>
-          <label className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={receivedWithNotes}
-              onChange={(e) => setReceivedWithNotes(e.target.checked)}
-            />
-            <span className="flex-1">
-              התקבל עם הערות
-              <Input
-                className="mt-2"
-                value={receiptNotes}
-                onChange={(e) => setReceiptNotes(e.target.value)}
-                placeholder="פירוט הערות מסירה..."
-                disabled={!receivedWithNotes}
-              />
-            </span>
-          </label>
-        </div>
       </Card>
 
       <Card padding="lg">
@@ -858,6 +898,12 @@ export function CreateDeliveryNotePage() {
           </ul>
         )}
       </Card>
+
+      <div className="flex justify-end">
+        <Button onClick={handleSave} loading={saving}>
+          שמור תעודת משלוח
+        </Button>
+      </div>
 
       <Modal
         open={newClientOpen}

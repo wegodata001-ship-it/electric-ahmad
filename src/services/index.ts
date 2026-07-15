@@ -115,7 +115,6 @@ export const searchService = {
 
 export { boqService } from "@/features/boq/services/boq.service";
 export { employeeService } from "@/features/employees/services/employee.service";
-export { reportService } from "@/features/reports/services/report.service";
 export { documentService } from "@/features/documents/services/document.service";
 export { invoiceService } from "@/features/partial-invoices/services/invoice.service";
 export { galleryService } from "@/features/gallery/services/gallery.service";

@@ -64,10 +64,10 @@ export function OfficeLoginPage() {
             className="mx-auto h-14 w-14 rounded-xl text-white flex items-center justify-center font-bold text-sm tracking-wide mb-3"
             style={{ background: COMPANY_PROFILE.brandBlue }}
           >
-            {COMPANY_PROFILE.logoText}
+            {COMPANY_PROFILE.logoText || "ERP"}
           </div>
           <h1 className="text-xl font-bold text-gray-900">
-            {COMPANY_PROFILE.name}
+            {COMPANY_PROFILE.name || "מערכת ניהול"}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
             התחברות מנהל פרויקט / מערכת ניהול

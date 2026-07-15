@@ -21,8 +21,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const note = await DeliveryNotesRepository.create(
       {
+        noteNumber: body.noteNumber,
         date: body.date,
-        departureTime: body.departureTime,
+        status: body.status,
         client: body.client,
         clientId: body.clientId,
         projectId: body.projectId,
@@ -33,7 +34,10 @@ export async function POST(request: NextRequest) {
         address: body.address,
         city: body.city,
         notes: body.notes,
+        receiverName: body.receiverName,
+        receivedAt: body.receivedAt,
         driverName: body.driverName,
+        driverPhone: body.driverPhone,
         vehicle: body.vehicle,
         vehicleNumber: body.vehicleNumber,
         externalCarrier: body.externalCarrier,
@@ -41,15 +45,6 @@ export async function POST(request: NextRequest) {
         destination: body.destination,
         destinationAddress: body.destinationAddress,
         driverNotes: body.driverNotes,
-        senderSigned: body.senderSigned,
-        receiverSigned: body.receiverSigned,
-        receiverName: body.receiverName,
-        receivedAt: body.receivedAt,
-        equipmentCheckedIntact: body.equipmentCheckedIntact,
-        receivedComplete: body.receivedComplete,
-        receivedWithNotes: body.receivedWithNotes,
-        receiptNotes: body.receiptNotes,
-        status: body.status,
         items: Array.isArray(body.items) ? body.items : [],
       },
       userId

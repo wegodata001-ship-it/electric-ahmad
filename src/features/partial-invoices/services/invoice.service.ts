@@ -15,6 +15,8 @@ export type CreateInvoicePayload = {
   notes?: string;
   status?: string;
   items: { boqItemId: string; quantity: number }[];
+  /** When set, only these execution reports are marked as invoiced. */
+  reportIds?: string[];
 };
 
 export const invoiceService = {

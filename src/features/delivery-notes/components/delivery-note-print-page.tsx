@@ -7,8 +7,6 @@ import type { DeliveryNote } from "@/types";
 import { formatDate, formatNumber } from "@/utils/format";
 import { COMPANY_PROFILE } from "@/config/company";
 
-const MIN_ROWS = 12;
-
 export function DeliveryNotePrintPage({ noteId }: { noteId: string }) {
   const searchParams = useSearchParams();
   const [note, setNote] = useState<DeliveryNote | null>(null);
@@ -32,20 +30,16 @@ export function DeliveryNotePrintPage({ noteId }: { noteId: string }) {
     );
   }
 
-  const rows = [...note.items];
-  while (rows.length < MIN_ROWS) {
-    rows.push({
-      id: `empty-${rows.length}`,
-      description: "",
-      unit: "",
-      quantity: 0,
-      sortOrder: rows.length + 1,
-    });
-  }
-
   const createdLabel = formatDate(note.createdAt);
   const blue = COMPANY_PROFILE.brandBlue;
   const blueLight = COMPANY_PROFILE.brandBlueLight;
+
+  const hasDeliveryInfo =
+    note.driverName ||
+    note.vehicle ||
+    note.vehicleNumber ||
+    note.deliveryTime ||
+    note.driverNotes;
 
   return (
     <div
@@ -140,10 +134,16 @@ export function DeliveryNotePrintPage({ noteId }: { noteId: string }) {
                 <span className="text-gray-500">תאריך: </span>
                 {formatDate(note.date)}
               </p>
-              <p className="mt-1">
-                <span className="text-gray-500">שעה: </span>
-                {note.departureTime || "—"}
-              </p>
+              {note.status && (
+                <p className="mt-1">
+                  <span className="text-gray-500">סטטוס: </span>
+                  {note.status === "draft"
+                    ? "טיוטה"
+                    : note.status === "sent"
+                      ? "נשלח"
+                      : "נמסר"}
+                </p>
+              )}
             </div>
           </div>
         </header>
@@ -160,17 +160,21 @@ export function DeliveryNotePrintPage({ noteId }: { noteId: string }) {
             פרטי לקוח
           </p>
           <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
-            <Row label="לקוח" value={note.client} />
-            <Row label="איש קשר" value={note.contactName} />
-            <Row label="טלפון" value={note.phone} ltr />
-            <Row label="טלפון נוסף" value={note.phoneSecondary} ltr />
-            <Row
-              label="כתובת"
-              value={[note.address, note.city].filter(Boolean).join(", ")}
-            />
-            <Row label="פרויקט" value={note.projectName} />
-            <Row label="מספר הזמנה" value={note.orderNumber} />
-            <Row label="יעד" value={note.destination} />
+            {note.client && <Row label="לקוח" value={note.client} />}
+            {note.contactName && <Row label="איש קשר" value={note.contactName} />}
+            {note.phone && <Row label="טלפון" value={note.phone} ltr />}
+            {note.phoneSecondary && (
+              <Row label="טלפון נוסף" value={note.phoneSecondary} ltr />
+            )}
+            {(note.address || note.city) && (
+              <Row
+                label="כתובת"
+                value={[note.address, note.city].filter(Boolean).join(", ")}
+              />
+            )}
+            {note.projectName && <Row label="פרויקט" value={note.projectName} />}
+            {note.orderNumber && <Row label="מספר הזמנה" value={note.orderNumber} />}
+            {note.destination && <Row label="יעד" value={note.destination} />}
           </div>
         </section>
 
@@ -189,7 +193,7 @@ export function DeliveryNotePrintPage({ noteId }: { noteId: string }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((item, index) => (
+              {note.items.map((item, index) => (
                 <tr
                   key={item.id}
                   style={{
@@ -202,9 +206,7 @@ export function DeliveryNotePrintPage({ noteId }: { noteId: string }) {
                   <td className="px-2 py-1.5">{item.sku || ""}</td>
                   <td className="px-2 py-1.5 font-medium">{item.description}</td>
                   <td className="px-2 py-1.5">{item.unit}</td>
-                  <td className="px-2 py-1.5">
-                    {item.description ? formatNumber(item.quantity) : ""}
-                  </td>
+                  <td className="px-2 py-1.5">{formatNumber(item.quantity)}</td>
                   <td className="px-2 py-1.5">{item.packageNumber || ""}</td>
                   <td className="px-2 py-1.5 text-gray-600">{item.notes || ""}</td>
                 </tr>
@@ -214,64 +216,50 @@ export function DeliveryNotePrintPage({ noteId }: { noteId: string }) {
         </section>
 
         {/* Notes */}
-        <section
-          className="rounded-md mb-5 p-3 min-h-[64px] text-[12px]"
-          style={{ border: "1px solid #d1d5db" }}
-        >
-          <p className="text-[11px] font-bold mb-1" style={{ color: blue }}>
-            הערות
-          </p>
-          <p className="text-gray-700 whitespace-pre-wrap min-h-[36px]">
-            {note.notes || ""}
-          </p>
-        </section>
+        {note.notes && (
+          <section
+            className="rounded-md mb-5 p-3 min-h-[64px] text-[12px]"
+            style={{ border: "1px solid #d1d5db" }}
+          >
+            <p className="text-[11px] font-bold mb-1" style={{ color: blue }}>
+              הערות
+            </p>
+            <p className="text-gray-700 whitespace-pre-wrap min-h-[36px]">
+              {note.notes}
+            </p>
+          </section>
+        )}
 
         {/* Transport */}
-        <section
-          className="rounded-md mb-5 p-4 text-[12px]"
-          style={{ border: `1px solid ${blue}40` }}
-        >
-          <p className="text-[11px] font-bold mb-2" style={{ color: blue }}>
-            פרטי הובלה
-          </p>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
-            <Row label="נהג" value={note.driverName} />
-            <Row label="רכב" value={note.vehicle} />
-            <Row label="מספר רכב" value={note.vehicleNumber} />
-            <Row
-              label="מוביל חיצוני"
-              value={note.externalCarrier ? "כן" : "לא"}
-            />
-            <Row label="שעת יציאה" value={note.departureTime} />
-            <Row label="שעת מסירה" value={note.deliveryTime} />
-            <Row label="כתובת יעד" value={note.destinationAddress} />
-            <Row label="הערות לנהג" value={note.driverNotes} />
-          </div>
-        </section>
-
-        {/* Delivery confirmation */}
-        <section
-          className="rounded-md mb-6 p-4 text-[12px]"
-          style={{ border: "1px solid #d1d5db", background: "#fafafa" }}
-        >
-          <p className="text-[11px] font-bold mb-2" style={{ color: blue }}>
-            אישור מסירה
-          </p>
-          <div className="space-y-1.5">
-            <Check
-              checked={!!note.equipmentCheckedIntact}
-              label="הציוד נבדק ונמסר בשלמותו"
-            />
-            <Check
-              checked={!!note.receivedComplete}
-              label="התקבל ללא חוסרים"
-            />
-            <Check
-              checked={!!note.receivedWithNotes}
-              label={`התקבל עם הערות${note.receiptNotes ? `: ${note.receiptNotes}` : ""}`}
-            />
-          </div>
-        </section>
+        {hasDeliveryInfo && (
+          <section
+            className="rounded-md mb-5 p-4 text-[12px]"
+            style={{ border: `1px solid ${blue}40` }}
+          >
+            <p className="text-[11px] font-bold mb-2" style={{ color: blue }}>
+              פרטי הובלה
+            </p>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+              {note.driverName && <Row label="נהג" value={note.driverName} />}
+              {note.vehicle && <Row label="רכב" value={note.vehicle} />}
+              {note.vehicleNumber && (
+                <Row label="מספר רכב" value={note.vehicleNumber} />
+              )}
+              {note.externalCarrier && (
+                <Row label="מוביל חיצוני" value="כן" />
+              )}
+              {note.deliveryTime && (
+                <Row label="שעת מסירה" value={note.deliveryTime} />
+              )}
+              {note.destinationAddress && (
+                <Row label="כתובת יעד" value={note.destinationAddress} />
+              )}
+              {note.driverNotes && (
+                <Row label="הערות לנהג" value={note.driverNotes} />
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Signatures */}
         <section className="grid grid-cols-2 gap-10 mb-8 text-[12px]">
@@ -279,7 +267,6 @@ export function DeliveryNotePrintPage({ noteId }: { noteId: string }) {
             title="חתימת מוסר"
             nameHint="שם מלא"
             dateHint="תאריך"
-            checked={!!note.senderSigned}
             blue={blue}
           />
           <SignatureBlock
@@ -288,7 +275,6 @@ export function DeliveryNotePrintPage({ noteId }: { noteId: string }) {
             dateHint={
               note.receivedAt ? formatDate(note.receivedAt) : "תאריך"
             }
-            checked={!!note.receiverSigned}
             blue={blue}
           />
         </section>
@@ -329,37 +315,21 @@ function Row({
   );
 }
 
-function Check({ checked, label }: { checked: boolean; label: string }) {
-  return (
-    <p className="flex items-start gap-2">
-      <span
-        className="inline-flex h-3.5 w-3.5 mt-0.5 border border-gray-400 rounded-[2px] items-center justify-center text-[10px] leading-none"
-        style={{ background: checked ? "#1e40af" : "white", color: "white" }}
-      >
-        {checked ? "✓" : ""}
-      </span>
-      <span>{label}</span>
-    </p>
-  );
-}
-
 function SignatureBlock({
   title,
   nameHint,
   dateHint,
-  checked,
   blue,
 }: {
   title: string;
   nameHint: string;
   dateHint: string;
-  checked: boolean;
   blue: string;
 }) {
   return (
     <div>
       <p className="font-bold mb-6" style={{ color: blue }}>
-        {title} {checked ? "✓" : ""}
+        {title}
       </p>
       <div className="h-16 border-b border-gray-400 mb-3" />
       <p className="text-gray-500 mb-2">שם מלא: {nameHint}</p>

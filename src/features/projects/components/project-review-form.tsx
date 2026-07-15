@@ -138,7 +138,7 @@ export function ProjectReviewForm({
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">בדיקת נתונים מ-Gemini</h1>
+          <h1 className="text-2xl font-bold text-gray-900">בדיקת נתונים מ-AI</h1>
           <p className="text-sm text-gray-500 mt-1">
             ערכו רק שדות חסרים או שגויים, ואשרו כדי ליצור את הפרויקט ואת כתב הכמויות
           </p>
@@ -211,6 +211,12 @@ export function ProjectReviewForm({
             required
             missing={missing.has("project.contractValue")}
           />
+        </div>
+      </Card>
+
+      <Card padding="lg">
+        <h2 className="text-base font-semibold text-gray-900 mb-4">סיכום תשלומים ומע״מ</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field
             label="סכום לפני מע״מ"
             type="number"
@@ -254,12 +260,19 @@ export function ProjectReviewForm({
             label="תנאי תשלום"
             value={project.paymentTerms ?? ""}
             onChange={(v) => setProject((p) => ({ ...p, paymentTerms: v }))}
+            missing={missing.has("project.paymentTerms")}
           />
           <Field
             label="מטבע"
             value={project.currency ?? ""}
             onChange={(v) => setProject((p) => ({ ...p, currency: v }))}
           />
+        </div>
+      </Card>
+
+      <Card padding="lg">
+        <h2 className="text-base font-semibold text-gray-900 mb-4">הערות נוספות</h2>
+        <div className="grid grid-cols-1 gap-3">
           <Field
             label="הערות"
             value={project.notes ?? ""}

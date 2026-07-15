@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
   try {
     const projectId = request.nextUrl.searchParams.get("projectId");
     const active = request.nextUrl.searchParams.get("active");
+    const role = request.nextUrl.searchParams.get("role");
 
     if (projectId) {
       return apiSuccess(await EmployeesRepository.findByProject(projectId));
@@ -13,7 +14,17 @@ export async function GET(request: NextRequest) {
     if (active === "true") {
       return apiSuccess(await EmployeesRepository.findActive());
     }
-    return apiSuccess(await EmployeesRepository.findAll());
+    
+    // Get all employees
+    const employees = await EmployeesRepository.findAll();
+    
+    // Filter by role if specified
+    if (role) {
+      const filtered = employees.filter((emp) => emp.role === role);
+      return apiSuccess(filtered);
+    }
+    
+    return apiSuccess(employees);
   } catch (error) {
     return handleApiError(error);
   }

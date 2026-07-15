@@ -6,8 +6,9 @@ import type {
 import { apiClient } from "@/lib/api/client";
 
 export type CreateDeliveryNotePayload = {
+  noteNumber?: string;
   date: string;
-  departureTime?: string;
+  status?: "draft" | "sent" | "delivered" | "cancelled" | "issued" | "in_transit";
   client: string;
   clientId?: string | null;
   projectId?: string | null;
@@ -18,7 +19,10 @@ export type CreateDeliveryNotePayload = {
   address?: string;
   city?: string;
   notes?: string;
+  receiverName?: string;
+  receivedAt?: string;
   driverName?: string;
+  driverPhone?: string;
   vehicle?: string;
   vehicleNumber?: string;
   externalCarrier?: boolean;
@@ -26,14 +30,6 @@ export type CreateDeliveryNotePayload = {
   destination?: string;
   destinationAddress?: string;
   driverNotes?: string;
-  senderSigned?: boolean;
-  receiverSigned?: boolean;
-  receiverName?: string;
-  receivedAt?: string | null;
-  equipmentCheckedIntact?: boolean;
-  receivedComplete?: boolean;
-  receivedWithNotes?: boolean;
-  receiptNotes?: string;
   items: {
     sku?: string;
     description: string;

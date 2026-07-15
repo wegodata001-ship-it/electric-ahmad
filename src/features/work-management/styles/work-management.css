@@ -1,0 +1,374 @@
+/* Work Management — visual language inspired by Work Diary (wm-* namespace) */
+
+.wm-quick-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.wm-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #071c3f, #03142f);
+  color: #fff;
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.wm-tile:hover {
+  transform: translateY(-2px);
+  border-color: #d4af37;
+}
+
+.wm-tile svg {
+  color: #d4af37;
+  flex-shrink: 0;
+}
+
+.wm-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+@media (min-width: 768px) {
+  .wm-kpi-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.wm-kpi {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.wm-kpi strong {
+  display: block;
+  font-size: 1.5rem;
+  color: #03142f;
+  line-height: 1.2;
+}
+
+.wm-kpi span {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.wm-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wm-badge--draft {
+  background: rgba(148, 163, 184, 0.18);
+  color: #475569;
+}
+.wm-badge--assigned {
+  background: rgba(0, 194, 255, 0.16);
+  color: #0369a1;
+}
+.wm-badge--in_progress {
+  background: rgba(245, 158, 11, 0.18);
+  color: #b45309;
+}
+.wm-badge--completed {
+  background: rgba(16, 185, 129, 0.18);
+  color: #047857;
+}
+.wm-badge--cancelled {
+  background: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
+}
+
+.wm-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px 18px;
+}
+
+.wm-panel-title {
+  font-weight: 700;
+  color: #03142f;
+  margin-bottom: 12px;
+  font-size: 1rem;
+}
+
+.wm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.wm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wm-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.wm-field input,
+.wm-field select,
+.wm-field textarea {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.wm-field textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.wm-line-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.wm-line-table th,
+.wm-line-table td {
+  padding: 8px 6px;
+  text-align: right;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  vertical-align: middle;
+  font-size: 13px;
+}
+
+.wm-line-table th {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.wm-line-table input,
+.wm-line-table select {
+  width: 100%;
+  min-width: 80px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 13px;
+}
+
+.wm-line-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.wm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.wm-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.wm-btn-gold {
+  background: #d4af37;
+  color: #03142f;
+}
+
+.wm-btn-navy {
+  background: #03142f;
+  color: #fff;
+}
+
+.wm-btn-secondary {
+  background: #f1f5f9;
+  color: #03142f;
+}
+
+.wm-btn-danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+
+.wm-btn-ghost {
+  background: transparent;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.wm-workflow-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, #071c3f, #03142f);
+  border-radius: 16px;
+  overflow-x: auto;
+}
+
+.wm-workflow-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+  flex: 1;
+  position: relative;
+}
+
+.wm-workflow-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  z-index: 0;
+}
+
+.wm-workflow-step.done:not(:last-child)::after {
+  background: rgba(16, 185, 129, 0.5);
+}
+
+.wm-workflow-step.active:not(:last-child)::after {
+  background: rgba(212, 175, 55, 0.4);
+}
+
+.wm-workflow-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.35);
+  position: relative;
+  z-index: 1;
+}
+
+.wm-workflow-step.done .wm-workflow-dot {
+  background: #10b981;
+  border-color: #10b981;
+  color: #fff;
+}
+
+.wm-workflow-step.active .wm-workflow-dot {
+  background: #d4af37;
+  border-color: #d4af37;
+  color: #03142f;
+}
+
+.wm-workflow-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 600;
+  text-align: center;
+}
+
+.wm-workflow-step.active .wm-workflow-label,
+.wm-workflow-step.done .wm-workflow-label {
+  color: #fff;
+}
+
+.wm-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wm-tab {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.wm-tab.active {
+  background: #03142f;
+  border-color: #03142f;
+  color: #fff;
+}
+
+.wm-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wm-order-card {
+  display: block;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 16px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wm-order-card:hover {
+  border-color: rgba(212, 175, 55, 0.55);
+  box-shadow: 0 4px 14px rgba(3, 20, 47, 0.06);
+}
+
+.wm-file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.wm-file-card {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}
+
+.wm-file-card img {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.wm-readonly-box {
+  background: rgba(3, 20, 47, 0.03);
+  border: 1px solid rgba(3, 20, 47, 0.08);
+  border-radius: 12px;
+  padding: 12px 16px;
+}

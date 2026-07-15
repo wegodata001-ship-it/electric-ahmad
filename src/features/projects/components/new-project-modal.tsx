@@ -17,7 +17,7 @@ export function NewProjectModal({ open, onClose }: NewProjectModalProps) {
       open={open}
       onClose={onClose}
       title="פרויקט חדש"
-      description="העלה PDF — Gemini יזהה את פרטי הפרויקט ואת כתב הכמויות"
+      description="העלה PDF — AI יזהה את פרטי הפרויקט ואת כתב הכמויות"
       size="md"
     >
       <div className="space-y-4">

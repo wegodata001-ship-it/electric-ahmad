@@ -62,6 +62,10 @@ export function ProjectDetailPage({ projectId }: ProjectDetailPageProps) {
           : undefined,
   }));
 
+  const hasValidImage =
+    typeof project.imageUrl === "string" &&
+    project.imageUrl.trim().length > 0;
+
   return (
     <div className="space-y-6">
       <Link
@@ -73,13 +77,22 @@ export function ProjectDetailPage({ projectId }: ProjectDetailPageProps) {
       </Link>
 
       <div className="relative rounded-2xl overflow-hidden h-48">
-        <Image
-          src={project.imageUrl}
-          alt={project.name}
-          fill
-          className="object-cover"
-          unoptimized
-        />
+        {hasValidImage ? (
+          <Image
+            src={project.imageUrl}
+            alt={project.name}
+            fill
+            className="object-cover"
+            unoptimized
+          />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
+            <div className="text-center">
+              <ClipboardList className="h-16 w-16 text-primary-600 mx-auto mb-2" />
+              <p className="text-sm text-primary-700 font-medium">{project.name}</p>
+            </div>
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
         <div className="absolute bottom-0 right-0 left-0 p-6">
           <div className="flex items-end justify-between">

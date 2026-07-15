@@ -128,7 +128,7 @@ export function PartialInvoicePrintPage({ invoiceId }: { invoiceId: string }) {
       </div>
 
       <div className="inv-print-footer hidden print:!flex">
-        <span>WEGO ELECTRIC</span>
+        {COMPANY_PROFILE.name ? <span>{COMPANY_PROFILE.name}</span> : <span />}
         <span>נוצר ב־{createdLabel}</span>
         <span className="inv-page-label">חשבון חלקי</span>
       </div>
@@ -136,33 +136,56 @@ export function PartialInvoicePrintPage({ invoiceId }: { invoiceId: string }) {
       <div className="inv-sheet max-w-[210mm] mx-auto my-6 bg-white shadow-lg print:shadow-none print:my-0 px-6 py-6">
         {/* 1–2. Company issuer header + invoice meta (no client here) */}
         <header className="inv-avoid-break flex justify-between items-start gap-6 pb-3">
-          {/* Right (RTL): issuing company only */}
+          {/* Right (RTL): issuing company only — hide empty brand fields */}
           <div className="flex gap-3 items-start min-w-0 flex-1">
-            <div
-              className="h-16 w-16 shrink-0 flex items-center justify-center text-white font-bold text-sm tracking-wide"
-              style={{ background: blue, borderRadius: 2 }}
-            >
-              {COMPANY_PROFILE.logoText}
-            </div>
-            <div className="text-[11px] leading-[1.55] text-gray-700">
-              <p
-                className="text-[17px] font-bold tracking-wide"
-                style={{ color: blueDark }}
+            {COMPANY_PROFILE.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={COMPANY_PROFILE.logoUrl}
+                alt={COMPANY_PROFILE.name || "לוגו"}
+                className="h-16 w-16 shrink-0 object-contain border border-gray-100"
+                style={{ borderRadius: 2 }}
+              />
+            ) : COMPANY_PROFILE.logoText ? (
+              <div
+                className="h-16 w-16 shrink-0 flex items-center justify-center text-white font-bold text-sm tracking-wide"
+                style={{ background: blue, borderRadius: 2 }}
               >
-                {COMPANY_PROFILE.name}
-              </p>
-              <p className="text-[12px] font-semibold text-gray-900 mt-0.5">
-                {COMPANY_PROFILE.legalName}
-              </p>
-              <p className="mt-1.5" dir="ltr">
-                טלפון: {COMPANY_PROFILE.phone}
-              </p>
-              <p dir="ltr">דוא״ל: {COMPANY_PROFILE.email}</p>
-              <p>כתובת: {COMPANY_PROFILE.address}</p>
+                {COMPANY_PROFILE.logoText}
+              </div>
+            ) : null}
+            <div className="text-[11px] leading-[1.55] text-gray-700">
+              {COMPANY_PROFILE.name ? (
+                <p
+                  className="text-[17px] font-bold tracking-wide"
+                  style={{ color: blueDark }}
+                >
+                  {COMPANY_PROFILE.name}
+                </p>
+              ) : null}
+              {COMPANY_PROFILE.legalName &&
+              COMPANY_PROFILE.legalName !== COMPANY_PROFILE.name ? (
+                <p className="text-[12px] font-semibold text-gray-900 mt-0.5">
+                  {COMPANY_PROFILE.legalName}
+                </p>
+              ) : null}
+              {COMPANY_PROFILE.phone ? (
+                <p className="mt-1.5" dir="ltr">
+                  טלפון: {COMPANY_PROFILE.phone}
+                </p>
+              ) : null}
+              {COMPANY_PROFILE.email ? (
+                <p dir="ltr">דוא״ל: {COMPANY_PROFILE.email}</p>
+              ) : null}
+              {COMPANY_PROFILE.address ? (
+                <p>כתובת: {COMPANY_PROFILE.address}</p>
+              ) : null}
               {COMPANY_PROFILE.vatId ? (
                 <p>מספר עוסק: {COMPANY_PROFILE.vatId}</p>
               ) : null}
-              <p dir="ltr">אתר: {COMPANY_PROFILE.website}</p>
+              {COMPANY_PROFILE.website ? (
+                <p dir="ltr">אתר: {COMPANY_PROFILE.website}</p>
+              ) : null}
             </div>
           </div>
 
@@ -379,7 +402,11 @@ export function PartialInvoicePrintPage({ invoiceId }: { invoiceId: string }) {
           className="pt-3 flex justify-between text-[10px] text-gray-500 print:hidden"
           style={{ borderTop: "1px solid #e5e7eb" }}
         >
-          <span>WEGO ELECTRIC</span>
+          {COMPANY_PROFILE.name ? (
+            <span>{COMPANY_PROFILE.name}</span>
+          ) : (
+            <span />
+          )}
           <span>נוצר ב־{createdLabel}</span>
           <span>מסמך רשמי · חשבון חלקי</span>
         </footer>

@@ -1,7 +1,6 @@
 import { requireFieldManager } from "@/lib/auth/field-session";
 import { FieldAttendanceRepository } from "@/repositories/field-attendance.repository";
 import { FieldCrewRepository } from "@/repositories/field-crew.repository";
-import { WorkJournalsRepository } from "@/repositories/work-journals.repository";
 import { prisma } from "@/lib/prisma";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
 
@@ -21,9 +20,6 @@ export async function GET() {
       orderBy: { name: "asc" },
     });
 
-    const openJournal = await WorkJournalsRepository.findOpenDraft(
-      session.foremanId
-    );
     const attendance = await FieldAttendanceRepository.getOpen(
       session.foremanId
     );
@@ -44,7 +40,7 @@ export async function GET() {
         contractor: p.contractor,
       })),
       crewCount: crew.length,
-      openJournal,
+      openJournal: null, // removed WorkJournal
       attendance,
       checkedIn: !!attendance,
     });

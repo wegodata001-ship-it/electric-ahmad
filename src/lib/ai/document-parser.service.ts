@@ -23,7 +23,7 @@ function extractJson(text: string): unknown {
   const start = candidate.indexOf("{");
   const end = candidate.lastIndexOf("}");
   if (start === -1 || end === -1 || end <= start) {
-    throw new Error("לא התקבל JSON תקין מ-Gemini");
+    throw new Error("לא התקבל JSON תקין מ-AI");
   }
   return JSON.parse(candidate.slice(start, end + 1));
 }
@@ -150,7 +150,7 @@ export class AiDocumentParserService {
       const model = getGeminiModel();
       const { system, user } = getPromptForType(request.documentType);
 
-      pipelineLog("AI", "Calling Gemini generateContent", {
+      pipelineLog("AI", "Calling AI generateContent", {
         model,
         fileName: request.fileName,
         bytes: request.buffer.length,
@@ -180,10 +180,10 @@ export class AiDocumentParserService {
 
       const rawText = response.text ?? "";
       if (!rawText) {
-        throw new Error("Gemini החזיר תשובה ריקה");
+        throw new Error("AI החזיר תשובה ריקה");
       }
 
-      pipelineLog("AI", "Gemini raw response received", {
+      pipelineLog("AI", "AI raw response received", {
         chars: rawText.length,
       });
 
