@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { mapProject } from "@/lib/mappers";
 import { AuditRepository } from "./audit.repository";
+import { EmployeesRepository } from "./employees.repository";
 import type { ProjectStatus } from "@prisma/client";
 
 export class ProjectsRepository {
@@ -45,20 +46,42 @@ export class ProjectsRepository {
       contractNumber: string;
       contractor: string;
       location: string;
-      foremanId: string;
+      foremanId?: string;
+      foremanName?: string;
       status?: ProjectStatus;
       contractValue: number;
       imageUrl?: string;
-      startDate: Date;
-      endDate: Date;
+      startDate?: Date;
+      endDate?: Date;
       description?: string;
     },
     userId: string
   ) {
+    let foremanId = data.foremanId;
+    if (!foremanId) {
+      const foreman = await EmployeesRepository.ensureForeman(
+        data.foremanName || "מנהל עבודה"
+      );
+      foremanId = foreman.id;
+    }
+
+    const startDate = data.startDate ?? new Date();
+    const endDate =
+      data.endDate ?? new Date(startDate.getTime() + 365 * 24 * 60 * 60 * 1000);
+
     const row = await prisma.project.create({
       data: {
-        ...data,
+        name: data.name,
+        contractNumber: data.contractNumber,
+        contractor: data.contractor,
+        location: data.location,
+        foremanId,
+        status: data.status ?? "planning",
         contractValue: data.contractValue,
+        imageUrl: data.imageUrl,
+        startDate,
+        endDate,
+        description: data.description,
         ownerId: userId,
         createdById: userId,
         updatedById: userId,
@@ -69,6 +92,20 @@ export class ProjectsRepository {
       },
     });
 
+    await prisma.projectEmployee.create({
+      data: { projectId: row.id, employeeId: foremanId },
+    });
+
+    await prisma.activity.create({
+      data: {
+        projectId: row.id,
+        type: "project_updated",
+        title: "פרויקט חדש",
+        description: `נוצר פרויקט ${data.name}`,
+        userId,
+      },
+    });
+
     await AuditRepository.log({
       action: "CREATE",
       entityType: "Project",
@@ -76,7 +113,15 @@ export class ProjectsRepository {
       userId,
     });
 
-    return mapProject(row);
+    const created = await prisma.project.findUniqueOrThrow({
+      where: { id: row.id },
+      include: {
+        foreman: true,
+        _count: { select: { employees: true } },
+      },
+    });
+
+    return mapProject(created);
   }
 
   static async update(

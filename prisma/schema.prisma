@@ -454,3 +454,26 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
 }
+
+// ─── AI Document Parse ─────────────────────────────────────────────────────────
+
+model AiParseLog {
+  id            String    @id @default(cuid())
+  documentType  String
+  documentId    String?
+  projectId     String?
+  status        String
+  startedAt     DateTime
+  endedAt       DateTime?
+  durationMs    Int?
+  itemsDetected Int       @default(0)
+  fieldsMissing Int       @default(0)
+  error         String?
+  resultJson    String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+
+  @@index([projectId])
+  @@index([documentId])
+  @@index([createdAt])
+}

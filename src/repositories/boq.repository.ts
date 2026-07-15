@@ -3,6 +3,60 @@ import { mapBoqItem } from "@/lib/mappers";
 import { AuditRepository } from "./audit.repository";
 
 export class BOQRepository {
+  static async createMany(
+    projectId: string,
+    items: {
+      code: string;
+      description: string;
+      unit: string;
+      contractQuantity: number;
+      unitPrice: number;
+      chapter?: string | null;
+      subChapter?: string | null;
+      category?: string | null;
+      sortOrder?: number;
+      level?: number;
+    }[],
+    userId: string
+  ) {
+    const data = items.map((item, index) => {
+      const contractQuantity = item.contractQuantity || 0;
+      const unitPrice = item.unitPrice || 0;
+      const remainingQuantity = contractQuantity;
+      const remainingValue = contractQuantity * unitPrice;
+
+      return {
+        projectId,
+        code: item.code || `${index + 1}`,
+        description: item.description || "סעיף ללא תיאור",
+        unit: item.unit || "יח'",
+        contractQuantity,
+        completedQuantity: 0,
+        remainingQuantity,
+        unitPrice,
+        completedValue: 0,
+        remainingValue,
+        progress: 0,
+        status: "not_started" as const,
+        level: item.level ?? 0,
+        createdById: userId,
+        updatedById: userId,
+      };
+    });
+
+    await prisma.boqItem.createMany({ data });
+
+    await AuditRepository.log({
+      action: "CREATE",
+      entityType: "BoqItem",
+      entityId: projectId,
+      userId,
+      metadata: { count: data.length },
+    });
+
+    return this.findByProject(projectId);
+  }
+
   static async findAll(projectId?: string) {
     const rows = await prisma.boqItem.findMany({
       where: projectId ? { projectId } : undefined,
