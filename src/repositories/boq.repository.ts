@@ -32,6 +32,7 @@ export class BOQRepository {
         unit: item.unit || "יח'",
         contractQuantity,
         completedQuantity: 0,
+        invoicedQuantity: 0,
         remainingQuantity,
         unitPrice,
         completedValue: 0,

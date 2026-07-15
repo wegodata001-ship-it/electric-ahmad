@@ -18,6 +18,8 @@ export const supabaseConfig = {
     reports: process.env.SUPABASE_BUCKET_REPORTS ?? "reports",
     excel: process.env.SUPABASE_BUCKET_EXCEL ?? "excel",
     pdf: process.env.SUPABASE_BUCKET_PDF ?? "pdf",
+    deliveryNotes:
+      process.env.SUPABASE_BUCKET_DELIVERY_NOTES ?? "documents",
   },
 } as const;
 

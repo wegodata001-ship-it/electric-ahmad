@@ -14,6 +14,31 @@ const nextConfig: NextConfig = {
         destination: "/dashboard",
         permanent: false,
       },
+      {
+        source: "/partial-invoices",
+        destination: "/invoices",
+        permanent: false,
+      },
+      {
+        source: "/partial-invoices/:path*",
+        destination: "/invoices/:path*",
+        permanent: false,
+      },
+      {
+        source: "/gallery",
+        destination: "/reports",
+        permanent: false,
+      },
+      {
+        source: "/worker",
+        destination: "/field",
+        permanent: false,
+      },
+      {
+        source: "/worker/:path*",
+        destination: "/field",
+        permanent: false,
+      },
     ];
   },
 };

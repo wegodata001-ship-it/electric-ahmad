@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 
-const SCHEMA_VERSION = "ai-parse-log-v1";
+const SCHEMA_VERSION = "daily-reports-v1";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -13,10 +13,28 @@ function createPrismaClient() {
   });
 }
 
-function hasAiParseLog(client: PrismaClient): boolean {
+function hasRequiredModels(client: PrismaClient): boolean {
+  const c = client as unknown as {
+    aiParseLog?: { create?: unknown };
+    projectInvoiceApproval?: { create?: unknown };
+    deliveryNote?: { create?: unknown };
+    boqExecution?: { create?: unknown };
+    workJournal?: { create?: unknown };
+    fieldAttendance?: { create?: unknown };
+    fieldCrewMember?: { create?: unknown };
+    client?: { create?: unknown };
+    dailyReport?: { create?: unknown };
+  };
   return (
-    typeof (client as unknown as { aiParseLog?: { create?: unknown } }).aiParseLog
-      ?.create === "function"
+    typeof c.aiParseLog?.create === "function" &&
+    typeof c.projectInvoiceApproval?.create === "function" &&
+    typeof c.deliveryNote?.create === "function" &&
+    typeof c.boqExecution?.create === "function" &&
+    typeof c.workJournal?.create === "function" &&
+    typeof c.fieldAttendance?.create === "function" &&
+    typeof c.fieldCrewMember?.create === "function" &&
+    typeof c.client?.create === "function" &&
+    typeof c.dailyReport?.create === "function"
   );
 }
 
@@ -24,7 +42,7 @@ function getPrismaClient(): PrismaClient {
   const existing = globalForPrisma.prisma;
   const versionOk = globalForPrisma.prismaSchemaVersion === SCHEMA_VERSION;
 
-  if (existing && versionOk && hasAiParseLog(existing)) {
+  if (existing && versionOk && hasRequiredModels(existing)) {
     return existing;
   }
 
@@ -34,9 +52,9 @@ function getPrismaClient(): PrismaClient {
 
   const client = createPrismaClient();
 
-  if (!hasAiParseLog(client)) {
+  if (!hasRequiredModels(client)) {
     throw new Error(
-      "Prisma Client חסר את model AiParseLog. עצור את השרת והרץ: npx prisma generate"
+      "Prisma Client חסר מודלים נדרשים. עצור את השרת והרץ: npx prisma generate"
     );
   }
 

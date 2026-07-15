@@ -22,6 +22,8 @@ import type {
   Notification as PrismaNotification,
   Prisma,
 } from "@prisma/client";
+import { cleanBoqDescription } from "@/utils/boq-text";
+import { availableForInvoice } from "@/utils/invoice-calc";
 
 type ProjectWithRelations = PrismaProject & {
   foreman: PrismaEmployee;
@@ -45,14 +47,26 @@ type DocumentWithRelations = PrismaDocument & {
   versions?: { version: number; uploadedById: string; createdAt: Date; size: number; url: string }[];
 };
 type InvoiceWithRelations = PrismaPartialInvoice & {
-  project: { name: string };
+  project: {
+    name: string;
+    contractNumber?: string;
+    location?: string;
+    foreman?: { firstName: string; lastName: string };
+  };
   items: {
     boqItemId: string;
     code: string;
     description: string;
+    unit: string;
+    contractQuantity: Prisma.Decimal;
+    previousQuantity: Prisma.Decimal;
     quantity: Prisma.Decimal;
+    cumulativeQuantity: Prisma.Decimal;
+    quantityPercent: number;
     unitPrice: Prisma.Decimal;
     total: Prisma.Decimal;
+    cumulativeAmount: Prisma.Decimal;
+    financialPercent: number;
   }[];
 };
 type GalleryWithRelations = PrismaGalleryItem & {
@@ -80,7 +94,14 @@ export function mapProject(row: ProjectWithRelations): Project {
     status: row.status,
     contractValue: decimalToNumber(row.contractValue),
     completedValue: decimalToNumber(row.completedValue),
+    invoicedValue: decimalToNumber(row.invoicedValue ?? 0),
     progress: row.progress,
+    financialProgress: row.financialProgress ?? 0,
+    subtotal: row.subtotal != null ? decimalToNumber(row.subtotal) : null,
+    vatPercent: row.vatPercent != null ? decimalToNumber(row.vatPercent) : null,
+    vatAmount: row.vatAmount != null ? decimalToNumber(row.vatAmount) : null,
+    totalWithVat:
+      row.totalWithVat != null ? decimalToNumber(row.totalWithVat) : null,
     employeeCount: row._count?.employees ?? row.employees?.length ?? 0,
     imageUrl: row.imageUrl ?? "",
     startDate: row.startDate.toISOString(),
@@ -92,14 +113,19 @@ export function mapProject(row: ProjectWithRelations): Project {
 }
 
 export function mapBoqItem(row: BoqItemRow): BoqItem {
+  const executedQuantity = decimalToNumber(row.completedQuantity);
+  const invoicedQuantity = decimalToNumber(row.invoicedQuantity ?? 0);
   return {
     id: row.id,
     projectId: row.projectId,
     code: row.code,
-    description: row.description,
+    description: cleanBoqDescription(row.description) || row.description,
     unit: row.unit,
     contractQuantity: decimalToNumber(row.contractQuantity),
-    completedQuantity: decimalToNumber(row.completedQuantity),
+    executedQuantity,
+    completedQuantity: executedQuantity,
+    invoicedQuantity,
+    availableForInvoice: availableForInvoice(executedQuantity, invoicedQuantity),
     remainingQuantity: decimalToNumber(row.remainingQuantity),
     unitPrice: decimalToNumber(row.unitPrice),
     completedValue: decimalToNumber(row.completedValue),
@@ -128,6 +154,9 @@ export function mapEmployee(row: EmployeeWithProjects): Employee {
     completedQuantity: row.completedQuantity,
     openQuantity: row.openQuantity,
     joinedAt: row.joinedAt.toISOString(),
+    userId: row.userId ?? null,
+    wantsSystemUser: row.wantsSystemUser ?? false,
+    hasSystemUser: Boolean(row.userId),
   };
 }
 
@@ -181,8 +210,22 @@ export function mapPartialInvoice(row: InvoiceWithRelations): PartialInvoice {
     id: row.id,
     projectId: row.projectId,
     projectName: row.project.name,
+    projectContractNumber: row.project.contractNumber,
+    projectLocation: row.project.location,
+    projectForemanName: row.project.foreman
+      ? `${row.project.foreman.firstName} ${row.project.foreman.lastName}`
+      : undefined,
     invoiceNumber: row.invoiceNumber,
+    sequenceNumber: row.sequenceNumber ?? 0,
+    billingMonth: row.billingMonth ?? "",
+    billTo: row.billTo ?? undefined,
+    contractor: row.contractor ?? undefined,
     amount: decimalToNumber(row.amount),
+    subtotal: row.subtotal != null ? decimalToNumber(row.subtotal) : null,
+    vatPercent: row.vatPercent != null ? decimalToNumber(row.vatPercent) : null,
+    vatAmount: row.vatAmount != null ? decimalToNumber(row.vatAmount) : null,
+    totalWithVat:
+      row.totalWithVat != null ? decimalToNumber(row.totalWithVat) : null,
     status: row.status,
     date: row.date.toISOString(),
     dueDate: row.dueDate.toISOString(),
@@ -190,11 +233,23 @@ export function mapPartialInvoice(row: InvoiceWithRelations): PartialInvoice {
       boqItemId: item.boqItemId,
       code: item.code,
       description: item.description,
+      unit: item.unit ?? "יח'",
+      contractQuantity: decimalToNumber(item.contractQuantity ?? 0),
+      previousQuantity: decimalToNumber(item.previousQuantity ?? 0),
       quantity: decimalToNumber(item.quantity),
+      cumulativeQuantity: decimalToNumber(
+        item.cumulativeQuantity ?? item.quantity
+      ),
+      quantityPercent: item.quantityPercent ?? 0,
       unitPrice: decimalToNumber(item.unitPrice),
       total: decimalToNumber(item.total),
+      cumulativeAmount: decimalToNumber(
+        item.cumulativeAmount ?? item.total
+      ),
+      financialPercent: item.financialPercent ?? 0,
     })),
     notes: row.notes ?? undefined,
+    url: row.url ?? undefined,
     createdAt: row.createdAt.toISOString(),
   };
 }

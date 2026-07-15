@@ -7,6 +7,7 @@ import { AuditRepository } from "@/repositories/audit.repository";
 import { getAuthContext } from "@/lib/auth/session";
 import type { ParsedBoqItem, ParsedProjectDetails } from "@/lib/ai/types";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { cleanBoqDescription } from "@/utils/boq-text";
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,7 +33,24 @@ export async function POST(request: NextRequest) {
     const existing = await ProjectsRepository.findById(projectId);
     if (!existing) return apiError("פרויקט לא נמצא", 404);
 
-    // Update project details (including unique contract number carefully)
+    const existingReports = await prisma.workReport.count({ where: { projectId } });
+    const existingBoq = await prisma.boqItem.count({ where: { projectId } });
+    if (existingReports > 0 && existingBoq > 0) {
+      return apiError(
+        "לא ניתן להחליף כתב כמויות בפרויקט עם דיווחי עובדים קיימים",
+        409
+      );
+    }
+
+    const subtotal =
+      projectData.subtotal != null ? Number(projectData.subtotal) : null;
+    const vatPercent =
+      projectData.vatPercent != null ? Number(projectData.vatPercent) : null;
+    const vatAmount =
+      projectData.vatAmount != null ? Number(projectData.vatAmount) : null;
+    const totalWithVat =
+      projectData.totalWithVat != null ? Number(projectData.totalWithVat) : null;
+
     await prisma.project.update({
       where: { id: projectId },
       data: {
@@ -41,10 +59,21 @@ export async function POST(request: NextRequest) {
         contractor: projectData.contractor.trim(),
         location: projectData.location.trim(),
         contractValue,
+        subtotal: subtotal != null && Number.isFinite(subtotal) ? subtotal : null,
+        vatPercent:
+          vatPercent != null && Number.isFinite(vatPercent) ? vatPercent : null,
+        vatAmount:
+          vatAmount != null && Number.isFinite(vatAmount) ? vatAmount : null,
+        totalWithVat:
+          totalWithVat != null && Number.isFinite(totalWithVat)
+            ? totalWithVat
+            : null,
         description:
           [
             projectData.client ? `לקוח: ${projectData.client}` : null,
-            projectData.paymentTerms ? `תנאי תשלום: ${projectData.paymentTerms}` : null,
+            projectData.paymentTerms
+              ? `תנאי תשלום: ${projectData.paymentTerms}`
+              : null,
             projectData.currency ? `מטבע: ${projectData.currency}` : null,
             projectData.notes,
           ]
@@ -55,29 +84,22 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Replace BOQ with reviewed items
+    // Replace draft BOQ only when safe (new project / no field reports)
     await prisma.boqItem.deleteMany({ where: { projectId } });
 
     const boqItems = items
       .filter((item) => item.description || item.code)
       .map((item, index) => {
-        const chapterPrefix = [item.chapter, item.subChapter, item.category]
-          .filter(Boolean)
-          .join(" / ");
-        const baseDescription = item.description || "סעיף ללא תיאור";
+        const baseDescription = cleanBoqDescription(
+          item.description || "סעיף ללא תיאור"
+        );
 
         return {
           code: item.code || `${index + 1}`,
-          description: chapterPrefix
-            ? `[${chapterPrefix}] ${baseDescription}`
-            : baseDescription,
+          description: baseDescription || "סעיף ללא תיאור",
           unit: item.unit || "יח'",
           contractQuantity: Number(item.contractQuantity) || 0,
           unitPrice: Number(item.unitPrice) || 0,
-          chapter: item.chapter,
-          subChapter: item.subChapter,
-          category: item.category,
-          sortOrder: item.sortOrder ?? index + 1,
           level: item.subChapter ? 2 : item.chapter ? 1 : 0,
         };
       });
@@ -86,7 +108,6 @@ export async function POST(request: NextRequest) {
       await BOQRepository.createMany(projectId, boqItems, userId);
     }
 
-    // Recalculate project completed/remaining value
     const createdItems = await prisma.boqItem.findMany({ where: { projectId } });
     const remainingValue = createdItems.reduce(
       (sum, item) => sum + Number(item.remainingValue),
@@ -97,7 +118,9 @@ export async function POST(request: NextRequest) {
       where: { id: projectId },
       data: {
         completedValue: 0,
+        invoicedValue: 0,
         progress: 0,
+        financialProgress: 0,
         contractValue: contractValue || remainingValue || contractValue,
       },
     });
@@ -121,6 +144,7 @@ export async function POST(request: NextRequest) {
         parseLogId,
         approvedItems: boqItems.length,
         source: "gemini_contract_boq",
+        vat: { subtotal, vatPercent, vatAmount, totalWithVat },
       },
     });
 

@@ -119,5 +119,7 @@ export { reportService } from "@/features/reports/services/report.service";
 export { documentService } from "@/features/documents/services/document.service";
 export { invoiceService } from "@/features/partial-invoices/services/invoice.service";
 export { galleryService } from "@/features/gallery/services/gallery.service";
+export { deliveryNoteService } from "@/features/delivery-notes/services/delivery-note.service";
+export { clientService } from "@/features/clients/services/client.service";
 export { activityService } from "@/features/activity/services/activity.service";
 export { notificationService } from "@/features/notifications/services/notification.service";

@@ -24,10 +24,29 @@ enum BoqItemStatus {
   on_hold
 }
 
+enum ExecutionStatus {
+  not_started
+  in_progress
+  partially_completed
+  completed
+  finished
+  pending_approval
+  approved
+  rejected
+  cancelled
+}
+
 enum EmployeeStatus {
   active
   inactive
   on_leave
+}
+
+enum DailyReportStatus {
+  submitted
+  approved
+  rejected
+  archived
 }
 
 enum EmployeeRole {
@@ -50,10 +69,22 @@ enum DocumentType {
 
 enum InvoiceStatus {
   draft
+  pending_foreman_approval
+  approved_by_foreman
+  rejected_by_foreman
+  sent_to_client
+  paid
+  // Legacy values kept for backward compatibility with existing rows
   submitted
   approved
-  paid
   rejected
+}
+
+enum InvoiceApprovalStatus {
+  pending
+  approved
+  rejected
+  cancelled
 }
 
 enum NotificationType {
@@ -73,6 +104,7 @@ enum ActivityType {
   status_changed
   employee_assigned
   project_updated
+  delivery_note_created
 }
 
 enum MediaType {
@@ -87,17 +119,27 @@ enum AuditAction {
   UPLOAD
 }
 
+enum WorkJournalStatus {
+  draft
+  in_progress
+  submitted
+}
+
 // ─── Users ───────────────────────────────────────────────────────────────────
 
 model User {
-  id         String   @id @default(cuid())
-  supabaseId String?  @unique
-  email      String   @unique
-  name       String
-  role       String   @default("admin")
-  avatarUrl  String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String   @id @default(cuid())
+  supabaseId   String?  @unique
+  email        String   @unique
+  /** Login username for field managers (and future roles) */
+  username     String?  @unique
+  passwordHash String?
+  name         String
+  /** FIELD_MANAGER | admin | office roles… */
+  role         String   @default("admin")
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   employee Employee?
 
@@ -108,15 +150,26 @@ model User {
   updatedBoqItems   BoqItem[]  @relation("BoqUpdatedBy")
   createdReports    WorkReport[] @relation("ReportCreatedBy")
   updatedReports    WorkReport[] @relation("ReportUpdatedBy")
+  createdDailyReports DailyReport[] @relation("DailyReportCreatedBy")
+  updatedDailyReports DailyReport[] @relation("DailyReportUpdatedBy")
   uploadedDocuments Document[] @relation("DocumentUploadedBy")
   createdDocuments  Document[] @relation("DocumentCreatedBy")
   updatedDocuments  Document[] @relation("DocumentUpdatedBy")
   uploadedGallery   GalleryItem[] @relation("GalleryUploadedBy")
   createdInvoices   PartialInvoice[] @relation("InvoiceCreatedBy")
   updatedInvoices   PartialInvoice[] @relation("InvoiceUpdatedBy")
+  createdApprovals  ProjectInvoiceApproval[] @relation("ApprovalCreatedBy")
+  createdDeliveryNotes  DeliveryNote[] @relation("DeliveryNoteCreatedBy")
+  updatedDeliveryNotes  DeliveryNote[] @relation("DeliveryNoteUpdatedBy")
   activities        Activity[]
   notifications     Notification[]
   auditLogs         AuditLog[]
+  createdExecutions BoqExecution[] @relation("ExecutionCreatedBy")
+  updatedExecutions BoqExecution[] @relation("ExecutionUpdatedBy")
+  executionComments BoqExecutionComment[]
+  executionHistory  BoqExecutionHistory[]
+  createdWorkJournals WorkJournal[] @relation("WorkJournalCreatedBy")
+  updatedWorkJournals WorkJournal[] @relation("WorkJournalUpdatedBy")
 }
 
 // ─── Employees ───────────────────────────────────────────────────────────────
@@ -129,6 +182,10 @@ model Employee {
   email             String         @unique
   role              EmployeeRole
   status            EmployeeStatus @default(active)
+  /** Soft delete — history retained */
+  isDeleted         Boolean        @default(false)
+  deletedAt         DateTime?
+  notes             String?
   avatarUrl         String?
   avatarPath        String?
   avatarBucket      String?
@@ -137,13 +194,24 @@ model Employee {
   joinedAt          DateTime
   userId            String?        @unique
   user              User?          @relation(fields: [userId], references: [id])
+  /** Infrastructure flag — create system user later (manager workspace) */
+  wantsSystemUser   Boolean        @default(false)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
   foremanProjects Project[]         @relation("ProjectForeman")
   projectLinks    ProjectEmployee[]
   reports         WorkReport[]
+  dailyReports    DailyReport[]     @relation("DailyReportForeman")
   galleryItems    GalleryItem[]
+  invoiceApprovals ProjectInvoiceApproval[]
+  executionsAsWorker  BoqExecution[] @relation("ExecutionWorker")
+  executionsAsForeman BoqExecution[] @relation("ExecutionForeman")
+  workJournals        WorkJournal[]  @relation("WorkJournalForeman")
+  fieldCrewMembers    FieldCrewMember[]
+  fieldAttendances    FieldAttendance[]
+
+  @@index([isDeleted])
 }
 
 model ProjectEmployee {
@@ -171,7 +239,13 @@ model Project {
   status         ProjectStatus @default(active)
   contractValue  Decimal       @db.Decimal(14, 2)
   completedValue Decimal       @default(0) @db.Decimal(14, 2)
+  invoicedValue  Decimal       @default(0) @db.Decimal(14, 2)
   progress       Float         @default(0)
+  financialProgress Float      @default(0)
+  subtotal       Decimal?      @db.Decimal(14, 2)
+  vatPercent     Decimal?      @db.Decimal(5, 2)
+  vatAmount      Decimal?      @db.Decimal(14, 2)
+  totalWithVat   Decimal?      @db.Decimal(14, 2)
   imageUrl       String?
   imagePath      String?
   imageBucket    String?
@@ -191,10 +265,16 @@ model Project {
   reports       WorkReport[]
   documents     Document[]
   invoices      PartialInvoice[]
+  invoiceApprovals ProjectInvoiceApproval[]
+  deliveryNotes DeliveryNote[]
+  executions    BoqExecution[]
   activities    Activity[]
   employees     ProjectEmployee[]
   galleryItems  GalleryItem[]
   notifications Notification[]
+  workJournals  WorkJournal[]
+  dailyReports  DailyReport[]
+  fieldAttendances FieldAttendance[]
 
   @@index([status])
   @@index([foremanId])
@@ -211,8 +291,9 @@ model BoqItem {
   description       String
   unit              String
   contractQuantity  Decimal       @db.Decimal(12, 4)
-  completedQuantity Decimal       @default(0) @db.Decimal(12, 4)
-  remainingQuantity Decimal       @default(0) @db.Decimal(12, 4)
+  completedQuantity Decimal       @default(0) @db.Decimal(12, 4) // executed / ביצוע בפועל
+  invoicedQuantity  Decimal       @default(0) @db.Decimal(12, 4) // חויב בחשבונות
+  remainingQuantity Decimal       @default(0) @db.Decimal(12, 4) // חוזה - בוצע
   unitPrice         Decimal       @db.Decimal(12, 2)
   completedValue    Decimal       @default(0) @db.Decimal(14, 2)
   remainingValue    Decimal       @default(0) @db.Decimal(14, 2)
@@ -232,10 +313,114 @@ model BoqItem {
   reports      WorkReport[]
   invoiceItems InvoiceItem[]
   galleryItems GalleryItem[]
+  executions   BoqExecution[]
+  journalLines WorkJournalBoqLine[]
 
   @@index([projectId])
   @@index([code])
   @@index([status])
+}
+
+// ─── BOQ Executions (central field-performance entity) ─────────────────────────
+
+model BoqExecution {
+  id           String          @id @default(cuid())
+  projectId    String
+  project      Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  boqItemId    String
+  boqItem      BoqItem         @relation(fields: [boqItemId], references: [id])
+  employeeId   String
+  employee     Employee        @relation("ExecutionWorker", fields: [employeeId], references: [id])
+  foremanId    String?
+  foreman      Employee?       @relation("ExecutionForeman", fields: [foremanId], references: [id])
+  quantity     Decimal         @db.Decimal(12, 4)
+  executedAt   DateTime
+  status       ExecutionStatus @default(in_progress)
+  notes        String?
+  source       String          @default("office") // office | field | system | legacy
+  workReportId String?         @unique
+  workReport   WorkReport?     @relation(fields: [workReportId], references: [id], onDelete: SetNull)
+  createdById  String
+  createdBy    User            @relation("ExecutionCreatedBy", fields: [createdById], references: [id])
+  updatedById  String
+  updatedBy    User            @relation("ExecutionUpdatedBy", fields: [updatedById], references: [id])
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  media       BoqExecutionMedia[]
+  attachments BoqExecutionAttachment[]
+  comments    BoqExecutionComment[]
+  history     BoqExecutionHistory[]
+
+  @@index([projectId])
+  @@index([boqItemId])
+  @@index([employeeId])
+  @@index([foremanId])
+  @@index([executedAt])
+  @@index([status])
+}
+
+model BoqExecutionMedia {
+  id            String       @id @default(cuid())
+  executionId   String
+  execution     BoqExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  type          MediaType
+  name          String
+  extension     String
+  size          Int
+  bucket        String
+  path          String
+  url           String
+  thumbnailUrl  String?
+  thumbnailPath String?
+  createdAt     DateTime     @default(now())
+
+  @@index([executionId])
+}
+
+model BoqExecutionAttachment {
+  id          String       @id @default(cuid())
+  executionId String
+  execution   BoqExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  name        String
+  mimeType    String
+  size        Int
+  kind        String       @default("document")
+  bucket      String
+  path        String
+  url         String
+  createdAt   DateTime     @default(now())
+
+  @@index([executionId])
+}
+
+model BoqExecutionComment {
+  id          String       @id @default(cuid())
+  executionId String
+  execution   BoqExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  body        String
+  createdAt   DateTime     @default(now())
+
+  @@index([executionId])
+}
+
+model BoqExecutionHistory {
+  id          String           @id @default(cuid())
+  executionId String
+  execution   BoqExecution     @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  action      String
+  fromStatus  ExecutionStatus?
+  toStatus    ExecutionStatus?
+  quantity    Decimal?         @db.Decimal(12, 4)
+  metadata    String?
+  userId      String
+  user        User             @relation(fields: [userId], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@index([executionId])
+  @@index([createdAt])
 }
 
 // ─── Work Reports ──────────────────────────────────────────────────────────────
@@ -260,6 +445,7 @@ model WorkReport {
 
   media        ReportMedia[]
   galleryItems GalleryItem[]
+  execution    BoqExecution?
 
   @@index([projectId])
   @@index([boqItemId])
@@ -333,46 +519,233 @@ model DocumentVersion {
 // ─── Partial Invoices ──────────────────────────────────────────────────────────
 
 model PartialInvoice {
-  id            String        @id @default(cuid())
-  projectId     String
-  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  invoiceNumber String        @unique
-  amount        Decimal       @db.Decimal(14, 2)
-  status        InvoiceStatus @default(draft)
-  date          DateTime
-  dueDate       DateTime
-  notes         String?
-  bucket        String?
-  path          String?
-  url           String?
-  ownerId       String
-  createdById   String
-  createdBy     User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
-  updatedById   String
-  updatedBy     User          @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  projectId      String
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  invoiceNumber  String        @unique
+  sequenceNumber Int           @default(1)
+  billingMonth   String        @default("")
+  billTo         String?
+  contractor     String?
+  amount         Decimal       @db.Decimal(14, 2)
+  subtotal       Decimal?      @db.Decimal(14, 2)
+  vatPercent     Decimal?      @db.Decimal(5, 2)
+  vatAmount      Decimal?      @db.Decimal(14, 2)
+  totalWithVat   Decimal?      @db.Decimal(14, 2)
+  status         InvoiceStatus @default(draft)
+  date           DateTime
+  dueDate        DateTime
+  notes          String?
+  bucket         String?
+  path           String?
+  url            String?
+  ownerId        String
+  createdById    String
+  createdBy      User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedById    String
+  updatedBy      User          @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  items InvoiceItem[]
+  items      InvoiceItem[]
+  approvals  ProjectInvoiceApproval[]
 
+  @@index([projectId, sequenceNumber])
   @@index([projectId])
   @@index([status])
 }
 
+/**
+ * Foreman invoice approval workflow (office ↔ field).
+ * Manager workspace UI will consume this model later — do not remove/rename lightly.
+ */
+model ProjectInvoiceApproval {
+  id          String                @id @default(cuid())
+  invoiceId   String
+  invoice     PartialInvoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  projectId   String
+  project     Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  managerId   String
+  manager     Employee              @relation(fields: [managerId], references: [id])
+  status      InvoiceApprovalStatus @default(pending)
+  sentAt      DateTime?
+  approvedAt  DateTime?
+  rejectedAt  DateTime?
+  comment     String?
+  createdById String
+  createdBy   User                  @relation("ApprovalCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([invoiceId])
+  @@index([projectId])
+  @@index([managerId])
+  @@index([status])
+}
+
 model InvoiceItem {
-  id        String         @id @default(cuid())
-  invoiceId String
-  invoice   PartialInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  boqItemId String
-  boqItem   BoqItem        @relation(fields: [boqItemId], references: [id])
-  code      String
-  description String
-  quantity  Decimal        @db.Decimal(12, 4)
-  unitPrice Decimal        @db.Decimal(12, 2)
-  total     Decimal        @db.Decimal(14, 2)
+  id                 String         @id @default(cuid())
+  invoiceId          String
+  invoice            PartialInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  boqItemId          String
+  boqItem            BoqItem        @relation(fields: [boqItemId], references: [id])
+  code               String
+  description        String
+  unit               String         @default("יח'")
+  contractQuantity   Decimal        @default(0) @db.Decimal(12, 4)
+  previousQuantity   Decimal        @default(0) @db.Decimal(12, 4)
+  quantity           Decimal        @db.Decimal(12, 4) // current invoice qty
+  cumulativeQuantity Decimal        @default(0) @db.Decimal(12, 4)
+  quantityPercent    Float          @default(0)
+  unitPrice          Decimal        @db.Decimal(12, 2)
+  total              Decimal        @db.Decimal(14, 2) // current amount
+  cumulativeAmount   Decimal        @default(0) @db.Decimal(14, 2)
+  financialPercent   Float          @default(0)
 
   @@index([invoiceId])
   @@index([boqItemId])
+}
+
+// ─── Clients (directory; DN keeps denormalized snapshot strings) ─────────────
+
+model Client {
+  id             String   @id @default(cuid())
+  clientNumber   String?
+  name           String
+  companyName    String?
+  contactName    String?
+  phone          String?
+  phoneSecondary String?
+  address        String?
+  city           String?
+  email          String?
+  notes          String?
+  ownerId        String
+  createdById    String
+  updatedById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  deliveryNotes DeliveryNote[]
+
+  @@index([name])
+  @@index([phone])
+  @@index([clientNumber])
+  @@index([ownerId])
+}
+
+// ─── Delivery Notes (independent module) ─────────────────────────────────────
+
+enum DeliveryNoteStatus {
+  draft
+  issued
+  in_transit
+  delivered
+  cancelled
+}
+
+model DeliveryNote {
+  id             String             @id @default(cuid())
+  noteNumber     String             @unique
+  sequenceNumber Int                @default(1)
+  status         DeliveryNoteStatus @default(issued)
+  date           DateTime
+  departureTime  String?
+  client         String
+  clientId       String?
+  clientCard     Client?            @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId      String?
+  project        Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  orderNumber    String?
+  contactName    String?
+  phone          String?
+  phoneSecondary String?
+  address        String?
+  city           String?
+  notes          String?
+
+  // Transport
+  driverName         String?
+  vehicle            String?
+  vehicleNumber      String?
+  externalCarrier    Boolean  @default(false)
+  deliveryTime       String?
+  destination        String?
+  destinationAddress String?
+  driverNotes        String?
+
+  // Signatures (digital signature later)
+  senderSigned   Boolean   @default(false)
+  receiverSigned Boolean   @default(false)
+  receiverName   String?
+  receivedAt     DateTime?
+
+  // Delivery confirmation (legal/ops)
+  equipmentCheckedIntact Boolean @default(false)
+  receivedComplete       Boolean @default(false)
+  receivedWithNotes      Boolean @default(false)
+  receiptNotes           String?
+
+  // Future channels / proof of delivery (infra only)
+  qrCodePayload    String?
+  barcodePayload   String?
+  whatsappSentAt   DateTime?
+  emailSentAt      DateTime?
+  deliveryPhotoUrl String?
+  deliveryGpsLat   Float?
+  deliveryGpsLng   Float?
+
+  bucket String?
+  path   String?
+  url    String?
+
+  ownerId     String
+  createdById String
+  createdBy   User     @relation("DeliveryNoteCreatedBy", fields: [createdById], references: [id])
+  updatedById String
+  updatedBy   User     @relation("DeliveryNoteUpdatedBy", fields: [updatedById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items       DeliveryNoteItem[]
+  attachments DeliveryNoteAttachment[]
+
+  @@index([projectId])
+  @@index([clientId])
+  @@index([date])
+  @@index([status])
+}
+
+model DeliveryNoteItem {
+  id             String       @id @default(cuid())
+  deliveryNoteId String
+  deliveryNote   DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+  sku            String?
+  description    String
+  unit           String       @default("יח'")
+  quantity       Decimal      @db.Decimal(12, 4)
+  packageNumber  String?
+  serialNumber   String?
+  notes          String?
+  sortOrder      Int          @default(0)
+
+  @@index([deliveryNoteId])
+}
+
+model DeliveryNoteAttachment {
+  id             String       @id @default(cuid())
+  deliveryNoteId String
+  deliveryNote   DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+  name           String
+  mimeType       String
+  size           Int
+  kind           String       @default("document") // image | pdf | document
+  bucket         String
+  path           String
+  url            String
+  createdAt      DateTime     @default(now())
+
+  @@index([deliveryNoteId])
 }
 
 // ─── Gallery ───────────────────────────────────────────────────────────────────
@@ -453,6 +826,163 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([userId])
   @@index([createdAt])
+}
+
+// ─── Field crew (personal roster of Field Manager — no login) ─────────────────
+
+model FieldCrewMember {
+  id         String   @id @default(cuid())
+  managerId  String
+  manager    Employee @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  name       String
+  phone      String?
+  profession String?
+  status     String   @default("active") // active | inactive
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  journalRows WorkJournalWorker[]
+
+  @@index([managerId])
+  @@index([status])
+}
+
+// ─── Field Work Journals (Simple Field App) ───────────────────────────────────
+
+model WorkJournal {
+  id               String            @id @default(cuid())
+  foremanId        String
+  foreman          Employee          @relation("WorkJournalForeman", fields: [foremanId], references: [id])
+  projectId        String
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date             DateTime          @db.Date
+  clientName       String?
+  address          String?
+  workArea         String?
+  generalNotes     String?
+  /** פעולות שבוצעו */
+  actionsPerformed String?
+  /** חריגות */
+  exceptions       String?
+  /** ציוד ששימש */
+  equipment        String?
+  notes            String?
+  signatureData    String?
+  signedAt         DateTime?
+  status           WorkJournalStatus @default(draft)
+  submittedAt      DateTime?
+  createdById      String
+  createdBy        User              @relation("WorkJournalCreatedBy", fields: [createdById], references: [id])
+  updatedById      String
+  updatedBy        User              @relation("WorkJournalUpdatedBy", fields: [updatedById], references: [id])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  workers     WorkJournalWorker[]
+  lines       WorkJournalBoqLine[]
+  media       WorkJournalMedia[]
+  dailyReport DailyReport?
+
+  @@index([foremanId])
+  @@index([projectId])
+  @@index([date])
+  @@index([status])
+}
+
+/** Day report sent by field manager → office /reports (1:1 with submitted journal) */
+model DailyReport {
+  id            String            @id @default(cuid())
+  workJournalId String            @unique
+  workJournal   WorkJournal       @relation(fields: [workJournalId], references: [id], onDelete: Cascade)
+  projectId     String
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  foremanId     String
+  foreman       Employee          @relation("DailyReportForeman", fields: [foremanId], references: [id])
+  status        DailyReportStatus @default(submitted)
+  submittedAt   DateTime
+  approvedAt    DateTime?
+  officeNotes   String?
+  createdById   String
+  createdBy     User              @relation("DailyReportCreatedBy", fields: [createdById], references: [id])
+  updatedById   String
+  updatedBy     User              @relation("DailyReportUpdatedBy", fields: [updatedById], references: [id])
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([projectId])
+  @@index([foremanId])
+  @@index([submittedAt])
+  @@index([status])
+}
+
+model WorkJournalWorker {
+  id           String          @id @default(cuid())
+  journalId    String
+  journal      WorkJournal     @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  crewMemberId String
+  crewMember   FieldCrewMember @relation(fields: [crewMemberId], references: [id])
+  /** Snapshot at time of journal */
+  workerName   String
+  profession   String?
+  startTime    String?
+  endTime      String?
+  totalHours   Float           @default(0)
+  status       String          @default("present") // present | absent | half
+  note         String?
+  sortOrder    Int             @default(0)
+
+  @@index([journalId])
+  @@index([crewMemberId])
+  @@unique([journalId, crewMemberId])
+}
+
+model WorkJournalBoqLine {
+  id          String       @id @default(cuid())
+  journalId   String
+  journal     WorkJournal  @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  boqItemId   String
+  boqItem     BoqItem      @relation(fields: [boqItemId], references: [id])
+  quantity    Decimal      @db.Decimal(12, 4)
+  note        String?
+  executionId String?
+  sortOrder   Int          @default(0)
+
+  @@index([journalId])
+  @@index([boqItemId])
+}
+
+model WorkJournalMedia {
+  id            String      @id @default(cuid())
+  journalId     String
+  journal       WorkJournal @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  type          MediaType
+  name          String
+  extension     String
+  size          Int
+  bucket        String
+  path          String
+  url           String
+  thumbnailUrl  String?
+  createdAt     DateTime    @default(now())
+
+  @@index([journalId])
+}
+
+model FieldAttendance {
+  id           String    @id @default(cuid())
+  foremanId    String
+  foreman      Employee  @relation(fields: [foremanId], references: [id])
+  projectId    String?
+  project      Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  checkedInAt  DateTime
+  checkedOutAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([foremanId])
+  @@index([projectId])
+  @@index([checkedInAt])
 }
 
 // ─── AI Document Parse ─────────────────────────────────────────────────────────

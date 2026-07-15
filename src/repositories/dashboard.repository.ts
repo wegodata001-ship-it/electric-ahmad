@@ -62,7 +62,13 @@ export class DashboardRepository {
 
   static async search(query: string) {
     const q = query.toLowerCase();
-    const [projectResults, employeeResults, boqResults] = await Promise.all([
+    const [
+      projectResults,
+      employeeResults,
+      boqResults,
+      invoiceResults,
+      deliveryResults,
+    ] = await Promise.all([
       prisma.project.findMany({
         where: {
           OR: [
@@ -90,6 +96,24 @@ export class DashboardRepository {
         },
         take: 3,
       }),
+      prisma.partialInvoice.findMany({
+        where: {
+          OR: [
+            { invoiceNumber: { contains: q, mode: "insensitive" } },
+            { billTo: { contains: q, mode: "insensitive" } },
+          ],
+        },
+        take: 3,
+      }),
+      prisma.deliveryNote.findMany({
+        where: {
+          OR: [
+            { noteNumber: { contains: q, mode: "insensitive" } },
+            { client: { contains: q, mode: "insensitive" } },
+          ],
+        },
+        take: 3,
+      }),
     ]);
 
     return [
@@ -112,7 +136,21 @@ export class DashboardRepository {
         type: "boq_item" as const,
         title: b.description,
         subtitle: b.code,
-        link: "/boq",
+        link: `/boq?projectId=${b.projectId}`,
+      })),
+      ...invoiceResults.map((inv) => ({
+        id: inv.id,
+        type: "invoice" as const,
+        title: `חשבון ${inv.sequenceNumber}`,
+        subtitle: inv.invoiceNumber,
+        link: `/invoices/${inv.id}`,
+      })),
+      ...deliveryResults.map((dn) => ({
+        id: dn.id,
+        type: "delivery_note" as const,
+        title: dn.noteNumber,
+        subtitle: dn.client,
+        link: `/delivery-notes/${dn.id}`,
       })),
     ];
   }

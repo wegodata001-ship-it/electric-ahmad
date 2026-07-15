@@ -27,6 +27,12 @@ async function main() {
   await prisma.auditLog.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.activity.deleteMany();
+  await prisma.workJournalMedia.deleteMany();
+  await prisma.workJournalBoqLine.deleteMany();
+  await prisma.workJournalWorker.deleteMany();
+  await prisma.workJournal.deleteMany();
+  await prisma.fieldCrewMember.deleteMany();
+  await prisma.fieldAttendance.deleteMany();
   await prisma.reportMedia.deleteMany();
   await prisma.workReport.deleteMany();
   await prisma.invoiceItem.deleteMany();
@@ -40,30 +46,60 @@ async function main() {
   await prisma.employee.deleteMany();
   await prisma.user.deleteMany();
 
+  const { hashPassword } = await import("../src/lib/auth/password");
+  const {
+    FIELD_MANAGER_ROLE,
+    PROJECT_MANAGER_ROLE,
+  } = await import("../src/lib/auth/roles");
+
   const adminUser = await prisma.user.create({
     data: {
       email: "admin@wego-electric.co.il",
+      username: "admin",
+      passwordHash: await hashPassword("Admin123!"),
       name: "אדמין WEGO",
-      role: "מנהל מערכת",
-      avatarUrl: "https://api.dicebear.com/7.x/initials/svg?seed=Admin&backgroundColor=2563eb",
+      role: PROJECT_MANAGER_ROLE,
+      avatarUrl:
+        "https://api.dicebear.com/7.x/initials/svg?seed=Admin&backgroundColor=2563eb",
     },
   });
   idMap.users.set("user_001", adminUser.id);
+  console.log("Office login: username=admin password=Admin123!");
+  let demoForemanLinked = false;
 
   for (let i = 0; i < mockEmployees.length; i++) {
     const emp = mockEmployees[i];
+    const email = `${emp.firstName.toLowerCase()}.${emp.lastName.toLowerCase()}.${i}@wego-electric.co.il`;
+
+    let userId: string | undefined;
+    if (!demoForemanLinked && emp.role === "foreman") {
+      const fieldUser = await prisma.user.create({
+        data: {
+          email: `field.${email}`,
+          username: "foreman1",
+          passwordHash: await hashPassword("Foreman123!"),
+          name: `${emp.firstName} ${emp.lastName}`,
+          role: FIELD_MANAGER_ROLE,
+        },
+      });
+      userId = fieldUser.id;
+      demoForemanLinked = true;
+      console.log("Field login: username=foreman1 password=Foreman123!");
+    }
+
     const created = await prisma.employee.create({
       data: {
         firstName: emp.firstName,
         lastName: emp.lastName,
         phone: emp.phone,
-        email: `${emp.firstName.toLowerCase()}.${emp.lastName.toLowerCase()}.${i}@wego-electric.co.il`,
+        email,
         role: emp.role,
         status: emp.status,
         avatarUrl: emp.avatarUrl,
         completedQuantity: emp.completedQuantity,
         openQuantity: emp.openQuantity,
         joinedAt: new Date(emp.joinedAt),
+        userId,
       },
     });
     idMap.employees.set(emp.id, created.id);

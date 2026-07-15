@@ -28,6 +28,7 @@ export function generateBoqItems(): BoqItem[] {
       const progress = contractQuantity > 0 ? (completedQuantity / contractQuantity) * 100 : 0;
 
       globalIndex++;
+      const invoicedQuantity = 0;
       items.push({
         id: generateId("boq", globalIndex),
         projectId: project.id,
@@ -35,7 +36,10 @@ export function generateBoqItems(): BoqItem[] {
         description: template.description,
         unit: template.unit,
         contractQuantity,
+        executedQuantity: completedQuantity,
         completedQuantity,
+        invoicedQuantity,
+        availableForInvoice: Math.max(0, completedQuantity - invoicedQuantity),
         remainingQuantity,
         unitPrice,
         completedValue,

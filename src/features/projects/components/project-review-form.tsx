@@ -6,6 +6,7 @@ import { Button, Card, Input } from "@/components/ui";
 import { projectService } from "@/services";
 import { formatCurrency } from "@/utils/format";
 import type { ParsedBoqItem, ParsedContractBoqResult, ParsedProjectDetails } from "@/lib/ai/types";
+import { cleanBoqDescription } from "@/utils/boq-text";
 
 interface ProjectReviewFormProps {
   projectId: string;
@@ -67,11 +68,20 @@ export function ProjectReviewForm({
     location: initialParsed?.project.location ?? "",
     date: initialParsed?.project.date ?? "",
     contractValue: initialParsed?.project.contractValue ?? null,
+    subtotal: initialParsed?.project.subtotal ?? null,
+    vatPercent: initialParsed?.project.vatPercent ?? null,
+    vatAmount: initialParsed?.project.vatAmount ?? null,
+    totalWithVat: initialParsed?.project.totalWithVat ?? null,
     paymentTerms: initialParsed?.project.paymentTerms ?? "",
     currency: initialParsed?.project.currency ?? "ILS",
     notes: initialParsed?.project.notes ?? "",
   });
-  const [items, setItems] = useState<ParsedBoqItem[]>(initialParsed?.items ?? []);
+  const [items, setItems] = useState<ParsedBoqItem[]>(
+    (initialParsed?.items ?? []).map((item) => ({
+      ...item,
+      description: cleanBoqDescription(item.description) || item.description,
+    }))
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -200,6 +210,45 @@ export function ProjectReviewForm({
             }
             required
             missing={missing.has("project.contractValue")}
+          />
+          <Field
+            label="סכום לפני מע״מ"
+            type="number"
+            value={project.subtotal ?? ""}
+            onChange={(v) =>
+              setProject((p) => ({ ...p, subtotal: v ? Number(v) : null }))
+            }
+            missing={missing.has("project.subtotal")}
+          />
+          <Field
+            label="אחוז מע״מ"
+            type="number"
+            value={project.vatPercent ?? ""}
+            onChange={(v) =>
+              setProject((p) => ({ ...p, vatPercent: v ? Number(v) : null }))
+            }
+            missing={missing.has("project.vatPercent")}
+          />
+          <Field
+            label="סכום מע״מ"
+            type="number"
+            value={project.vatAmount ?? ""}
+            onChange={(v) =>
+              setProject((p) => ({ ...p, vatAmount: v ? Number(v) : null }))
+            }
+            missing={missing.has("project.vatAmount")}
+          />
+          <Field
+            label="סה״כ כולל מע״מ"
+            type="number"
+            value={project.totalWithVat ?? ""}
+            onChange={(v) =>
+              setProject((p) => ({
+                ...p,
+                totalWithVat: v ? Number(v) : null,
+              }))
+            }
+            missing={missing.has("project.totalWithVat")}
           />
           <Field
             label="תנאי תשלום"

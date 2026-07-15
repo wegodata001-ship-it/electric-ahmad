@@ -1,33 +1,47 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Bell, Search } from "lucide-react";
+import { Bell, LogOut, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app.store";
 import { searchService } from "@/services";
 import { notificationService } from "@/features/notifications/services/notification.service";
-import { currentUser } from "@/mock";
 import { Avatar, Button } from "@/components/ui";
 import { formatRelative } from "@/utils/format";
 import { motion, AnimatePresence } from "framer-motion";
 
+type OfficeMe = {
+  id: string;
+  name: string;
+  role: string;
+  roleLabel: string;
+  avatarUrl: string;
+};
+
 const breadcrumbMap: Record<string, string> = {
-  dashboard: "דשבורד",
+  dashboard: "Dashboard",
   projects: "פרויקטים",
-  boq: "כתב כמויות",
+  boq: "כתבי כמויות",
   employees: "עובדים",
   reports: "דיווחים",
   documents: "מסמכים",
-  "partial-invoices": "חשבונות חלקיים",
-  gallery: "גלריה",
+  invoices: "חשבונות",
+  "partial-invoices": "חשבונות",
+  "delivery-notes": "תעודות משלוח",
+  foremen: "מנהלי עבודה",
+  gallery: "דיווחים",
   settings: "הגדרות",
   worker: "אפליקציית עובד",
+  field: "אפליקציית שטח",
+  new: "חדש",
+  print: "הדפסה",
 };
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const {
     sidebarCollapsed,
     searchQuery,
@@ -46,10 +60,32 @@ export function Header() {
   } = useAppStore();
 
   const [searchFocused, setSearchFocused] = useState(false);
+  const [me, setMe] = useState<OfficeMe | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     notificationService.getAll().then(setNotifications);
   }, [setNotifications]);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setMe(json.data);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  async function logout() {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.replace("/login");
+      router.refresh();
+    } finally {
+      setLoggingOut(false);
+    }
+  }
 
   const handleSearch = useCallback(
     async (query: string) => {
@@ -93,7 +129,7 @@ export function Header() {
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
-            placeholder="חיפוש פרויקטים, עובדים, סעיפים..."
+            placeholder="חיפוש פרויקטים, עובדים, כתבי כמויות, חשבונות..."
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             onFocus={() => setSearchFocused(true)}
@@ -182,11 +218,34 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2 mr-2 pr-2 border-r border-gray-200">
-          <Avatar src={currentUser.avatarUrl} name={currentUser.name} size="sm" />
-          <div className="hidden lg:block">
-            <p className="text-sm font-medium text-gray-900 leading-tight">{currentUser.name}</p>
-            <p className="text-xs text-gray-400 leading-tight">{currentUser.role}</p>
+          <Avatar
+            src={me?.avatarUrl}
+            name={me?.name || "משתמש"}
+            size="sm"
+          />
+          <div className="hidden lg:block min-w-0">
+            <p className="text-sm font-medium text-gray-900 leading-tight truncate">
+              {me?.name || "…"}
+            </p>
+            <button
+              type="button"
+              onClick={logout}
+              disabled={loggingOut}
+              className="text-xs text-gray-400 leading-tight hover:text-red-600 transition-colors inline-flex items-center gap-1"
+            >
+              <LogOut className="h-3 w-3" />
+              {loggingOut ? "מתנתק..." : "התנתק"}
+            </button>
           </div>
+          <button
+            type="button"
+            onClick={logout}
+            disabled={loggingOut}
+            title="התנתק"
+            className="lg:hidden p-1.5 text-gray-400 hover:text-red-600 rounded-lg"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </header>

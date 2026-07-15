@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { mapWorkReport } from "@/lib/mappers";
-import { BOQRepository } from "./boq.repository";
 import { AuditRepository } from "./audit.repository";
+import { BoqExecutionsRepository } from "./boq-executions.repository";
 
 export class ReportsRepository {
   static reportInclude = {
@@ -80,11 +80,10 @@ export class ReportsRepository {
     },
     userId: string
   ) {
-    const boqItem = await prisma.boqItem.findUnique({ where: { id: data.boqItemId } });
+    const boqItem = await prisma.boqItem.findUnique({
+      where: { id: data.boqItemId },
+    });
     if (!boqItem) throw new Error("סעיף BOQ לא נמצא");
-
-    const newCompleted = Number(boqItem.completedQuantity) + data.quantity;
-    await BOQRepository.updateQuantities(data.boqItemId, newCompleted, userId);
 
     const row = await prisma.workReport.create({
       data: {
@@ -99,6 +98,22 @@ export class ReportsRepository {
       },
       include: this.reportInclude,
     });
+
+    // Bridge into central BoqExecution entity (no double-count via workReportId link)
+    await BoqExecutionsRepository.create(
+      {
+        projectId: data.projectId,
+        boqItemId: data.boqItemId,
+        employeeId: data.employeeId,
+        quantity: data.quantity,
+        executedAt: (data.reportedAt ?? new Date()).toISOString(),
+        notes: data.notes,
+        status: "completed",
+        source: "field",
+        workReportId: row.id,
+      },
+      userId
+    );
 
     await prisma.activity.create({
       data: {

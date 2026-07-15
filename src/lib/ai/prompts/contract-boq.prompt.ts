@@ -14,6 +14,10 @@ export const CONTRACT_BOQ_USER_PROMPT = `נתח את מסמך ה-PDF המצור�
     "location": string | null,
     "date": string | null,
     "contractValue": number | null,
+    "subtotal": number | null,
+    "vatPercent": number | null,
+    "vatAmount": number | null,
+    "totalWithVat": number | null,
     "paymentTerms": string | null,
     "currency": string | null,
     "notes": string | null
@@ -41,9 +45,19 @@ export const CONTRACT_BOQ_USER_PROMPT = `נתח את מסמך ה-PDF המצור�
 
 כללים:
 1. זהה את כל סעיפי כתב הכמויות לפי סדר הופעתם במסמך.
-2. שמור פרקים ותתי פרקים אם קיימים.
-3. מספרים כמספרים (לא מחרוזות). אם חסר — null.
-4. אם מחיר כולל חסר אך יש כמות ומחיר יחידה — חשב totalPrice.
-5. missingFields: רשימת שדות חשובים שלא זוהו (למשל project.name, project.contractNumber).
-6. confidence: 0 עד 1.
-7. החזר JSON תקין בלבד.`;
+2. שמור פרקים ותתי פרקים בשדות chapter / subChapter / category בלבד — לעולם אל תכניס אותם לתוך description.
+3. description חייב להכיל רק את תיאור העבודה הנקי, בלי:
+   - טקסט בתוך סוגריים מרובעים [ ... ]
+   - שם מסמך / שם פרק / מספר פרק כקידומת
+   - קידומות כמו "01 גלובל גולד / 01.08.01 ..."
+4. unitPrice ו-totalPrice: העדף מחירים לפני מע"מ אם המסמך מציין זאת במפורש; אם מופיע רק מחיר כולל מע"מ ואין פירוט — השאר כפי שמופיע ואל תמציא פיצול.
+5. מע"מ ברמת הפרויקט/החוזה:
+   - אם המסמך מציין אחוז מע"מ, סכום לפני מע"מ, סכום מע"מ ו/או סה"כ כולל מע"מ — העתק את הערכים המדויקים מהמסמך לשדות subtotal, vatPercent, vatAmount, totalWithVat.
+   - אין לחשב אוטומטית ערכים אם הם כבר מופיעים במסמך. העדף תמיד את הערכים הכתובים בחוזה.
+   - אם חלק מהשדות חסרים במסמך — השאר null (אל תמציא).
+   - contractValue: העדף את הסכום הכולל של החוזה כפי שמופיע (בדרך כלל כולל מע"מ אם כך כתוב; אחרת לפני מע"מ). אם יש totalWithVat — אפשר להשתמש בו גם כ-contractValue כאשר זה שווי החוזה הסופי.
+6. מספרים כמספרים (לא מחרוזות). אם חסר — null.
+7. אם מחיר כולל חסר אך יש כמות ומחיר יחידה — חשב totalPrice משורת הכמויות בלבד.
+8. missingFields: רשימת שדות חשובים שלא זוהו (למשל project.name, project.vatPercent).
+9. confidence: 0 עד 1.
+10. החזר JSON תקין בלבד.`;

@@ -10,6 +10,11 @@ import type {
   AiParseResult,
   ParsedContractBoqResult,
 } from "./types";
+import { cleanBoqDescription } from "@/utils/boq-text";
+
+function asNullableNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
 
 function extractJson(text: string): unknown {
   const trimmed = text.trim();
@@ -40,7 +45,7 @@ function normalizeContractBoq(raw: unknown): ParsedContractBoqResult {
 
         return {
           code: item.code ?? null,
-          description: item.description ?? null,
+          description: cleanBoqDescription(item.description) || null,
           unit: item.unit ?? null,
           contractQuantity: qty,
           unitPrice,
@@ -73,6 +78,18 @@ function normalizeContractBoq(raw: unknown): ParsedContractBoqResult {
     }
   }
 
+  const subtotal = asNullableNumber(project.subtotal);
+  const vatPercent = asNullableNumber(project.vatPercent);
+  const vatAmount = asNullableNumber(project.vatAmount);
+  const totalWithVat = asNullableNumber(project.totalWithVat);
+  let contractValue = asNullableNumber(project.contractValue);
+  // Prefer document total when contractValue missing — never invent VAT math
+  if (contractValue == null && totalWithVat != null) {
+    contractValue = totalWithVat;
+  } else if (contractValue == null && subtotal != null && vatAmount == null) {
+    contractValue = subtotal;
+  }
+
   return {
     documentType: "contract_boq",
     project: {
@@ -82,8 +99,11 @@ function normalizeContractBoq(raw: unknown): ParsedContractBoqResult {
       client: project.client ?? null,
       location: project.location ?? null,
       date: project.date ?? null,
-      contractValue:
-        typeof project.contractValue === "number" ? project.contractValue : null,
+      contractValue,
+      subtotal,
+      vatPercent,
+      vatAmount,
+      totalWithVat,
       paymentTerms: project.paymentTerms ?? null,
       currency: project.currency ?? null,
       notes: project.notes ?? null,

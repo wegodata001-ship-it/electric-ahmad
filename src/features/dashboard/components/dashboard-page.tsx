@@ -15,7 +15,7 @@ import { Card, CardHeader, CardTitle, CardContent, Progress } from "@/components
 import { dashboardService, projectService } from "@/services";
 import { activityService } from "@/features/activity/services/activity.service";
 import { reportService } from "@/features/reports/services/report.service";
-import type { DashboardKPIs, Project, Activity, WorkReport } from "@/types";
+import type { DashboardKPIs, Project, Activity, DailyReport } from "@/types";
 import { formatCurrency, formatPercent, formatRelative } from "@/utils/format";
 import {
   BarChart,
@@ -33,6 +33,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS } from "@/constants";
 import { Badge, CircularProgress } from "@/components/ui";
+import { quickNavigation } from "@/config/navigation";
 
 const kpiIcons = {
   activeProjects: Building2,
@@ -91,7 +92,7 @@ export function DashboardPage() {
   const [chartData, setChartData] = useState<{ name: string; completed: number; remaining: number }[]>([]);
   const [progressData, setProgressData] = useState<{ month: string; planned: number; actual: number }[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [recentReports, setRecentReports] = useState<WorkReport[]>([]);
+  const [recentReports, setRecentReports] = useState<DailyReport[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -122,8 +123,20 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">דשבורד</h1>
-        <p className="text-sm text-gray-500 mt-1">סקירה כללית של כל הפרויקטים</p>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-sm text-gray-500 mt-1">סקירה כללית של פעילות החברה</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {quickNavigation.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="px-3 py-1.5 text-sm rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-primary-50 hover:text-primary-700 hover:border-primary-200 transition-colors"
+          >
+            {item.name}
+          </Link>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -3,12 +3,12 @@
 import { useEffect, useState } from "react";
 import { employeeService } from "@/features/employees/services/employee.service";
 import { reportService } from "@/features/reports/services/report.service";
-import type { WorkReport, Employee } from "@/types";
+import type { DailyReport } from "@/types";
 import { Card } from "@/components/ui";
 import { formatRelative } from "@/utils/format";
 
 export function WorkerReportsPage() {
-  const [reports, setReports] = useState<WorkReport[]>([]);
+  const [reports, setReports] = useState<DailyReport[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,14 +45,19 @@ export function WorkerReportsPage() {
           <Card key={report.id} padding="sm">
             <div className="flex items-center justify-between mb-1">
               <p className="text-sm font-medium text-gray-900">
-                {report.quantity} {report.unit}
+                {report.projectName}
               </p>
-              <span className="text-xs text-gray-400">{formatRelative(report.reportedAt)}</span>
+              <span className="text-xs text-gray-400">
+                {formatRelative(report.submittedAt)}
+              </span>
             </div>
-            <p className="text-sm text-gray-600">{report.boqItemDescription}</p>
-            <p className="text-xs text-gray-400 mt-1">{report.projectName}</p>
-            {report.notes && (
-              <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded p-2">{report.notes}</p>
+            <p className="text-sm text-gray-600">
+              {report.workersCount} עובדים · {report.totalHours.toFixed(1)} שעות
+            </p>
+            {report.actionsPerformed && (
+              <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded p-2 line-clamp-2">
+                {report.actionsPerformed}
+              </p>
             )}
           </Card>
         ))}

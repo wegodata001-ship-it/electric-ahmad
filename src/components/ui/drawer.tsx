@@ -12,9 +12,24 @@ interface DrawerProps {
   title?: string;
   children: React.ReactNode;
   side?: "right" | "left";
+  /** Wide drawer for execution reporting / manager workspace */
+  size?: "md" | "lg" | "xl";
 }
 
-export function Drawer({ open, onClose, title, children, side = "right" }: DrawerProps) {
+const sizeClass = {
+  md: "max-w-md",
+  lg: "max-w-2xl",
+  xl: "max-w-3xl",
+} as const;
+
+export function Drawer({
+  open,
+  onClose,
+  title,
+  children,
+  side = "right",
+  size = "md",
+}: DrawerProps) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden";
@@ -43,7 +58,8 @@ export function Drawer({ open, onClose, title, children, side = "right" }: Drawe
             exit={{ x: side === "right" ? "100%" : "-100%" }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
             className={cn(
-              "absolute top-0 h-full w-full max-w-md bg-white shadow-xl border-gray-200",
+              "absolute top-0 h-full w-full bg-white shadow-xl border-gray-200",
+              sizeClass[size],
               side === "right" ? "right-0 border-l" : "left-0 border-r"
             )}
           >

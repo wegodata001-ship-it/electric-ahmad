@@ -44,19 +44,36 @@ export const EMPLOYEE_ROLE_LABELS: Record<EmployeeRole, string> = {
 
 export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   draft: "טיוטה",
+  pending_foreman_approval: "ממתין לאישור מנהל עבודה",
+  approved_by_foreman: "אושר על ידי מנהל עבודה",
+  rejected_by_foreman: "נדחה על ידי מנהל עבודה",
+  sent_to_client: "נשלח ללקוח",
+  paid: "שולם",
+  // Legacy labels (existing DB rows)
   submitted: "הוגש",
   approved: "אושר",
-  paid: "שולם",
   rejected: "נדחה",
 };
 
 export const INVOICE_STATUS_COLORS: Record<InvoiceStatus, string> = {
   draft: "bg-gray-50 text-gray-600 border-gray-200",
+  pending_foreman_approval: "bg-amber-50 text-amber-800 border-amber-200",
+  approved_by_foreman: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  rejected_by_foreman: "bg-red-50 text-red-700 border-red-200",
+  sent_to_client: "bg-blue-50 text-blue-700 border-blue-200",
+  paid: "bg-green-50 text-green-700 border-green-200",
   submitted: "bg-blue-50 text-blue-700 border-blue-200",
   approved: "bg-green-50 text-green-700 border-green-200",
-  paid: "bg-green-50 text-green-700 border-green-200",
   rejected: "bg-red-50 text-red-700 border-red-200",
 };
+
+/** Short office badges for foreman workflow */
+export const INVOICE_FOREMAN_BADGE_LABELS: Partial<Record<InvoiceStatus, string>> =
+  {
+    pending_foreman_approval: "ממתין לאישור",
+    approved_by_foreman: "אושר",
+    rejected_by_foreman: "נדחה",
+  };
 
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   pdf: "PDF",

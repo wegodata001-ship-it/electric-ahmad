@@ -5,6 +5,8 @@ export { Avatar } from "./avatar";
 export { Progress, CircularProgress } from "./progress";
 export { Input, SearchInput } from "./input";
 export { Modal } from "./modal";
+export { ConfirmationDialog } from "./confirmation-dialog";
+export { ToastProvider, useToast } from "./toast";
 export { Drawer } from "./drawer";
 export { EmptyState } from "./empty-state";
 export { Skeleton, TableSkeleton, CardSkeleton, PageLoading } from "./loading";

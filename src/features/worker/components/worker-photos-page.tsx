@@ -22,8 +22,8 @@ export function WorkerPhotosPage() {
           .flatMap((r) =>
             r.photoUrls.map((url) => ({
               url,
-              title: r.boqItemDescription,
-              date: r.reportedAt,
+              title: r.projectName,
+              date: r.submittedAt,
             }))
           );
         setPhotos(allPhotos);

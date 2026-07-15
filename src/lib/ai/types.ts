@@ -30,6 +30,10 @@ export interface ParsedProjectDetails {
   location: string | null;
   date: string | null;
   contractValue: number | null;
+  subtotal: number | null;
+  vatPercent: number | null;
+  vatAmount: number | null;
+  totalWithVat: number | null;
   paymentTerms: string | null;
   currency: string | null;
   notes: string | null;

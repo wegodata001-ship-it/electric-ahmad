@@ -36,6 +36,13 @@ export const apiClient = {
     });
   },
 
+  patch<T>(url: string, body?: unknown) {
+    return request<T>(url, {
+      method: "PATCH",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  },
+
   delete<T>(url: string) {
     return request<T>(url, { method: "DELETE" });
   },
