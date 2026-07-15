@@ -10,7 +10,6 @@ import {
   formatNumber,
   formatPercent,
 } from "@/utils/format";
-import { COMPANY_PROFILE } from "@/config/company";
 
 export function PartialInvoicePrintPage({ invoiceId }: { invoiceId: string }) {
   const searchParams = useSearchParams();
@@ -48,14 +47,14 @@ export function PartialInvoicePrintPage({ invoiceId }: { invoiceId: string }) {
   if (!invoice) {
     return (
       <div className="p-10 text-center text-sm text-gray-400" dir="rtl">
-        טוען חשבון חלקי...
+        טוען חשבון...
       </div>
     );
   }
 
-  const blue = COMPANY_PROFILE.brandBlue;
-  const blueDark = COMPANY_PROFILE.brandBlueDark;
-  const createdLabel = formatDate(invoice.createdAt);
+  const blue = "#1e40af";
+  const blueDark = "#1e3a8a";
+  const businessName = invoice.contractor?.trim() || invoice.projectName;
   const subtotal = invoice.subtotal ?? invoice.amount;
   const vatPercent = invoice.vatPercent ?? 0;
   const vatAmount = invoice.vatAmount ?? 0;
@@ -127,77 +126,21 @@ export function PartialInvoicePrintPage({ invoiceId }: { invoiceId: string }) {
         </button>
       </div>
 
-      <div className="inv-print-footer hidden print:!flex">
-        {COMPANY_PROFILE.name ? <span>{COMPANY_PROFILE.name}</span> : <span />}
-        <span>נוצר ב־{createdLabel}</span>
-        <span className="inv-page-label">חשבון חלקי</span>
-      </div>
-
       <div className="inv-sheet max-w-[210mm] mx-auto my-6 bg-white shadow-lg print:shadow-none print:my-0 px-6 py-6">
-        {/* 1–2. Company issuer header + invoice meta (no client here) */}
+        {/* Business name + invoice identifiers */}
         <header className="inv-avoid-break flex justify-between items-start gap-6 pb-3">
-          {/* Right (RTL): issuing company only — hide empty brand fields */}
-          <div className="flex gap-3 items-start min-w-0 flex-1">
-            {COMPANY_PROFILE.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={COMPANY_PROFILE.logoUrl}
-                alt={COMPANY_PROFILE.name || "לוגו"}
-                className="h-16 w-16 shrink-0 object-contain border border-gray-100"
-                style={{ borderRadius: 2 }}
-              />
-            ) : COMPANY_PROFILE.logoText ? (
-              <div
-                className="h-16 w-16 shrink-0 flex items-center justify-center text-white font-bold text-sm tracking-wide"
-                style={{ background: blue, borderRadius: 2 }}
-              >
-                {COMPANY_PROFILE.logoText}
-              </div>
-            ) : null}
-            <div className="text-[11px] leading-[1.55] text-gray-700">
-              {COMPANY_PROFILE.name ? (
-                <p
-                  className="text-[17px] font-bold tracking-wide"
-                  style={{ color: blueDark }}
-                >
-                  {COMPANY_PROFILE.name}
-                </p>
-              ) : null}
-              {COMPANY_PROFILE.legalName &&
-              COMPANY_PROFILE.legalName !== COMPANY_PROFILE.name ? (
-                <p className="text-[12px] font-semibold text-gray-900 mt-0.5">
-                  {COMPANY_PROFILE.legalName}
-                </p>
-              ) : null}
-              {COMPANY_PROFILE.phone ? (
-                <p className="mt-1.5" dir="ltr">
-                  טלפון: {COMPANY_PROFILE.phone}
-                </p>
-              ) : null}
-              {COMPANY_PROFILE.email ? (
-                <p dir="ltr">דוא״ל: {COMPANY_PROFILE.email}</p>
-              ) : null}
-              {COMPANY_PROFILE.address ? (
-                <p>כתובת: {COMPANY_PROFILE.address}</p>
-              ) : null}
-              {COMPANY_PROFILE.vatId ? (
-                <p>מספר עוסק: {COMPANY_PROFILE.vatId}</p>
-              ) : null}
-              {COMPANY_PROFILE.website ? (
-                <p dir="ltr">אתר: {COMPANY_PROFILE.website}</p>
-              ) : null}
-            </div>
-          </div>
-
-          {/* Left (RTL): document title + invoice identifiers */}
-          <div className="text-left shrink-0 min-w-[175px]">
+          <div className="min-w-0 flex-1">
             <p
-              className="text-[26px] font-bold leading-none tracking-tight"
+              className="text-[22px] font-bold tracking-wide"
               style={{ color: blueDark }}
             >
-              חשבון חלקי
+              {businessName}
             </p>
-            <div className="mt-3 text-[11.5px] leading-6 space-y-0.5">
+          </div>
+
+          {/* Invoice identifiers */}
+          <div className="text-left shrink-0 min-w-[175px]">
+            <div className="text-[11.5px] leading-6 space-y-0.5">
               <MetaRow
                 label="מספר החשבון"
                 value={String(invoice.sequenceNumber || invoice.invoiceNumber)}
@@ -397,19 +340,6 @@ export function PartialInvoicePrintPage({ invoiceId }: { invoiceId: string }) {
           </div>
         </section>
 
-        {/* Screen footer (print uses fixed) */}
-        <footer
-          className="pt-3 flex justify-between text-[10px] text-gray-500 print:hidden"
-          style={{ borderTop: "1px solid #e5e7eb" }}
-        >
-          {COMPANY_PROFILE.name ? (
-            <span>{COMPANY_PROFILE.name}</span>
-          ) : (
-            <span />
-          )}
-          <span>נוצר ב־{createdLabel}</span>
-          <span>מסמך רשמי · חשבון חלקי</span>
-        </footer>
       </div>
     </div>
   );

@@ -94,7 +94,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     console.error("[POST /api/projects/:id/execution-reports] Error:", error);
     return NextResponse.json(
       { error: error.message || "Failed to create report" },
-      { status: 500 }
+      { status: 400 }
     );
   }
 }

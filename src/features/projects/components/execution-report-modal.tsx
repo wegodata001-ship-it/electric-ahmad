@@ -48,12 +48,35 @@ export function ExecutionReportModal({
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [savedItemCount, setSavedItemCount] = useState(0);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>(
+    {}
+  );
 
   const handleQuantityChange = (boqItemId: string, value: string) => {
+    const item = boqItems.find((row) => row.id === boqItemId);
+    const quantity = Number(value);
+
+    let error = "";
+    if (value !== "" && (!Number.isFinite(quantity) || quantity < 0)) {
+      error = "יש להזין כמות חיובית";
+    } else if (
+      item &&
+      value !== "" &&
+      quantity > Number(item.remainingQuantity) + 0.0001
+    ) {
+      error = `ניתן לדווח עד ${formatNumber(item.remainingQuantity)} ${item.unit}`;
+    }
+
     setQuantities((prev) => ({
       ...prev,
       [boqItemId]: value,
     }));
+    setQuantityErrors((prev) => {
+      const next = { ...prev };
+      if (error) next[boqItemId] = error;
+      else delete next[boqItemId];
+      return next;
+    });
   };
 
   const filledItems = useMemo(() => {
@@ -62,10 +85,17 @@ export function ExecutionReportModal({
     );
   }, [quantities]);
 
+  const hasInvalidQuantity = Object.values(quantityErrors).some(Boolean);
+
   const handleSubmit = async () => {
     try {
       if (filledItems.length === 0) {
         toast.error("יש למלא לפחות כמות אחת");
+        return;
+      }
+
+      if (hasInvalidQuantity) {
+        toast.error("יש לתקן את הכמויות החריגות לפני שמירת הדיווח");
         return;
       }
 
@@ -114,6 +144,7 @@ export function ExecutionReportModal({
   const handleClose = () => {
     if (!loading) {
       setQuantities({});
+      setQuantityErrors({});
       onClose();
     }
   };
@@ -164,6 +195,7 @@ export function ExecutionReportModal({
                           placeholder="0"
                           value={quantities[item.id] || ""}
                           onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                          error={quantityErrors[item.id]}
                           className="w-24 text-center"
                         />
                       </td>
@@ -183,7 +215,10 @@ export function ExecutionReportModal({
               <Button variant="outline" onClick={handleClose} disabled={loading}>
                 ביטול
               </Button>
-              <Button onClick={handleSubmit} disabled={loading || filledItems.length === 0}>
+              <Button
+                onClick={handleSubmit}
+                disabled={loading || filledItems.length === 0 || hasInvalidQuantity}
+              >
                 {loading && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
                 <Save className="h-4 w-4 ml-2" />
                 שמור דיווח

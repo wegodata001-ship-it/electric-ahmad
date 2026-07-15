@@ -65,6 +65,11 @@ export class ExecutionReportsRepository {
    * Create a new execution report with items
    */
   static async create(input: CreateExecutionReportInput): Promise<ExecutionReportWithItems> {
+    await this.assertItemsDoNotExceedRemainingQuantity(
+      input.projectId,
+      input.items
+    );
+
     const reportNumber = await this.generateReportNumber(input.projectId);
 
     const lastReport = await prisma.executionReport.findFirst({
@@ -113,6 +118,61 @@ export class ExecutionReportsRepository {
     await this.updateBoqQuantitiesFromReports(input.projectId);
 
     return report;
+  }
+
+  /**
+   * A performance report must never move a BOQ item past its contract quantity.
+   * This is intentionally enforced server-side as well as in the reporting modal,
+   * so direct API calls cannot create an invalid quantity.
+   */
+  private static async assertItemsDoNotExceedRemainingQuantity(
+    projectId: string,
+    items: CreateExecutionReportInput["items"]
+  ): Promise<void> {
+    const quantityByBoqItem = new Map<string, Prisma.Decimal>();
+
+    for (const item of items) {
+      const quantity = new Prisma.Decimal(item.quantity);
+      if (!item.boqItemId || !quantity.isFinite() || quantity.lte(0)) {
+        throw new Error("כמות הדיווח אינה תקינה");
+      }
+      quantityByBoqItem.set(
+        item.boqItemId,
+        (quantityByBoqItem.get(item.boqItemId) ?? new Prisma.Decimal(0)).plus(
+          quantity
+        )
+      );
+    }
+
+    const boqItemIds = [...quantityByBoqItem.keys()];
+    const boqItems = await prisma.boqItem.findMany({
+      where: { id: { in: boqItemIds }, projectId },
+      select: {
+        id: true,
+        code: true,
+        unit: true,
+        contractQuantity: true,
+        completedQuantity: true,
+      },
+    });
+
+    if (boqItems.length !== boqItemIds.length) {
+      throw new Error("אחד מסעיפי כתב הכמויות אינו שייך לפרויקט");
+    }
+
+    for (const boqItem of boqItems) {
+      const requested = quantityByBoqItem.get(boqItem.id)!;
+      const remaining = Prisma.Decimal.max(
+        new Prisma.Decimal(0),
+        boqItem.contractQuantity.minus(boqItem.completedQuantity)
+      );
+
+      if (requested.gt(remaining)) {
+        throw new Error(
+          `לא ניתן לדווח ${requested.toString()} ${boqItem.unit} בסעיף ${boqItem.code}. נותרו ${remaining.toString()} ${boqItem.unit} בלבד`
+        );
+      }
+    }
   }
 
   /**
