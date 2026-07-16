@@ -70,11 +70,11 @@ function KPICard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.4 }}
     >
-      <Card>
+      <Card padding="sm" className="sm:p-4">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-sm text-gray-500 mb-1">{label}</p>
-            <p className="text-2xl font-bold text-gray-900">{formatted}</p>
+            <p className="text-xs sm:text-sm text-gray-500 mb-1">{label}</p>
+            <p className="text-xl sm:text-2xl font-bold text-gray-900">{formatted}</p>
           </div>
           <div className="h-10 w-10 rounded-xl bg-primary-50 flex items-center justify-center">
             <Icon className="h-5 w-5 text-primary-600" />
@@ -117,25 +117,25 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500 mt-1">סקירה כללית של פעילות החברה</p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
         {quickNavigation.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className="px-3 py-1.5 text-sm rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-primary-50 hover:text-primary-700 hover:border-primary-200 transition-colors"
+            className="min-h-11 px-3 py-1.5 text-center text-sm rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-primary-50 hover:text-primary-700 hover:border-primary-200 transition-colors"
           >
             {item.name}
           </Link>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <KPICard label="פרויקטים פעילים" value={kpis.activeProjects} icon={kpiIcons.activeProjects} delay={0} />
         <KPICard label="עובדים בשטח" value={kpis.fieldEmployees} icon={kpiIcons.fieldEmployees} delay={0.05} />
         <KPICard label="אחוז ביצוע כללי" value={kpis.overallProgress} icon={kpiIcons.overallProgress} format="percent" delay={0.1} />
@@ -146,41 +146,45 @@ export function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card padding="lg">
+        <Card padding="md" className="sm:p-6">
           <CardHeader>
             <CardTitle>שווי ביצוע לפי פרויקט</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={chartData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis type="number" tickFormatter={(v) => `₪${(v / 1000).toFixed(0)}K`} fontSize={12} />
-                <YAxis type="category" dataKey="name" width={100} fontSize={11} />
-                <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-                <Bar dataKey="completed" name="שבוצע" fill="#2563eb" radius={[0, 4, 4, 0]} />
-                <Bar dataKey="remaining" name="נותר" fill="#e2e8f0" radius={[0, 4, 4, 0]} />
-                <Legend />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="h-[220px] sm:h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis type="number" tickFormatter={(v) => `₪${(v / 1000).toFixed(0)}K`} fontSize={12} />
+                  <YAxis type="category" dataKey="name" width={100} fontSize={11} />
+                  <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+                  <Bar dataKey="completed" name="שבוצע" fill="#2563eb" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="remaining" name="נותר" fill="#e2e8f0" radius={[0, 4, 4, 0]} />
+                  <Legend />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
 
-        <Card padding="lg">
+        <Card padding="md" className="sm:p-6">
           <CardHeader>
             <CardTitle>התקדמות חודשית</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={progressData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="month" fontSize={12} />
-                <YAxis fontSize={12} />
-                <Tooltip />
-                <Line type="monotone" dataKey="planned" name="מתוכנן" stroke="#94a3b8" strokeDasharray="5 5" dot={false} />
-                <Line type="monotone" dataKey="actual" name="בפועל" stroke="#2563eb" strokeWidth={2} dot={{ r: 4 }} />
-                <Legend />
-              </LineChart>
-            </ResponsiveContainer>
+            <div className="h-[220px] sm:h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={progressData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="month" fontSize={12} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="planned" name="מתוכנן" stroke="#94a3b8" strokeDasharray="5 5" dot={false} />
+                  <Line type="monotone" dataKey="actual" name="בפועל" stroke="#2563eb" strokeWidth={2} dot={{ r: 4 }} />
+                  <Legend />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -17,13 +17,13 @@ export function DeliveryNotesPage() {
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 pb-20 md:pb-0">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">תעודות משלוח</h1>
           <p className="text-sm text-gray-500 mt-1">{notes.length} תעודות</p>
         </div>
-        <Button onClick={() => router.push("/delivery-notes/new")}>
+        <Button className="hidden md:inline-flex" onClick={() => router.push("/delivery-notes/new")}>
           <Plus className="h-4 w-4" />
           תעודת משלוח חדשה
         </Button>
@@ -40,12 +40,12 @@ export function DeliveryNotesPage() {
 
         {notes.map((note) => (
           <Card key={note.id} padding="none">
-            <div className="flex items-center gap-4 p-5">
+            <div className="flex flex-wrap items-start gap-3 p-3 sm:p-5">
               <div className="h-10 w-10 rounded-xl bg-primary-50 flex items-center justify-center flex-shrink-0">
                 <Package className="h-5 w-5 text-primary-600" />
               </div>
               <button
-                className="flex-1 min-w-0 text-right"
+                className="flex-1 min-w-[180px] text-right"
                 onClick={() => router.push(`/delivery-notes/${note.id}`)}
               >
                 <p className="text-sm font-semibold text-gray-900">
@@ -59,7 +59,7 @@ export function DeliveryNotesPage() {
                   {note.items.length} פריטים
                 </p>
               </button>
-              <div className="text-left">
+              <div className="text-right sm:text-left">
                 <p className="text-sm font-medium text-gray-900">
                   {formatDate(note.date)}
                 </p>
@@ -70,10 +70,11 @@ export function DeliveryNotesPage() {
                   )}
                 </p>
               </div>
-              <div className="flex gap-1">
+              <div className="flex w-full gap-2 sm:w-auto sm:gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="flex-1 sm:flex-none"
                   title="צפייה"
                   onClick={() => router.push(`/delivery-notes/${note.id}`)}
                 >
@@ -82,6 +83,7 @@ export function DeliveryNotesPage() {
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="flex-1 sm:flex-none"
                   title="הדפסה / PDF"
                   onClick={() =>
                     window.open(`/print/delivery-notes/${note.id}`, "_blank")
@@ -94,6 +96,15 @@ export function DeliveryNotesPage() {
           </Card>
         ))}
       </div>
+
+      <button
+        type="button"
+        aria-label="תעודת משלוח חדשה"
+        onClick={() => router.push("/delivery-notes/new")}
+        className="fixed bottom-5 left-5 z-20 inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary-600 text-white shadow-lg transition-transform active:scale-95 md:hidden"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
     </div>
   );
 }

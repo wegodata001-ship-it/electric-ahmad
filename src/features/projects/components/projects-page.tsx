@@ -36,19 +36,19 @@ export function ProjectsPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6 pb-20 md:pb-0">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">פרויקטים</h1>
           <p className="text-sm text-gray-500 mt-1">{projects.length} פרויקטים במערכת</p>
         </div>
-        <Button onClick={() => router.push("/projects/new")}>
+        <Button className="hidden md:inline-flex" onClick={() => router.push("/projects/new")}>
           <Plus className="h-4 w-4" />
           פרויקט חדש
         </Button>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {filters.map((f) => (
           <button
             key={f.id}
@@ -87,7 +87,7 @@ export function ProjectsPage() {
             >
               <Link href={`/projects/${project.id}`}>
                 <Card hover padding="none" className="overflow-hidden">
-                  <div className="relative h-40 w-full bg-gray-100">
+                  <div className="relative h-32 sm:h-40 w-full bg-gray-100">
                     <Image
                       src={project.imageUrl || PLACEHOLDER_IMAGE}
                       alt={project.name}
@@ -101,7 +101,7 @@ export function ProjectsPage() {
                       </Badge>
                     </div>
                   </div>
-                  <div className="p-5">
+                  <div className="p-3 sm:p-5">
                     <h3 className="text-base font-semibold text-gray-900 mb-1">{project.name}</h3>
                     <p className="text-xs text-gray-500 mb-3">{project.contractNumber}</p>
 
@@ -140,6 +140,15 @@ export function ProjectsPage() {
           ))}
         </div>
       )}
+
+      <button
+        type="button"
+        aria-label="פרויקט חדש"
+        onClick={() => router.push("/projects/new")}
+        className="fixed bottom-5 left-5 z-20 inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary-600 text-white shadow-lg transition-transform active:scale-95 md:hidden"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
 
     </div>
   );

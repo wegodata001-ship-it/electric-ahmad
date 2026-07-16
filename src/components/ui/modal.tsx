@@ -37,7 +37,7 @@ export function Modal({ open, onClose, title, description, children, size = "md"
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -51,12 +51,12 @@ export function Modal({ open, onClose, title, description, children, size = "md"
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2 }}
             className={cn(
-              "relative w-full bg-white rounded-2xl shadow-xl border border-gray-200/80",
+              "relative flex h-full max-h-dvh w-full flex-col overflow-hidden bg-white shadow-xl border-0 rounded-none sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl sm:border sm:border-gray-200/80",
               sizes[size]
             )}
           >
             {(title || description) && (
-              <div className="flex items-start justify-between p-6 border-b border-gray-100">
+              <div className="flex shrink-0 items-start justify-between p-4 sm:p-6 border-b border-gray-100">
                 <div>
                   {title && <h2 className="text-lg font-semibold text-gray-900">{title}</h2>}
                   {description && <p className="mt-1 text-sm text-gray-500">{description}</p>}
@@ -66,7 +66,9 @@ export function Modal({ open, onClose, title, description, children, size = "md"
                 </Button>
               </div>
             )}
-            <div className="p-6">{children}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-6">
+              {children}
+            </div>
           </motion.div>
         </div>
       )}

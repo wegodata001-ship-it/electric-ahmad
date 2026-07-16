@@ -232,17 +232,77 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
         </div>
       )}
 
-      <div className="p-4 border-b border-gray-100">
+      <div className="p-3 sm:p-4 border-b border-gray-100">
         <input
           type="text"
           placeholder="חיפוש בסעיפים..."
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
-          className="w-full max-w-sm h-9 px-3 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+          className="w-full max-w-sm h-11 md:h-9 px-3 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
         />
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="md:hidden space-y-3 p-3">
+        {table.getRowModel().rows.map((row) => {
+          const item = row.original;
+          const executed = item.executedQuantity ?? item.completedQuantity;
+
+          return (
+            <article
+              key={row.id}
+              className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs text-gray-500">{item.code}</p>
+                  <p className="mt-1 font-semibold text-gray-900">
+                    {item.description}
+                  </p>
+                </div>
+                <Badge className={BOQ_STATUS_COLORS[item.status]}>
+                  {BOQ_STATUS_LABELS[item.status]}
+                </Badge>
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-gray-50 p-2">
+                <Stat label="חוזה" value={`${formatNumber(item.contractQuantity)} ${item.unit}`} />
+                <Stat label="בוצע" value={formatNumber(executed)} accent />
+                <Stat label="נותר" value={formatNumber(item.remainingQuantity)} />
+              </div>
+
+              <div className="mt-3">
+                <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
+                  <span>התקדמות</span>
+                  <span>{formatPercent(item.progress)}</span>
+                </div>
+                <Progress value={item.progress} size="sm" />
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setReportItem(item)}
+                >
+                  <ClipboardPlus className="h-4 w-4" />
+                  דיווח
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setHistoryItem(item)}
+                >
+                  <History className="h-4 w-4" />
+                  היסטוריה
+                </Button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -334,7 +394,7 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
         </table>
       </div>
 
-      <div className="p-4 border-t border-gray-100">
+      <div className="p-3 sm:p-4 border-t border-gray-100">
         <Pagination
           currentPage={table.getState().pagination.pageIndex + 1}
           totalPages={table.getPageCount()}

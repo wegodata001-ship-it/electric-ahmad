@@ -42,7 +42,7 @@ export function PartialInvoicesPage() {
     .reduce((s, i) => s + i.amount, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 pb-20 md:pb-0">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">חשבונות</h1>
@@ -51,7 +51,7 @@ export function PartialInvoicesPage() {
             {formatCurrency(totalAmount)}
           </p>
         </div>
-        <Button onClick={() => router.push("/invoices/new")}>
+        <Button className="hidden md:inline-flex" onClick={() => router.push("/invoices/new")}>
           <Plus className="h-4 w-4" />
           חשבון חדש
         </Button>
@@ -120,9 +120,9 @@ export function PartialInvoicesPage() {
 
         {filtered.map((invoice) => (
           <Card key={invoice.id} padding="none">
-            <div className="flex items-center gap-4 p-5">
+            <div className="flex flex-wrap items-start gap-3 p-3 sm:p-5">
               <button
-                className="flex items-center gap-4 flex-1 min-w-0 text-right hover:opacity-90"
+                className="flex items-start gap-3 sm:items-center sm:gap-4 flex-1 min-w-[200px] text-right hover:opacity-90"
                 onClick={() =>
                   setExpanded(expanded === invoice.id ? null : invoice.id)
                 }
@@ -160,10 +160,11 @@ export function PartialInvoicesPage() {
                 )}
               </button>
 
-              <div className="flex items-center gap-1 flex-shrink-0">
+              <div className="grid w-full grid-cols-4 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-1 sm:flex-shrink-0">
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="w-full sm:w-9"
                   title="צפייה"
                   onClick={() => router.push(`/invoices/${invoice.id}`)}
                 >
@@ -172,6 +173,7 @@ export function PartialInvoicesPage() {
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="w-full sm:w-9"
                   title="עריכה"
                   onClick={() => router.push(`/invoices/${invoice.id}/edit`)}
                 >
@@ -180,6 +182,7 @@ export function PartialInvoicesPage() {
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="w-full sm:w-9"
                   title="PDF"
                   onClick={() =>
                     window.open(
@@ -193,6 +196,7 @@ export function PartialInvoicesPage() {
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="w-full sm:w-9"
                   title="הדפסה"
                   onClick={() =>
                     window.open(`/print/invoices/${invoice.id}`, "_blank")
@@ -236,6 +240,15 @@ export function PartialInvoicesPage() {
           </Card>
         ))}
       </div>
+
+      <button
+        type="button"
+        aria-label="חשבון חדש"
+        onClick={() => router.push("/invoices/new")}
+        className="fixed bottom-5 left-5 z-20 inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary-600 text-white shadow-lg transition-transform active:scale-95 md:hidden"
+      >
+        <Receipt className="h-6 w-6" />
+      </button>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Bell, LogOut, Search } from "lucide-react";
+import { Bell, LogOut, Menu, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app.store";
 import { searchService } from "@/services";
@@ -57,6 +57,7 @@ export function Header() {
     markNotificationRead,
     markAllNotificationsRead,
     unreadCount,
+    setMobileNavOpen,
   } = useAppStore();
 
   const [searchFocused, setSearchFocused] = useState(false);
@@ -108,11 +109,20 @@ export function Header() {
   return (
     <header
       className={cn(
-        "fixed top-0 left-0 h-16 bg-white/80 backdrop-blur-md border-b border-gray-200/80 z-30 flex items-center px-6 gap-4 transition-all duration-300",
-        sidebarCollapsed ? "right-[72px]" : "right-[260px]"
+        "fixed top-0 left-0 right-0 min-h-14 bg-white/95 backdrop-blur-md border-b border-gray-200/80 z-30 flex flex-wrap items-center px-3 py-2 gap-2 transition-all duration-300 lg:h-16 lg:flex-nowrap lg:px-6 lg:py-0 lg:gap-4",
+        sidebarCollapsed ? "lg:right-[72px]" : "lg:right-[260px]"
       )}
     >
-      <nav className="flex items-center gap-1.5 text-sm text-gray-500 min-w-0">
+      <button
+        type="button"
+        aria-label="פתח תפריט ניווט"
+        onClick={() => setMobileNavOpen(true)}
+        className="lg:hidden inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      <nav className="hidden lg:flex items-center gap-1.5 text-sm text-gray-500 min-w-0">
         <Link href="/dashboard" className="hover:text-gray-700 transition-colors">בית</Link>
         {breadcrumbs.map((crumb, i) => (
           <span key={i} className="flex items-center gap-1.5">
@@ -124,7 +134,7 @@ export function Header() {
         ))}
       </nav>
 
-      <div className="flex-1 max-w-md mx-auto relative">
+      <div className="order-3 basis-full flex-none relative lg:order-none lg:flex-1 lg:basis-auto lg:max-w-md lg:mx-auto">
         <div className="relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
@@ -134,7 +144,7 @@ export function Header() {
             onChange={(e) => handleSearch(e.target.value)}
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
-            className="w-full h-9 pr-10 pl-4 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white transition-all"
+            className="w-full h-11 lg:h-9 pr-10 pl-4 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white transition-all"
           />
         </div>
 
@@ -164,7 +174,7 @@ export function Header() {
         </AnimatePresence>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 lg:gap-2 mr-auto lg:mr-0">
         <div className="relative">
           <Button
             variant="ghost"

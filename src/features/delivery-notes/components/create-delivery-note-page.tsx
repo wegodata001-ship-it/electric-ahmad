@@ -753,7 +753,83 @@ export function CreateDeliveryNotePage() {
             הוסף שורה
           </Button>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {lines.map((line, index) => (
+            <div key={index} className="rounded-xl border border-gray-200 p-3">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-900">
+                  פריט {index + 1}
+                </p>
+                <button
+                  type="button"
+                  disabled={lines.length === 1}
+                  onClick={() =>
+                    setLines((prev) => prev.filter((_, i) => i !== index))
+                  }
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
+                  aria-label="מחיקת פריט"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <Field label="מק״ט">
+                  <Input
+                    value={line.sku}
+                    onChange={(e) => updateLine(index, { sku: e.target.value })}
+                  />
+                </Field>
+                <Field label="תיאור">
+                  <Input
+                    value={line.description}
+                    onChange={(e) =>
+                      updateLine(index, { description: e.target.value })
+                    }
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="יחידה">
+                    <select
+                      value={line.unit}
+                      onChange={(e) => updateLine(index, { unit: e.target.value })}
+                      className="h-11 w-full px-2 text-sm border border-gray-200 rounded-lg"
+                    >
+                      {UNITS.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="כמות">
+                    <Input
+                      type="number"
+                      value={line.quantity}
+                      onChange={(e) =>
+                        updateLine(index, { quantity: e.target.value })
+                      }
+                    />
+                  </Field>
+                </div>
+                <Field label="ארגז / חבילה">
+                  <Input
+                    value={line.packageNumber}
+                    onChange={(e) =>
+                      updateLine(index, { packageNumber: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="הערות">
+                  <Input
+                    value={line.notes}
+                    onChange={(e) => updateLine(index, { notes: e.target.value })}
+                  />
+                </Field>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm min-w-[900px]">
             <thead className="bg-gray-50/80 text-xs text-gray-500">
               <tr>

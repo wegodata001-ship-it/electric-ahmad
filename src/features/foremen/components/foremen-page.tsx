@@ -225,7 +225,133 @@ export function ForemenPage() {
         </Card>
       )}
 
-      <Card padding="none">
+      <div className="space-y-3 md:hidden">
+        {list.map((f) => (
+          <Card key={f.id} padding="sm">
+            <div className="flex items-start justify-between gap-3">
+              <button
+                type="button"
+                className="min-w-0 text-right"
+                onClick={() => router.push(`/foremen/${f.id}`)}
+              >
+                <p className="font-semibold text-gray-900">{f.fullName}</p>
+                <p className="mt-1 text-xs text-gray-500" dir="ltr">
+                  {f.phone}
+                </p>
+              </button>
+              <Badge
+                className={
+                  f.isDeleted
+                    ? "bg-red-50 text-red-700"
+                    : f.status === "active"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-gray-100 text-gray-600"
+                }
+              >
+                {f.isDeleted ? "נמחק" : f.status === "active" ? "פעיל" : "מושבת"}
+              </Badge>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-gray-50 p-2 text-center">
+              <div>
+                <p className="text-xs text-gray-400">פרויקטים</p>
+                <p className="font-semibold">{f.activeProjectCount}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400">יומנים</p>
+                <p className="font-semibold">{f.openJournals}/{f.closedJournals}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400">דיווחים</p>
+                <p className="font-semibold">{f.reportsCount}</p>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => router.push(`/foremen/${f.id}`)}
+              >
+                <Eye className="h-4 w-4" />
+                צפייה
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setEditTarget(f);
+                  setEditForm({
+                    firstName: f.firstName,
+                    lastName: f.lastName,
+                    phone: f.phone,
+                    email: f.email,
+                    notes: f.notes ?? "",
+                  });
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+                עריכה
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => router.push(`/reports?foremanId=${f.id}`)}
+              >
+                <FileText className="h-4 w-4" />
+                דיווחים
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={copyLoginLink}
+              >
+                <Link2 className="h-4 w-4" />
+                קישור כניסה
+              </Button>
+              {!f.isDeleted && (
+                <Button
+                  size="sm"
+                  variant={f.status === "active" ? "secondary" : "outline"}
+                  className="w-full"
+                  onClick={async () => {
+                    if (f.status === "active") await foremenService.deactivate(f.id);
+                    else await foremenService.activate(f.id);
+                    reload();
+                  }}
+                >
+                  {f.status === "active" ? (
+                    <Ban className="h-4 w-4" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                  {f.status === "active" ? "השבת" : "הפעל"}
+                </Button>
+              )}
+              {!f.isDeleted && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  className="w-full"
+                  onClick={() => setDeleteTarget(f)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  מחיקה
+                </Button>
+              )}
+            </div>
+          </Card>
+        ))}
+        {!error && list.length === 0 && (
+          <Card padding="lg">
+            <p className="text-sm text-gray-400 text-center">לא נמצאו מנהלי עבודה</p>
+          </Card>
+        )}
+      </div>
+
+      <Card padding="none" className="hidden md:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[1100px]">
             <thead className="bg-gray-50/80 text-xs text-gray-500">
