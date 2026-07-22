@@ -18,10 +18,19 @@ enum ProjectStatus {
 }
 
 enum BoqItemStatus {
+  active
+  pending
+  cancelled
+  completed
+  // Legacy — kept for existing rows until migrated
   not_started
   in_progress
-  completed
   on_hold
+}
+
+enum BoqItemKind {
+  regular
+  exceptional
 }
 
 enum ExecutionStatus {
@@ -66,11 +75,30 @@ enum InvoiceStatus {
   approved_by_foreman
   rejected_by_foreman
   sent_to_client
+  signed
   paid
   // Legacy values kept for backward compatibility with existing rows
   submitted
   approved
   rejected
+}
+
+enum MeasurementAxisType {
+  room
+  floor
+  building
+  area
+  custom
+}
+
+enum MeasurementSheetStatus {
+  draft
+  in_progress
+  pending_approval
+  revision
+  approved
+  locked
+  invoiced
 }
 
 enum InvoiceApprovalStatus {
@@ -135,15 +163,18 @@ model User {
   updatedProjects   Project[]  @relation("ProjectUpdatedBy")
   createdBoqItems   BoqItem[]  @relation("BoqCreatedBy")
   updatedBoqItems   BoqItem[]  @relation("BoqUpdatedBy")
+  deletedBoqItems   BoqItem[]  @relation("BoqDeletedBy")
   createdReports    WorkReport[] @relation("ReportCreatedBy")
   updatedReports    WorkReport[] @relation("ReportUpdatedBy")
   uploadedDocuments Document[] @relation("DocumentUploadedBy")
   createdDocuments  Document[] @relation("DocumentCreatedBy")
   updatedDocuments  Document[] @relation("DocumentUpdatedBy")
+  uploadedDocumentAttachments DocumentAttachment[] @relation("DocumentAttachmentUploadedBy")
   uploadedGallery   GalleryItem[] @relation("GalleryUploadedBy")
   createdInvoices   PartialInvoice[] @relation("InvoiceCreatedBy")
   updatedInvoices   PartialInvoice[] @relation("InvoiceUpdatedBy")
   createdApprovals  ProjectInvoiceApproval[] @relation("ApprovalCreatedBy")
+  assignedInvoiceApprovals ProjectInvoiceApproval[] @relation("InvoiceApproverUser")
   createdDeliveryNotes  DeliveryNote[] @relation("DeliveryNoteCreatedBy")
   updatedDeliveryNotes  DeliveryNote[] @relation("DeliveryNoteUpdatedBy")
   deliveryNoteVersions  DeliveryNoteVersion[] @relation("DeliveryNoteVersionEditedBy")
@@ -156,6 +187,32 @@ model User {
   executionHistory  BoqExecutionHistory[]
   createdExecutionReports ExecutionReport[] @relation("ExecutionReportCreatedBy")
   updatedExecutionReports ExecutionReport[] @relation("ExecutionReportUpdatedBy")
+
+  // Work diary + ops delivery notes (new module)
+  createdWorkDiaries       WorkDiary[]              @relation("WorkDiaryCreatedBy")
+  updatedWorkDiaries       WorkDiary[]              @relation("WorkDiaryUpdatedBy")
+  workDiaryApprovals       WorkDiaryApproval[]      @relation("WorkDiaryApprover")
+  workDiaryEvents          WorkDiaryEvent[]         @relation("WorkDiaryEventActor")
+  createdOpsDeliveryNotes  OpsDeliveryNote[]        @relation("OpsDnCreatedBy")
+  updatedOpsDeliveryNotes  OpsDeliveryNote[]        @relation("OpsDnUpdatedBy")
+  opsDnApprovals           OpsDeliveryNoteApproval[] @relation("OpsDnApprover")
+  opsDnEvents              OpsDeliveryNoteEvent[]   @relation("OpsDnEventActor")
+  projectDefaultApprovers  ProjectDefaultApprover[]
+  createdMeasurementSheets MeasurementSheet[] @relation("MeasurementSheetCreatedBy")
+  updatedMeasurementSheets MeasurementSheet[] @relation("MeasurementSheetUpdatedBy")
+  measurementEntries       MeasurementEntry[] @relation("MeasurementEntryActor")
+  measurementSheetApprovals MeasurementSheetApproval[] @relation("MeasurementSheetApprover")
+  measurementSheetEvents    MeasurementSheetEvent[]    @relation("MeasurementSheetEventActor")
+  measurementSheetReviewNotes MeasurementSheetReviewNote[] @relation("MeasurementSheetReviewAuthor")
+
+  // Central Workflow Engine (Stage 1)
+  ownedWorkflowDocuments    WorkflowDocument[] @relation("WorkflowDocumentOwner")
+  createdWorkflowDocuments  WorkflowDocument[] @relation("WorkflowDocumentCreatedBy")
+  updatedWorkflowDocuments  WorkflowDocument[] @relation("WorkflowDocumentUpdatedBy")
+  workflowApprovals         WorkflowApproval[] @relation("WorkflowApprover")
+  workflowEvents            WorkflowEvent[]    @relation("WorkflowEventActor")
+  workflowOverrides         WorkflowOverride[] @relation("WorkflowOverrideActor")
+  workflowAttachmentsUploaded WorkflowAttachment[] @relation("WorkflowAttachmentUploadedBy")
 }
 
 // ─── Employees ───────────────────────────────────────────────────────────────
@@ -196,6 +253,8 @@ model Employee {
   fieldAttendances    FieldAttendance[]
   executionReports    ExecutionReport[] @relation("ReportForeman")
   workOrders          WorkOrder[]       @relation("WorkOrderForeman")
+  workDiaries         WorkDiary[]       @relation("WorkDiaryForeman")
+  opsDeliveryNotes    OpsDeliveryNote[] @relation("OpsDnForeman")
 
   @@index([isDeleted])
 }
@@ -238,6 +297,9 @@ model Project {
   startDate      DateTime
   endDate        DateTime
   description    String?
+  /** ציר יחידות לדפי מדידה: חדר / קומה / בניין / אזור */
+  measurementAxisType  MeasurementAxisType @default(room)
+  measurementAxisLabel String?
   ownerId        String
   owner          User          @relation("ProjectOwner", fields: [ownerId], references: [id])
   createdById    String
@@ -261,6 +323,11 @@ model Project {
   fieldAttendances FieldAttendance[]
   executionReports ExecutionReport[]
   workOrders       WorkOrder[]
+  workDiaries      WorkDiary[]
+  opsDeliveryNotes OpsDeliveryNote[]
+  defaultApprovers ProjectDefaultApprover[]
+  measurementSheets MeasurementSheet[]
+  workflowDocuments WorkflowDocument[]
 
   @@index([status])
   @@index([foremanId])
@@ -284,11 +351,19 @@ model BoqItem {
   completedValue    Decimal       @default(0) @db.Decimal(14, 2)
   remainingValue    Decimal       @default(0) @db.Decimal(14, 2)
   progress          Float         @default(0)
-  status            BoqItemStatus @default(not_started)
+  /** סטטוס ניהולי — לא קשור לדיווח כמויות */
+  status            BoqItemStatus @default(active)
+  /** רגיל מהתוכנית / חריג שנוסף במהלך העבודה */
+  itemKind          BoqItemKind   @default(regular)
+  category          String?
+  notes             String?
   parentId          String?
   parent            BoqItem?      @relation("BoqHierarchy", fields: [parentId], references: [id])
   children          BoqItem[]     @relation("BoqHierarchy")
   level             Int           @default(0)
+  deletedAt         DateTime?
+  deletedById       String?
+  deletedBy         User?         @relation("BoqDeletedBy", fields: [deletedById], references: [id])
   createdById       String
   createdBy         User          @relation("BoqCreatedBy", fields: [createdById], references: [id])
   updatedById       String
@@ -301,10 +376,13 @@ model BoqItem {
   galleryItems GalleryItem[]
   executions   BoqExecution[]
   executionReportItems ExecutionReportItem[]
+  measurementCells MeasurementCell[]
 
   @@index([projectId])
   @@index([code])
   @@index([status])
+  @@index([itemKind])
+  @@index([deletedAt])
 }
 
 // ─── BOQ Executions (central field-performance entity) ─────────────────────────
@@ -471,6 +549,21 @@ model Document {
   path         String
   url          String
   version      Int          @default(1)
+  /** נתיב תיקייה לוגית במסמכים, לדוגמה: דוחות ביצוע / תמונות */
+  folderPath   String?
+  /** קישור לישות מקור (measurement_sheet, delivery_note, partial_invoice, ...) */
+  sourceType   String?
+  sourceId     String?
+  /** קישור למסמך Workflow — ארכיון Documents כמראה של אותו מסמך */
+  workflowDocumentId String? @unique
+  workflowDocument   WorkflowDocument? @relation(fields: [workflowDocumentId], references: [id], onDelete: SetNull)
+  /** מזהה GalleryItem ישן אחרי מיגרציה — למניעת כפילות */
+  legacyGalleryId String?   @unique
+  boqItemId    String?
+  employeeId   String?
+  reportId     String?
+  partialInvoiceId String?
+  partialInvoice   PartialInvoice? @relation(fields: [partialInvoiceId], references: [id], onDelete: SetNull)
   uploadedById String
   uploadedBy   User         @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
   ownerId      String
@@ -481,9 +574,32 @@ model Document {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  versions DocumentVersion[]
+  versions    DocumentVersion[]
+  attachments DocumentAttachment[]
 
   @@index([projectId])
+  @@index([type])
+  @@index([folderPath])
+  @@index([partialInvoiceId])
+  @@index([sourceType, sourceId])
+}
+
+model DocumentAttachment {
+  id           String       @id @default(cuid())
+  documentId   String
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  name         String
+  type         DocumentType
+  extension    String
+  size         Int
+  bucket       String
+  path         String
+  url          String
+  uploadedById String
+  uploadedBy   User         @relation("DocumentAttachmentUploadedBy", fields: [uploadedById], references: [id])
+  createdAt    DateTime     @default(now())
+
+  @@index([documentId])
   @@index([type])
 }
 
@@ -536,6 +652,8 @@ model PartialInvoice {
   items      InvoiceItem[]
   approvals  ProjectInvoiceApproval[]
   executionReportItems ExecutionReportItem[]
+  measurementSheets MeasurementSheet[]
+  documents  Document[]
 
   @@index([projectId, sequenceNumber])
   @@index([projectId])
@@ -543,30 +661,35 @@ model PartialInvoice {
 }
 
 /**
- * Foreman invoice approval workflow (office ↔ field).
- * Manager workspace UI will consume this model later — do not remove/rename lightly.
+ * Invoice approval workflow — office sends to a selected approver user.
+ * managerId (Employee) kept optional for backward compatibility with older rows.
  */
 model ProjectInvoiceApproval {
-  id          String                @id @default(cuid())
-  invoiceId   String
-  invoice     PartialInvoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  projectId   String
-  project     Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  managerId   String
-  manager     Employee              @relation(fields: [managerId], references: [id])
-  status      InvoiceApprovalStatus @default(pending)
-  sentAt      DateTime?
-  approvedAt  DateTime?
-  rejectedAt  DateTime?
-  comment     String?
-  createdById String
-  createdBy   User                  @relation("ApprovalCreatedBy", fields: [createdById], references: [id])
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
+  id             String                @id @default(cuid())
+  invoiceId      String
+  invoice        PartialInvoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /** Legacy / linked employee profile when the approver has one */
+  managerId      String?
+  manager        Employee?             @relation(fields: [managerId], references: [id])
+  /** Selected system user with invoice-approval permission */
+  approverUserId String?
+  approverUser   User?                 @relation("InvoiceApproverUser", fields: [approverUserId], references: [id])
+  status         InvoiceApprovalStatus @default(pending)
+  sentAt         DateTime?
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  comment        String?
+  createdById    String
+  createdBy      User                  @relation("ApprovalCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
   @@index([invoiceId])
   @@index([projectId])
   @@index([managerId])
+  @@index([approverUserId])
   @@index([status])
 }
 
@@ -630,6 +753,7 @@ enum DeliveryNoteStatus {
   cancelled
   issued
   in_transit
+  locked
 }
 
 model DeliveryNote {
@@ -663,11 +787,15 @@ model DeliveryNote {
   destinationAddress String?
   driverNotes        String?
 
-  // Signatures (digital signature later)
+  // Signatures
   senderSigned   Boolean   @default(false)
   receiverSigned Boolean   @default(false)
   receiverName   String?
   receivedAt     DateTime?
+  /** Digital signature images (data URL or storage URL) */
+  receiverSignatureUrl String? @db.Text
+  employeeSignatureUrl String? @db.Text
+  employeeSignedName   String?
 
   // Delivery confirmation (legal/ops)
   equipmentCheckedIntact Boolean @default(false)
@@ -1124,4 +1252,761 @@ model WorkOrderMedia {
   createdAt   DateTime  @default(now())
 
   @@index([workOrderId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Work Diary + Ops Delivery Notes — מודול חדש (מחליף סידור עבודה / תעודות)
+// Legacy WorkOrder / DeliveryNote נשארים לקריאה בלבד עד מיגרציה.
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum WorkDiaryStatus {
+  draft
+  pending_approval
+  in_approval
+  approved
+  sent_to_client
+  signed
+  completed
+  revision
+}
+
+enum OpsDeliveryNoteStatus {
+  draft
+  pending_approval
+  approved
+  sent_to_client
+  signed
+  closed
+  revision
+}
+
+enum DocApprovalStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+enum FieldDocKind {
+  work_diary
+  delivery_note
+}
+
+/** מספור עצמאי WD- / DN- — מספרים לא נמחקים ולא ממוחזרים */
+model DocumentNumberSequence {
+  id           String   @id @default(cuid())
+  documentKind FieldDocKind @unique
+  prefix       String
+  lastNumber   Int      @default(0)
+  updatedAt    DateTime @updatedAt
+}
+
+/** מאשרים קבועים לפרויקט (ברירת מחדל בשליחה לאישור) */
+model ProjectDefaultApprover {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+}
+
+model WorkDiary {
+  id             String          @id @default(cuid())
+  documentNumber String          @unique
+  sequenceNumber Int
+  status         WorkDiaryStatus @default(draft)
+  projectId      String
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clientName     String?
+  address        String?
+  foremanId      String
+  foreman        Employee        @relation("WorkDiaryForeman", fields: [foremanId], references: [id])
+  workDate       DateTime        @db.Date
+  workTime       String?
+  weather        String?
+  workType       String?
+  workSummary    String?
+  notes          String?
+
+  /** חתימת מנהל עבודה (data URL / storage URL) */
+  foremanSignatureUrl  String?
+  foremanSignedAt      DateTime?
+  foremanSignedName    String?
+
+  /** חתימת לקוח */
+  clientSignatureUrl   String?
+  clientSignedName     String?
+  clientSignedAt       DateTime?
+  clientSignedIp       String?
+  clientSignedDevice   String?
+  clientSignedVersion  Int?
+
+  signedPdfUrl String?
+  lockedAt     DateTime?
+  deletedAt    DateTime?
+
+  currentVersion Int @default(1)
+
+  /** מקור אמת לסטטוס/אישור — WorkflowDocument */
+  workflowDocumentId String? @unique
+  workflowDocument   WorkflowDocument? @relation(fields: [workflowDocumentId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User     @relation("WorkDiaryCreatedBy", fields: [createdById], references: [id])
+  updatedById String
+  updatedBy   User     @relation("WorkDiaryUpdatedBy", fields: [updatedById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workItems   WorkDiaryWorkItem[]
+  workers     WorkDiaryWorker[]
+  equipment   WorkDiaryEquipment[]
+  materials   WorkDiaryMaterial[]
+  media       WorkDiaryMedia[]
+  attachments WorkDiaryAttachment[]
+  approvals   WorkDiaryApproval[]
+  signTokens  WorkDiarySignToken[]
+  events      WorkDiaryEvent[]
+
+  @@index([projectId])
+  @@index([foremanId])
+  @@index([status])
+  @@index([workDate])
+  @@index([deletedAt])
+}
+
+model WorkDiaryWorkItem {
+  id          String    @id @default(cuid())
+  workDiaryId String
+  workDiary   WorkDiary @relation(fields: [workDiaryId], references: [id], onDelete: Cascade)
+  lineNumber  Int       @default(1)
+  description String
+  unit        String    @default("יח'")
+  quantity    Decimal   @default(0) @db.Decimal(12, 4)
+  notes       String?
+  sortOrder   Int       @default(0)
+
+  @@index([workDiaryId])
+}
+
+model WorkDiaryWorker {
+  id           String           @id @default(cuid())
+  workDiaryId  String
+  workDiary    WorkDiary        @relation(fields: [workDiaryId], references: [id], onDelete: Cascade)
+  crewMemberId String?
+  name         String
+  role         String?
+  startTime    String?
+  endTime      String?
+  hours        Float            @default(0)
+  sortOrder    Int              @default(0)
+
+  @@index([workDiaryId])
+}
+
+model WorkDiaryEquipment {
+  id          String    @id @default(cuid())
+  workDiaryId String
+  workDiary   WorkDiary @relation(fields: [workDiaryId], references: [id], onDelete: Cascade)
+  name        String
+  quantity    Decimal?  @db.Decimal(12, 4)
+  notes       String?
+  sortOrder   Int       @default(0)
+
+  @@index([workDiaryId])
+}
+
+model WorkDiaryMaterial {
+  id          String    @id @default(cuid())
+  workDiaryId String
+  workDiary   WorkDiary @relation(fields: [workDiaryId], references: [id], onDelete: Cascade)
+  name        String
+  unit        String    @default("יח'")
+  quantity    Decimal   @default(0) @db.Decimal(12, 4)
+  notes       String?
+  sortOrder   Int       @default(0)
+
+  @@index([workDiaryId])
+}
+
+model WorkDiaryMedia {
+  id          String    @id @default(cuid())
+  workDiaryId String
+  workDiary   WorkDiary @relation(fields: [workDiaryId], references: [id], onDelete: Cascade)
+  /** before | during | after | other */
+  stage       String    @default("other")
+  name        String
+  url         String
+  path        String?
+  bucket      String?
+  size        Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([workDiaryId])
+}
+
+model WorkDiaryAttachment {
+  id          String    @id @default(cuid())
+  workDiaryId String
+  workDiary   WorkDiary @relation(fields: [workDiaryId], references: [id], onDelete: Cascade)
+  name        String
+  mimeType    String
+  size        Int
+  kind        String    @default("document")
+  bucket      String
+  path        String
+  url         String
+  createdAt   DateTime  @default(now())
+
+  @@index([workDiaryId])
+}
+
+model WorkDiaryApproval {
+  id          String            @id @default(cuid())
+  workDiaryId String
+  workDiary   WorkDiary         @relation(fields: [workDiaryId], references: [id], onDelete: Cascade)
+  approverId  String
+  approver    User              @relation("WorkDiaryApprover", fields: [approverId], references: [id])
+  status      DocApprovalStatus @default(pending)
+  comment     String?
+  sentAt      DateTime          @default(now())
+  decidedAt   DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([workDiaryId])
+  @@index([approverId])
+  @@index([status])
+}
+
+model WorkDiarySignToken {
+  id          String    @id @default(cuid())
+  workDiaryId String
+  workDiary   WorkDiary @relation(fields: [workDiaryId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique
+  /** short public id in URL path */
+  publicId    String    @unique
+  expiresAt   DateTime?
+  usedAt      DateTime?
+  revokedAt   DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  @@index([workDiaryId])
+}
+
+model WorkDiaryEvent {
+  id          String    @id @default(cuid())
+  workDiaryId String
+  workDiary   WorkDiary @relation(fields: [workDiaryId], references: [id], onDelete: Cascade)
+  action      String
+  message     String
+  actorId     String?
+  actor       User?     @relation("WorkDiaryEventActor", fields: [actorId], references: [id])
+  metadata    String?
+  createdAt   DateTime  @default(now())
+
+  @@index([workDiaryId])
+  @@index([createdAt])
+}
+
+model OpsDeliveryNote {
+  id             String               @id @default(cuid())
+  documentNumber String               @unique
+  sequenceNumber Int
+  status         OpsDeliveryNoteStatus @default(draft)
+  projectId      String?
+  project        Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clientName     String
+  address        String?
+  foremanId      String
+  foreman        Employee             @relation("OpsDnForeman", fields: [foremanId], references: [id])
+  noteDate       DateTime             @db.Date
+  vehicleNumber  String?
+  driverName     String?
+  notes          String?
+
+  foremanSignatureUrl String?
+  foremanSignedAt     DateTime?
+  foremanSignedName   String?
+
+  clientSignatureUrl  String?
+  clientSignedName    String?
+  clientSignedAt      DateTime?
+  clientSignedIp      String?
+  clientSignedDevice  String?
+  clientSignedVersion Int?
+
+  signedPdfUrl String?
+  lockedAt     DateTime?
+  deletedAt    DateTime?
+  whatsappSentAt DateTime?
+
+  currentVersion Int @default(1)
+
+  createdById String
+  createdBy   User     @relation("OpsDnCreatedBy", fields: [createdById], references: [id])
+  updatedById String
+  updatedBy   User     @relation("OpsDnUpdatedBy", fields: [updatedById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items       OpsDeliveryNoteItem[]
+  media       OpsDeliveryNoteMedia[]
+  attachments OpsDeliveryNoteAttachment[]
+  approvals   OpsDeliveryNoteApproval[]
+  signTokens  OpsDeliveryNoteSignToken[]
+  events      OpsDeliveryNoteEvent[]
+
+  @@index([projectId])
+  @@index([foremanId])
+  @@index([status])
+  @@index([noteDate])
+  @@index([deletedAt])
+}
+
+model OpsDeliveryNoteItem {
+  id                 String          @id @default(cuid())
+  opsDeliveryNoteId  String
+  opsDeliveryNote    OpsDeliveryNote @relation(fields: [opsDeliveryNoteId], references: [id], onDelete: Cascade)
+  description        String
+  unit               String          @default("יח'")
+  quantity           Decimal         @db.Decimal(12, 4)
+  notes              String?
+  sortOrder          Int             @default(0)
+
+  @@index([opsDeliveryNoteId])
+}
+
+model OpsDeliveryNoteMedia {
+  id                String          @id @default(cuid())
+  opsDeliveryNoteId String
+  opsDeliveryNote   OpsDeliveryNote @relation(fields: [opsDeliveryNoteId], references: [id], onDelete: Cascade)
+  /** loading | transport | unloading | other */
+  stage             String          @default("other")
+  name              String
+  url               String
+  path              String?
+  bucket            String?
+  size              Int             @default(0)
+  createdAt         DateTime        @default(now())
+
+  @@index([opsDeliveryNoteId])
+}
+
+model OpsDeliveryNoteAttachment {
+  id                String          @id @default(cuid())
+  opsDeliveryNoteId String
+  opsDeliveryNote   OpsDeliveryNote @relation(fields: [opsDeliveryNoteId], references: [id], onDelete: Cascade)
+  name              String
+  mimeType          String
+  size              Int
+  kind              String          @default("document")
+  bucket            String
+  path              String
+  url               String
+  createdAt         DateTime        @default(now())
+
+  @@index([opsDeliveryNoteId])
+}
+
+model OpsDeliveryNoteApproval {
+  id                String            @id @default(cuid())
+  opsDeliveryNoteId String
+  opsDeliveryNote   OpsDeliveryNote   @relation(fields: [opsDeliveryNoteId], references: [id], onDelete: Cascade)
+  approverId        String
+  approver          User              @relation("OpsDnApprover", fields: [approverId], references: [id])
+  status            DocApprovalStatus @default(pending)
+  comment           String?
+  sentAt            DateTime          @default(now())
+  decidedAt         DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([opsDeliveryNoteId])
+  @@index([approverId])
+  @@index([status])
+}
+
+model OpsDeliveryNoteSignToken {
+  id                String          @id @default(cuid())
+  opsDeliveryNoteId String
+  opsDeliveryNote   OpsDeliveryNote @relation(fields: [opsDeliveryNoteId], references: [id], onDelete: Cascade)
+  tokenHash         String          @unique
+  publicId          String          @unique
+  expiresAt         DateTime?
+  usedAt            DateTime?
+  revokedAt         DateTime?
+  createdById       String?
+  createdAt         DateTime        @default(now())
+
+  @@index([opsDeliveryNoteId])
+}
+
+model OpsDeliveryNoteEvent {
+  id                String          @id @default(cuid())
+  opsDeliveryNoteId String
+  opsDeliveryNote   OpsDeliveryNote @relation(fields: [opsDeliveryNoteId], references: [id], onDelete: Cascade)
+  action            String
+  message           String
+  actorId           String?
+  actor             User?           @relation("OpsDnEventActor", fields: [actorId], references: [id])
+  metadata          String?
+  createdAt         DateTime        @default(now())
+
+  @@index([opsDeliveryNoteId])
+  @@index([createdAt])
+}
+
+// ─── Measurement Sheets (דפי מדידה → חשבונות) ────────────────────────────────
+
+model MeasurementSheet {
+  id               String                 @id @default(cuid())
+  projectId        String
+  project          Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title            String
+  sequenceNumber   Int                    @default(1)
+  status           MeasurementSheetStatus @default(draft)
+  notes            String?
+  /** גרסת מסמך — עולה בכל שליחה לאישור */
+  currentVersion   Int                    @default(1)
+  submittedAt      DateTime?
+  approvedAt       DateTime?
+  returnedAt       DateTime?
+  lastReturnComment String?               @db.Text
+  partialInvoiceId String?
+  partialInvoice   PartialInvoice?        @relation(fields: [partialInvoiceId], references: [id], onDelete: SetNull)
+  createdById      String
+  createdBy        User                   @relation("MeasurementSheetCreatedBy", fields: [createdById], references: [id])
+  updatedById      String
+  updatedBy        User                   @relation("MeasurementSheetUpdatedBy", fields: [updatedById], references: [id])
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  rows        MeasurementSheetRow[]
+  cells       MeasurementCell[]
+  entries     MeasurementEntry[]
+  approvals   MeasurementSheetApproval[]
+  events      MeasurementSheetEvent[]
+  reviewNotes MeasurementSheetReviewNote[]
+  versions    MeasurementSheetVersion[]
+
+  @@unique([projectId, sequenceNumber])
+  @@index([projectId])
+  @@index([status])
+  @@index([partialInvoiceId])
+}
+
+model MeasurementSheetApproval {
+  id          String            @id @default(cuid())
+  sheetId     String
+  sheet       MeasurementSheet  @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  approverId  String
+  approver    User              @relation("MeasurementSheetApprover", fields: [approverId], references: [id])
+  status      DocApprovalStatus @default(pending)
+  comment     String?
+  sentAt      DateTime          @default(now())
+  decidedAt   DateTime?
+  createdAt   DateTime          @default(now())
+
+  @@index([sheetId])
+  @@index([approverId])
+  @@index([status])
+}
+
+model MeasurementSheetReviewNote {
+  id         String           @id @default(cuid())
+  sheetId    String
+  sheet      MeasurementSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  /** חדר / יחידה */
+  rowId      String?
+  /** סעיף BOQ */
+  boqItemId  String?
+  comment    String
+  version    Int              @default(1)
+  authorId   String
+  author     User             @relation("MeasurementSheetReviewAuthor", fields: [authorId], references: [id])
+  createdAt  DateTime         @default(now())
+
+  @@index([sheetId])
+  @@index([rowId])
+  @@index([boqItemId])
+}
+
+model MeasurementSheetEvent {
+  id        String           @id @default(cuid())
+  sheetId   String
+  sheet     MeasurementSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  metadata  String?
+  actorId   String
+  actor     User             @relation("MeasurementSheetEventActor", fields: [actorId], references: [id])
+  createdAt DateTime         @default(now())
+
+  @@index([sheetId])
+  @@index([createdAt])
+}
+
+model MeasurementSheetVersion {
+  id           String           @id @default(cuid())
+  sheetId      String
+  sheet        MeasurementSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  version      Int
+  status       MeasurementSheetStatus
+  /** JSON snapshot of sheet after this version */
+  snapshotJson String           @default("{}")
+  note         String?
+  actorId      String
+  createdAt    DateTime         @default(now())
+
+  @@unique([sheetId, version])
+  @@index([sheetId])
+}
+
+model MeasurementSheetRow {
+  id        String           @id @default(cuid())
+  sheetId   String
+  sheet     MeasurementSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int              @default(0)
+  notes     String?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  cells MeasurementCell[]
+
+  @@index([sheetId])
+}
+
+model MeasurementCell {
+  id          String              @id @default(cuid())
+  sheetId     String
+  sheet       MeasurementSheet    @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  rowId       String
+  row         MeasurementSheetRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  boqItemId   String
+  boqItem     BoqItem             @relation(fields: [boqItemId], references: [id])
+  quantity    Decimal             @default(0) @db.Decimal(12, 4)
+  updatedAt   DateTime            @updatedAt
+  createdAt   DateTime            @default(now())
+
+  entries MeasurementEntry[]
+
+  @@unique([rowId, boqItemId])
+  @@index([sheetId])
+  @@index([boqItemId])
+}
+
+model MeasurementEntry {
+  id          String           @id @default(cuid())
+  sheetId     String
+  sheet       MeasurementSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  cellId      String?
+  cell        MeasurementCell? @relation(fields: [cellId], references: [id], onDelete: SetNull)
+  boqItemId   String?
+  rowId       String?
+  oldQuantity Decimal?         @db.Decimal(12, 4)
+  newQuantity Decimal          @db.Decimal(12, 4)
+  note        String?
+  actorId     String
+  actor       User             @relation("MeasurementEntryActor", fields: [actorId], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@index([sheetId])
+  @@index([cellId])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Central Workflow Engine — מקור אמת לסטטוס / אישורים / Audit / גרסאות
+// Stage 1: תשתית בלבד. מודולים (יומן / סידור / מדידה) יתחברו בשלבים הבאים.
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum WorkflowDocKind {
+  WORK_DIARY
+  DELIVERY_NOTE
+  EXECUTION_REPORT
+  MEASUREMENT
+  ACCOUNT
+  INVOICE
+  WORK_SCHEDULE
+  GENERAL
+}
+
+enum WorkflowStatus {
+  draft
+  pending_approval
+  revision
+  approved
+  sent_to_client
+  client_signed
+  sent_to_receiver
+  receiver_signed
+  used_for_measurement
+  used_for_account
+  used_for_invoice
+  locked
+  cancelled
+}
+
+enum ClientSignatureStatus {
+  none
+  pending
+  opened
+  signed
+  expired
+}
+
+enum WorkflowApprovalStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+/** מסמך לוגי במנוע ה-Workflow — מספר ייחודי נשמר לכל החיים (למשל JW-000125) */
+model WorkflowDocument {
+  id                    String                @id @default(cuid())
+  kind                  WorkflowDocKind
+  /** מספר מסמך קבוע — לא משתנה בין סטטוסים */
+  documentNumber        String
+  projectId             String
+  project               Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title                 String?
+  status                WorkflowStatus        @default(draft)
+  version               Int                   @default(1)
+  currentOwnerId        String?
+  currentOwner          User?                 @relation("WorkflowDocumentOwner", fields: [currentOwnerId], references: [id])
+  clientSignatureStatus ClientSignatureStatus @default(none)
+  /** שרשרת מסמכים — מקור / הורה / הבא (ימולא בשלבים הבאים) */
+  sourceDocumentId      String?
+  sourceDocument        WorkflowDocument?     @relation("WorkflowSource", fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+  derivedDocuments      WorkflowDocument[]    @relation("WorkflowSource")
+  parentDocumentId      String?
+  parentDocument        WorkflowDocument?     @relation("WorkflowParent", fields: [parentDocumentId], references: [id], onDelete: SetNull)
+  childDocuments        WorkflowDocument[]    @relation("WorkflowParent")
+  nextDocumentId        String?
+  nextDocument          WorkflowDocument?     @relation("WorkflowNext", fields: [nextDocumentId], references: [id], onDelete: SetNull)
+  prevDocuments         WorkflowDocument[]    @relation("WorkflowNext")
+  /** קישור לישות תוכן (WorkDiary / …) בזמן מיגרציה */
+  legacyEntityType      String?
+  legacyEntityId        String?
+  /** דגלים / מטא-דאטה (JSON) */
+  metadataJson          String?
+  createdById           String
+  createdBy             User                  @relation("WorkflowDocumentCreatedBy", fields: [createdById], references: [id])
+  updatedById           String
+  updatedBy             User                  @relation("WorkflowDocumentUpdatedBy", fields: [updatedById], references: [id])
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  approvals   WorkflowApproval[]
+  events      WorkflowEvent[]
+  overrides   WorkflowOverride[]
+  versions    WorkflowDocVersion[]
+  attachments WorkflowAttachment[]
+  workDiary   WorkDiary?
+  archiveDocument Document?
+
+  @@unique([kind, documentNumber])
+  @@index([projectId])
+  @@index([status])
+  @@index([kind, status])
+  @@index([sourceDocumentId])
+  @@index([parentDocumentId])
+  @@index([nextDocumentId])
+  @@index([legacyEntityType, legacyEntityId])
+  @@index([currentOwnerId])
+}
+
+model WorkflowApproval {
+  id           String                 @id @default(cuid())
+  documentId   String
+  document     WorkflowDocument       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  approverId   String
+  approver     User                   @relation("WorkflowApprover", fields: [approverId], references: [id])
+  status       WorkflowApprovalStatus @default(pending)
+  comment      String?
+  sentAt       DateTime               @default(now())
+  decidedAt    DateTime?
+  createdAt    DateTime               @default(now())
+
+  @@index([documentId])
+  @@index([approverId])
+  @@index([status])
+}
+
+/** Audit + Timeline — אין מחיקה לוגית של רשומות אלה מהאפליקציה */
+model WorkflowEvent {
+  id         String           @id @default(cuid())
+  documentId String
+  document   WorkflowDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  type       String
+  message    String
+  fromStatus WorkflowStatus?
+  toStatus   WorkflowStatus?
+  metadata   String?
+  actorId    String?
+  actor      User?            @relation("WorkflowEventActor", fields: [actorId], references: [id])
+  createdAt  DateTime         @default(now())
+
+  @@index([documentId, createdAt])
+  @@index([type])
+}
+
+model WorkflowOverride {
+  id         String           @id @default(cuid())
+  documentId String
+  document   WorkflowDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  reason     String
+  note       String
+  fromStatus WorkflowStatus
+  toStatus   WorkflowStatus
+  actorId    String
+  actor      User             @relation("WorkflowOverrideActor", fields: [actorId], references: [id])
+  createdAt  DateTime         @default(now())
+
+  @@index([documentId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model WorkflowDocVersion {
+  id           String           @id @default(cuid())
+  documentId   String
+  document     WorkflowDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version      Int
+  status       WorkflowStatus
+  snapshotJson String           @default("{}")
+  note         String?
+  actorId      String?
+  createdAt    DateTime         @default(now())
+
+  @@unique([documentId, version])
+  @@index([documentId])
+}
+
+model WorkflowAttachment {
+  id           String           @id @default(cuid())
+  documentId   String
+  document     WorkflowDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  name         String
+  /** סיווג קובץ: image | video | pdf | … */
+  fileType     String
+  extension    String
+  size         Int
+  bucket       String
+  path         String
+  url          String
+  uploadedById String
+  uploadedBy   User             @relation("WorkflowAttachmentUploadedBy", fields: [uploadedById], references: [id])
+  createdAt    DateTime         @default(now())
+
+  @@index([documentId])
+  @@index([fileType])
 }

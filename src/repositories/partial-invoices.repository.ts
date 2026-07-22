@@ -29,6 +29,11 @@ export type CreatePartialInvoiceInput = {
   items: { boqItemId: string; quantity: number }[];
   /** When set, only these execution reports are marked as invoiced. */
   reportIds?: string[];
+  /**
+   * execution (default): זמין = בוצע − חויב
+   * measurement: זמין = חוזה − חויב (מקור הכמויות הוא דפי מדידה)
+   */
+  quantitySource?: "execution" | "measurement";
 };
 
 export type UpdatePartialInvoiceInput = {
@@ -107,7 +112,7 @@ export class PartialInvoicesRepository {
 
     const boqIds = input.items.map((i) => i.boqItemId);
     const boqRows = await prisma.boqItem.findMany({
-      where: { id: { in: boqIds }, projectId: input.projectId },
+      where: { id: { in: boqIds }, projectId: input.projectId, deletedAt: null },
     });
     if (boqRows.length !== boqIds.length) {
       throw new Error("חלק מסעיפי כתב הכמויות לא נמצאו בפרויקט");
@@ -117,9 +122,11 @@ export class PartialInvoicesRepository {
 
     for (const line of input.items) {
       const boq = boqById.get(line.boqItemId)!;
-      const executed = Number(boq.completedQuantity);
       const invoiced = Number(boq.invoicedQuantity);
-      const available = availableForInvoice(executed, invoiced);
+      const available =
+        input.quantitySource === "measurement"
+          ? Math.max(0, Number(boq.contractQuantity) - invoiced)
+          : availableForInvoice(Number(boq.completedQuantity), invoiced);
       const qty = Number(line.quantity);
       if (!(qty > 0)) {
         throw new Error(`כמות לא תקינה לסעיף ${boq.code}`);
@@ -342,7 +349,7 @@ export class PartialInvoicesRepository {
 
     const boqIds = [...new Set(input.items.map((i) => i.boqItemId))];
     const boqRows = await prisma.boqItem.findMany({
-      where: { id: { in: boqIds }, projectId },
+      where: { id: { in: boqIds }, projectId, deletedAt: null },
     });
     if (boqRows.length !== boqIds.length) {
       throw new Error("חלק מסעיפי כתב הכמויות לא נמצאו בפרויקט");

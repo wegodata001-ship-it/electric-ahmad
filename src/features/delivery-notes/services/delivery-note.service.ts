@@ -8,7 +8,7 @@ import { apiClient } from "@/lib/api/client";
 export type CreateDeliveryNotePayload = {
   noteNumber?: string;
   date: string;
-  status?: "draft" | "sent" | "delivered" | "cancelled" | "issued" | "in_transit";
+  status?: "draft" | "sent" | "delivered" | "cancelled" | "issued" | "in_transit" | "locked";
   client: string;
   clientId?: string | null;
   projectId?: string | null;
@@ -21,6 +21,11 @@ export type CreateDeliveryNotePayload = {
   notes?: string;
   receiverName?: string;
   receivedAt?: string;
+  receiverSignatureUrl?: string | null;
+  employeeSignatureUrl?: string | null;
+  employeeSignedName?: string | null;
+  senderSigned?: boolean;
+  receiverSigned?: boolean;
   driverName?: string;
   driverPhone?: string;
   vehicle?: string;
@@ -69,6 +74,55 @@ export const deliveryNoteService = {
     payload: CreateDeliveryNotePayload
   ): Promise<DeliveryNote> {
     return apiClient.patch<DeliveryNote>(`/api/delivery-notes/${id}`, payload);
+  },
+
+  async delete(id: string): Promise<{ ok: boolean }> {
+    return apiClient.delete<{ ok: boolean }>(`/api/delivery-notes/${id}`);
+  },
+
+  async complete(id: string): Promise<{
+    note: DeliveryNote;
+    document: { name: string; folderPath?: string | null; url: string };
+  }> {
+    return apiClient.post(`/api/delivery-notes/${id}/complete`);
+  },
+
+  async saveDocument(id: string): Promise<{
+    document: { id: string; name: string; folderPath?: string | null; url: string };
+    created: boolean;
+  }> {
+    return apiClient.post(`/api/delivery-notes/${id}/save-document`);
+  },
+
+  async listRecipients(projectId?: string) {
+    const q = projectId ? `?projectId=${projectId}` : "";
+    return apiClient.get<{
+      items: {
+        id: string;
+        kind: "user";
+        fullName: string;
+        roleLabel: string;
+        phone: string;
+        email: string;
+        status: "active" | "inactive";
+      }[];
+    }>(`/api/delivery-notes/recipients${q}`);
+  },
+
+  async send(
+    id: string,
+    payload: {
+      recipientIds: string[];
+      includeClient?: boolean;
+      notifyInApp?: boolean;
+      sendWhatsApp?: boolean;
+      sendEmail?: boolean;
+    }
+  ) {
+    return apiClient.post<{
+      note: DeliveryNote;
+      channels: { whatsappUrl: string | null; emailUrl: string | null };
+    }>(`/api/delivery-notes/${id}/send`, payload);
   },
 
   async getVersions(id: string): Promise<DeliveryNoteVersion[]> {

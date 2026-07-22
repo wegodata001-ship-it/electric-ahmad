@@ -17,16 +17,23 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
-  ClipboardPlus,
   History,
+  Pencil,
+  Star,
+  Trash2,
 } from "lucide-react";
 import type { BoqItem } from "@/types";
-import { Badge, Button, Progress, Pagination } from "@/components/ui";
-import { formatNumber, formatPercent } from "@/utils/format";
-import { BOQ_STATUS_LABELS, BOQ_STATUS_COLORS } from "@/constants";
+import { Badge, Button, Pagination, useToast } from "@/components/ui";
+import { formatCurrency, formatNumber } from "@/utils/format";
+import {
+  BOQ_KIND_LABELS,
+  BOQ_STATUS_COLORS,
+  BOQ_STATUS_LABELS,
+} from "@/constants";
 import { cn } from "@/lib/utils";
-import { BoqExecutionDrawer } from "./boq-execution-drawer";
-import { BoqExecutionHistoryDrawer } from "./boq-execution-history-drawer";
+import { boqService } from "@/features/boq/services/boq.service";
+import { BoqItemFormModal } from "./boq-item-form-modal";
+import { BoqItemHistoryModal } from "./boq-item-history-modal";
 
 interface BoqTableProps {
   items: BoqItem[];
@@ -35,17 +42,27 @@ interface BoqTableProps {
 }
 
 export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
+  const toast = useToast();
   const [sorting, setSorting] = useState<SortingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [globalFilter, setGlobalFilter] = useState("");
-  const [toast, setToast] = useState<string | null>(null);
-  const [reportItem, setReportItem] = useState<BoqItem | null>(null);
-  const [historyItem, setHistoryItem] = useState<BoqItem | null>(null);
+  const [kindFilter, setKindFilter] = useState<"all" | "regular" | "exceptional">("all");
   const [rows, setRows] = useState(items);
+  const [editItem, setEditItem] = useState<BoqItem | null>(null);
+  const [historyItemId, setHistoryItemId] = useState<string | null>(null);
 
   useEffect(() => {
     setRows(items);
   }, [items]);
+
+  const visibleRows = useMemo(() => {
+    if (kindFilter === "all") return rows;
+    return rows.filter((r) =>
+      kindFilter === "exceptional"
+        ? r.itemKind === "exceptional"
+        : r.itemKind !== "exceptional"
+    );
+  }, [rows, kindFilter]);
 
   const columns = useMemo<ColumnDef<BoqItem>[]>(
     () => [
@@ -69,11 +86,19 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
       {
         accessorKey: "code",
         header: "קוד",
-        size: 80,
-        cell: ({ getValue }) => (
-          <span className="text-sm font-mono text-gray-600">
-            {getValue() as string}
-          </span>
+        size: 90,
+        cell: ({ row, getValue }) => (
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-mono text-gray-600">
+              {getValue() as string}
+            </span>
+            {row.original.itemKind === "exceptional" && (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 text-[10px] font-semibold">
+                <Star className="h-2.5 w-2.5" />
+                חריג
+              </span>
+            )}
+          </div>
         ),
       },
       {
@@ -104,57 +129,42 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
         ),
       },
       {
-        id: "executedQuantity",
-        accessorFn: (row) => row.executedQuantity ?? row.completedQuantity,
-        header: "בוצע",
-        size: 80,
+        accessorKey: "unitPrice",
+        header: "מחיר יחידה",
+        size: 100,
         cell: ({ getValue }) => (
-          <span className="text-sm font-medium text-primary-600">
-            {formatNumber(getValue() as number)}
+          <span className="text-sm text-gray-900">
+            {formatCurrency(getValue() as number)}
           </span>
         ),
       },
       {
-        accessorKey: "remainingQuantity",
-        header: "נותר",
-        size: 80,
+        id: "total",
+        header: "סה״כ",
+        size: 110,
+        accessorFn: (row) => row.contractQuantity * row.unitPrice,
         cell: ({ getValue }) => (
-          <span className="text-sm text-gray-600">
-            {formatNumber(getValue() as number)}
+          <span className="text-sm font-semibold text-gray-900">
+            {formatCurrency(getValue() as number)}
           </span>
         ),
       },
       {
-        accessorKey: "invoicedQuantity",
-        header: "חויב",
-        size: 80,
-        cell: ({ getValue }) => (
-          <span className="text-sm text-gray-700">
-            {formatNumber((getValue() as number) ?? 0)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "availableForInvoice",
-        header: "זמין לחשבון",
-        size: 95,
-        cell: ({ getValue }) => (
-          <span className="text-sm font-medium text-emerald-700">
-            {formatNumber((getValue() as number) ?? 0)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "progress",
-        header: "אחוז ביצוע",
-        size: 120,
+        accessorKey: "itemKind",
+        header: "סוג סעיף",
+        size: 90,
         cell: ({ getValue }) => {
-          const val = getValue() as number;
+          const kind = (getValue() as BoqItem["itemKind"]) || "regular";
           return (
-            <div className="flex items-center gap-2">
-              <Progress value={val} size="sm" className="w-16" />
-              <span className="text-xs text-gray-500">{formatPercent(val)}</span>
-            </div>
+            <Badge
+              className={
+                kind === "exceptional"
+                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                  : "bg-gray-50 text-gray-600 border-gray-200"
+              }
+            >
+              {BOQ_KIND_LABELS[kind]}
+            </Badge>
           );
         },
       },
@@ -174,27 +184,36 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
       {
         id: "actions",
         header: "פעולות",
-        size: 200,
+        size: 180,
         cell: ({ row }) => {
           const item = row.original;
           return (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1">
               <Button
                 size="sm"
-                onClick={() => setReportItem(item)}
-                title="דווח ביצוע בשטח"
+                variant="ghost"
+                onClick={() => setEditItem(item)}
+                title="ערוך"
               >
-                <ClipboardPlus className="h-3.5 w-3.5" />
-                דווח ביצוע
+                <Pencil className="h-3.5 w-3.5" />
+                ערוך
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setHistoryItem(item)}
-                title="היסטוריית ביצוע"
+                onClick={() => setHistoryItemId(item.id)}
+                title="היסטוריה"
               >
                 <History className="h-3.5 w-3.5" />
-                היסטוריה
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-red-600 hover:text-red-700"
+                onClick={() => handleDelete(item)}
+                title="מחק"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
           );
@@ -205,8 +224,21 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
     []
   );
 
+  async function handleDelete(item: BoqItem) {
+    if (!window.confirm(`למחוק את הסעיף ${item.code}? המחיקה תישמר בהיסטוריה.`)) {
+      return;
+    }
+    try {
+      await boqService.remove(item.id);
+      toast.success("הסעיף נמחק");
+      onItemsChanged?.();
+    } catch (e: any) {
+      toast.error(e.message || "שגיאה במחיקה");
+    }
+  }
+
   const table = useReactTable({
-    data: rows,
+    data: visibleRows,
     columns,
     state: { sorting, expanded, globalFilter },
     onSortingChange: setSorting,
@@ -223,16 +255,7 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200/80 shadow-sm overflow-hidden">
-      {toast && (
-        <div className="px-4 py-2 bg-primary-50 text-primary-800 text-sm border-b border-primary-100 flex justify-between">
-          <span>{toast}</span>
-          <button onClick={() => setToast(null)} className="text-primary-600">
-            סגור
-          </button>
-        </div>
-      )}
-
-      <div className="p-3 sm:p-4 border-b border-gray-100">
+      <div className="p-3 sm:p-4 border-b border-gray-100 flex flex-wrap gap-3 items-center">
         <input
           type="text"
           placeholder="חיפוש בסעיפים..."
@@ -240,13 +263,20 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="w-full max-w-sm h-11 md:h-9 px-3 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
         />
+        <select
+          className="h-9 rounded-lg border border-gray-200 px-3 text-sm bg-white"
+          value={kindFilter}
+          onChange={(e) => setKindFilter(e.target.value as typeof kindFilter)}
+        >
+          <option value="all">כל הסוגים</option>
+          <option value="regular">רגילים</option>
+          <option value="exceptional">חריגים</option>
+        </select>
       </div>
 
       <div className="md:hidden space-y-3 p-3">
         {table.getRowModel().rows.map((row) => {
           const item = row.original;
-          const executed = item.executedQuantity ?? item.completedQuantity;
-
           return (
             <article
               key={row.id}
@@ -254,47 +284,60 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-mono text-xs text-gray-500">{item.code}</p>
-                  <p className="mt-1 font-semibold text-gray-900">
-                    {item.description}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-mono text-xs text-gray-500">{item.code}</p>
+                    {item.itemKind === "exceptional" && (
+                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                        חריג
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 font-semibold text-gray-900">{item.description}</p>
                 </div>
                 <Badge className={BOQ_STATUS_COLORS[item.status]}>
                   {BOQ_STATUS_LABELS[item.status]}
                 </Badge>
               </div>
 
-              <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-gray-50 p-2">
-                <Stat label="חוזה" value={`${formatNumber(item.contractQuantity)} ${item.unit}`} />
-                <Stat label="בוצע" value={formatNumber(executed)} accent />
-                <Stat label="נותר" value={formatNumber(item.remainingQuantity)} />
-              </div>
-
-              <div className="mt-3">
-                <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
-                  <span>התקדמות</span>
-                  <span>{formatPercent(item.progress)}</span>
+              <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-gray-50 p-2 text-xs">
+                <div>
+                  <p className="text-gray-400">כמות</p>
+                  <p className="font-semibold">
+                    {formatNumber(item.contractQuantity)} {item.unit}
+                  </p>
                 </div>
-                <Progress value={item.progress} size="sm" />
+                <div>
+                  <p className="text-gray-400">מחיר</p>
+                  <p className="font-semibold">{formatCurrency(item.unitPrice)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400">סה״כ</p>
+                  <p className="font-semibold">
+                    {formatCurrency(item.contractQuantity * item.unitPrice)}
+                  </p>
+                </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
-                <Button
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setReportItem(item)}
-                >
-                  <ClipboardPlus className="h-4 w-4" />
-                  דיווח
+              <div className="mt-3 grid grid-cols-3 gap-2 border-t border-gray-100 pt-3">
+                <Button size="sm" className="w-full" onClick={() => setEditItem(item)}>
+                  <Pencil className="h-4 w-4" />
+                  ערוך
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
                   className="w-full"
-                  onClick={() => setHistoryItem(item)}
+                  onClick={() => setHistoryItemId(item.id)}
                 >
                   <History className="h-4 w-4" />
-                  היסטוריה
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full text-red-600"
+                  onClick={() => handleDelete(item)}
+                >
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             </article>
@@ -352,39 +395,24 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
                 {row.getIsExpanded() && (
                   <tr>
                     <td colSpan={columns.length} className="px-4 py-3 bg-gray-50/60">
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-                        <Stat
-                          label="חוזה"
-                          value={formatNumber(row.original.contractQuantity)}
-                        />
-                        <Stat
-                          label="בוצע"
-                          value={formatNumber(
-                            row.original.executedQuantity ??
-                              row.original.completedQuantity
-                          )}
-                          accent
-                        />
-                        <Stat
-                          label="חויב"
-                          value={formatNumber(row.original.invoicedQuantity ?? 0)}
-                        />
-                        <Stat
-                          label="זמין לחשבון"
-                          value={formatNumber(
-                            row.original.availableForInvoice ?? 0
-                          )}
-                          good
-                        />
-                        <Stat
-                          label="נותר מחוזה"
-                          value={formatNumber(row.original.remainingQuantity)}
-                        />
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                        <div>
+                          <p className="text-xs text-gray-400">קטגוריה</p>
+                          <p className="font-medium">{row.original.category || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400">סוג</p>
+                          <p className="font-medium">
+                            {BOQ_KIND_LABELS[row.original.itemKind || "regular"]}
+                          </p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-xs text-gray-400">הערות</p>
+                          <p className="font-medium whitespace-pre-wrap">
+                            {row.original.notes || "—"}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-xs text-gray-400 mt-2">
-                        כמויות בוצעו רק מדיווחי ביצוע · חיוב רק מכמות זמינה · כמות
-                        חוזה קבועה
-                      </p>
                     </td>
                   </tr>
                 )}
@@ -402,47 +430,24 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
         />
       </div>
 
-      <BoqExecutionDrawer
-        open={!!reportItem}
-        item={reportItem}
-        onClose={() => setReportItem(null)}
-        onSaved={() => {
-          setToast("דיווח הביצוע נשמר ועודכן בכתב הכמויות");
+      <BoqItemFormModal
+        open={!!editItem}
+        mode="edit"
+        item={editItem}
+        onClose={() => setEditItem(null)}
+        onSubmit={async (values) => {
+          if (!editItem) return;
+          await boqService.update(editItem.id, values);
+          toast.success("הסעיף עודכן");
           onItemsChanged?.();
         }}
       />
-      <BoqExecutionHistoryDrawer
-        open={!!historyItem}
-        item={historyItem}
-        onClose={() => setHistoryItem(null)}
-      />
-    </div>
-  );
-}
 
-function Stat({
-  label,
-  value,
-  accent,
-  good,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-  good?: boolean;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-gray-400">{label}</p>
-      <p
-        className={cn(
-          "font-semibold",
-          accent && "text-primary-700",
-          good && "text-emerald-700"
-        )}
-      >
-        {value}
-      </p>
+      <BoqItemHistoryModal
+        open={!!historyItemId}
+        itemId={historyItemId}
+        onClose={() => setHistoryItemId(null)}
+      />
     </div>
   );
 }

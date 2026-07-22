@@ -1,39 +1,52 @@
-import { prisma } from "@/lib/prisma";
-import { mapGalleryItem } from "@/lib/mappers";
+import { DocumentsRepository } from "./documents.repository";
 import { AuditRepository } from "./audit.repository";
-import { deleteFromStorage } from "@/lib/supabase/storage";
+import type { GalleryItem } from "@/types";
 import type { MediaType } from "@prisma/client";
 
+/**
+ * שכבת תאימות — הגלריה אינה מקור אמת.
+ * כל קריאה/כתיבה עוברת דרך Document (תיקיות תמונות/סרטונים).
+ */
 export class GalleryRepository {
-  static galleryInclude = {
-    project: { select: { name: true } },
-    uploadedBy: { select: { name: true } },
-  } as const;
+  private static toGalleryItem(doc: Awaited<ReturnType<typeof DocumentsRepository.findById>>): GalleryItem | null {
+    if (!doc) return null;
+    if (doc.type !== "image" && doc.type !== "video") return null;
+    return {
+      id: doc.id,
+      projectId: doc.projectId,
+      projectName: doc.projectName,
+      type: doc.type as MediaType,
+      title: doc.name,
+      url: doc.url,
+      thumbnailUrl: doc.url,
+      uploadedBy: doc.uploadedBy,
+      uploadedAt: doc.uploadedAt,
+    };
+  }
 
   static async findAll() {
-    const rows = await prisma.galleryItem.findMany({
-      include: this.galleryInclude,
-      orderBy: { createdAt: "desc" },
-    });
-    return rows.map(mapGalleryItem);
+    const docs = await DocumentsRepository.findAll();
+    return docs
+      .filter((d) => d.type === "image" || d.type === "video")
+      .map((d) => this.toGalleryItem(d)!)
+      .filter(Boolean);
   }
 
   static async findByProject(projectId: string) {
-    const rows = await prisma.galleryItem.findMany({
-      where: { projectId },
-      include: this.galleryInclude,
-      orderBy: { createdAt: "desc" },
-    });
-    return rows.map(mapGalleryItem);
+    const docs = await DocumentsRepository.findByProject(projectId);
+    return docs
+      .filter((d) => d.type === "image" || d.type === "video")
+      .map((d) => this.toGalleryItem(d)!)
+      .filter(Boolean);
   }
 
   static async findRecent(limit = 12) {
-    const rows = await prisma.galleryItem.findMany({
-      take: limit,
-      include: this.galleryInclude,
-      orderBy: { createdAt: "desc" },
-    });
-    return rows.map(mapGalleryItem);
+    const docs = await DocumentsRepository.findRecent(Math.max(limit * 3, 24));
+    return docs
+      .filter((d) => d.type === "image" || d.type === "video")
+      .slice(0, limit)
+      .map((d) => this.toGalleryItem(d)!)
+      .filter(Boolean);
   }
 
   static async create(
@@ -52,38 +65,43 @@ export class GalleryRepository {
     },
     userId: string
   ) {
-    const row = await prisma.galleryItem.create({
-      data: { ...data, uploadedById: userId },
-      include: this.galleryInclude,
-    });
+    const doc = await DocumentsRepository.create(
+      {
+        projectId: data.projectId,
+        name: data.title,
+        type: data.type === "video" ? "video" : "image",
+        extension:
+          data.path.split(".").pop()?.toLowerCase() ||
+          (data.type === "video" ? "mp4" : "jpg"),
+        size: 0,
+        bucket: data.bucket,
+        path: data.path,
+        url: data.url,
+        folderPath: data.type === "video" ? "סרטונים" : "תמונות",
+        boqItemId: data.boqItemId ?? null,
+        reportId: data.reportId ?? null,
+        employeeId: data.employeeId ?? null,
+      },
+      userId
+    );
 
     await AuditRepository.log({
       action: "UPLOAD",
-      entityType: "GalleryItem",
-      entityId: row.id,
+      entityType: "Document",
+      entityId: doc.id,
       userId,
-      metadata: { type: data.type, bucket: data.bucket, path: data.path },
+      metadata: {
+        type: data.type,
+        bucket: data.bucket,
+        path: data.path,
+        via: "gallery_compat",
+      },
     });
 
-    return mapGalleryItem(row);
+    return this.toGalleryItem(doc)!;
   }
 
   static async delete(id: string, userId: string) {
-    const item = await prisma.galleryItem.findUnique({ where: { id } });
-    if (!item) throw new Error("פריט גלריה לא נמצא");
-
-    await deleteFromStorage(item.bucket, item.path);
-    if (item.thumbnailPath) {
-      await deleteFromStorage(item.bucket, item.thumbnailPath).catch(() => undefined);
-    }
-
-    await prisma.galleryItem.delete({ where: { id } });
-
-    await AuditRepository.log({
-      action: "DELETE",
-      entityType: "GalleryItem",
-      entityId: id,
-      userId,
-    });
+    await DocumentsRepository.delete(id, userId);
   }
 }

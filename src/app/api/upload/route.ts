@@ -6,8 +6,8 @@ import {
   getBucketForDocumentType,
 } from "@/lib/supabase/storage";
 import { DocumentsRepository } from "@/repositories/documents.repository";
-import { GalleryRepository } from "@/repositories/gallery.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { defaultFolderForDocumentType } from "@/lib/documents/archive-folders";
 import type { StorageBucketKey } from "@/config/storage";
 
 export async function POST(request: NextRequest) {
@@ -19,6 +19,8 @@ export async function POST(request: NextRequest) {
     const projectId = formData.get("projectId") as string | null;
     const uploadType = (formData.get("type") as string) ?? "document";
     const title = (formData.get("title") as string) ?? file?.name ?? "קובץ";
+    const folderPathRaw = formData.get("folderPath") as string | null;
+    const documentId = (formData.get("documentId") as string) ?? undefined;
     const boqItemId = (formData.get("boqItemId") as string) ?? undefined;
     const reportId = (formData.get("reportId") as string) ?? undefined;
     const employeeId = (formData.get("employeeId") as string) ?? undefined;
@@ -32,42 +34,20 @@ export async function POST(request: NextRequest) {
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
     const docType = resolveDocumentType(mimeType, extension);
 
-    if (uploadType === "image" || uploadType === "video") {
-      const bucket: StorageBucketKey =
-        bucketKey ?? (uploadType === "image" ? "images" : "videos");
-
-      const uploaded = await uploadToStorage({
-        file,
-        fileName: file.name,
-        mimeType,
-        size: file.size,
-        bucketKey: bucket,
-        projectId,
-        subfolder: uploadType === "image" ? "images" : "videos",
-      });
-
-      const gallery = await GalleryRepository.create(
-        {
-          projectId,
-          type: uploadType === "image" ? "image" : "video",
-          title,
-          bucket: uploaded.bucket,
-          path: uploaded.path,
-          url: uploaded.url,
-          thumbnailUrl: uploaded.url,
-          thumbnailPath: uploaded.path,
-          boqItemId,
-          reportId,
-          employeeId,
-        },
-        userId
-      );
-
-      return apiSuccess(gallery);
-    }
+    const isMedia = uploadType === "image" || uploadType === "video";
+    const resolvedType = isMedia
+      ? uploadType === "video"
+        ? "video"
+        : "image"
+      : docType;
 
     const bucket: StorageBucketKey =
-      bucketKey ?? getBucketForDocumentType(docType);
+      bucketKey ??
+      (resolvedType === "image"
+        ? "images"
+        : resolvedType === "video"
+          ? "videos"
+          : getBucketForDocumentType(resolvedType));
 
     const uploaded = await uploadToStorage({
       file,
@@ -76,19 +56,54 @@ export async function POST(request: NextRequest) {
       size: file.size,
       bucketKey: bucket,
       projectId,
-      subfolder: docType === "pdf" ? "pdf" : docType === "excel" ? "excel" : "documents",
+      subfolder:
+        resolvedType === "image"
+          ? "images"
+          : resolvedType === "video"
+            ? "videos"
+            : resolvedType === "pdf"
+              ? "pdf"
+              : resolvedType === "excel"
+                ? "excel"
+                : "documents",
     });
+
+    /** העלאה כקובץ מצורף למסמך קיים */
+    if (documentId) {
+      const updated = await DocumentsRepository.addAttachment(
+        documentId,
+        {
+          name: title,
+          type: resolvedType,
+          extension: uploaded.extension,
+          size: uploaded.size,
+          bucket: uploaded.bucket,
+          path: uploaded.path,
+          url: uploaded.url,
+        },
+        userId
+      );
+      return apiSuccess(updated);
+    }
+
+    const folderPath =
+      folderPathRaw?.trim() ||
+      defaultFolderForDocumentType(resolvedType);
 
     const document = await DocumentsRepository.create(
       {
         projectId,
         name: title,
-        type: docType,
+        type: resolvedType,
         extension: uploaded.extension,
         size: uploaded.size,
         bucket: uploaded.bucket,
         path: uploaded.path,
         url: uploaded.url,
+        folderPath,
+        boqItemId: boqItemId ?? null,
+        reportId: reportId ?? null,
+        employeeId: employeeId ?? null,
       },
       userId
     );
@@ -108,12 +123,13 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) return apiError("מזהה נדרש");
 
-    if (entity === "gallery") {
-      await GalleryRepository.delete(id, userId);
-    } else {
-      await DocumentsRepository.delete(id, userId);
+    if (entity === "attachment") {
+      const doc = await DocumentsRepository.deleteAttachment(id, userId);
+      return apiSuccess(doc);
     }
 
+    // gallery entity ממופה גם למסמך (תאימות לאחור)
+    await DocumentsRepository.delete(id, userId);
     return apiSuccess({ ok: true });
   } catch (error) {
     return handleApiError(error);

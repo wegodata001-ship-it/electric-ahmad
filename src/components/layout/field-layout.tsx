@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { BookOpen, Home, LogOut, UserRound, Users } from "lucide-react";
+import { BookOpen, Home, LogOut, Package, UserRound, Users } from "lucide-react";
 
 const nav = [
   { name: "בית", href: "/field", icon: Home },
-  { name: "יומן", href: "/field/journal", icon: BookOpen },
+  { name: "יומן עבודה", href: "/field/work-diaries", icon: BookOpen },
+  { name: "תעודות", href: "/field/delivery-notes", icon: Package },
   { name: "עובדים שלי", href: "/field/crew", icon: Users },
   { name: "פרופיל", href: "/field/profile", icon: UserRound },
 ] as const;

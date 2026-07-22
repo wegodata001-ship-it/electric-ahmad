@@ -65,7 +65,10 @@ export function Header() {
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    notificationService.getAll().then(setNotifications);
+    notificationService
+      .getAll()
+      .then(setNotifications)
+      .catch(() => setNotifications([]));
   }, [setNotifications]);
 
   useEffect(() => {

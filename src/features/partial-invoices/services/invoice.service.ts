@@ -74,10 +74,53 @@ export const invoiceService = {
     );
   },
 
-  async sendForApproval(invoiceId: string): Promise<ProjectInvoiceApproval> {
-    return apiClient.post<ProjectInvoiceApproval>(
-      `/api/partial-invoices/${invoiceId}/send-for-approval`
+  async sendForApproval(
+    invoiceId: string,
+    payload: {
+      approverUserId?: string;
+      approverUserIds?: string[];
+      createTask?: boolean;
+      notifyInApp?: boolean;
+      sendWhatsApp?: boolean;
+      sendEmail?: boolean;
+    }
+  ): Promise<{
+    approval: ProjectInvoiceApproval;
+    approvals?: ProjectInvoiceApproval[];
+    channels: { whatsappUrl: string | null; emailUrl: string | null };
+  }> {
+    return apiClient.post(
+      `/api/partial-invoices/${invoiceId}/send-for-approval`,
+      payload
     );
+  },
+
+  async saveDocument(invoiceId: string): Promise<{
+    document: { id: string; name: string; folderPath?: string | null; url: string };
+    created: boolean;
+  }> {
+    return apiClient.post(`/api/partial-invoices/${invoiceId}/save-document`);
+  },
+
+  async listApprovers(): Promise<
+    {
+      id: string;
+      fullName: string;
+      role: string;
+      roleLabel: string;
+      department: string;
+      phone: string;
+      email: string;
+      status: "active" | "inactive";
+      statusLabel: string;
+      pendingApprovals: number;
+      employeeId: string | null;
+    }[]
+  > {
+    const res = await apiClient.get<{ items: any[] }>(
+      "/api/partial-invoices/approvers"
+    );
+    return res.items;
   },
 
   async getApprovals(invoiceId: string): Promise<ProjectInvoiceApproval[]> {

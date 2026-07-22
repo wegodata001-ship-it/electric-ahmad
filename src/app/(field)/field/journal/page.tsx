@@ -1,5 +1,5 @@
-import { WmListPage } from "@/features/work-management/components/wm-list-page";
+import { redirect } from "next/navigation";
 
-export default function FieldJournalPage() {
-  return <WmListPage />;
+export default function Page() {
+  redirect("/field/work-diaries");
 }

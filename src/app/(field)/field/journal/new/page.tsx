@@ -1,5 +1,5 @@
-import { WmBuildPage } from "@/features/work-management/components/wm-build-page";
+import { redirect } from "next/navigation";
 
-export default function FieldJournalNewPage() {
-  return <WmBuildPage />;
+export default function Page() {
+  redirect("/field/work-diaries/new");
 }

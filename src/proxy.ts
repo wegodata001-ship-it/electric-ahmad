@@ -23,7 +23,9 @@ function isPublicOfficePath(pathname: string): boolean {
     pathname === "/manager/" ||
     pathname === "/api/auth/login" ||
     pathname === "/api/auth/logout" ||
-    pathname === "/api/health"
+    pathname === "/api/health" ||
+    pathname.startsWith("/sign/") ||
+    pathname.startsWith("/api/sign/")
   );
 }
 
@@ -148,6 +150,11 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Public client signature pages / APIs — no login
+  if (pathname.startsWith("/sign/") || pathname.startsWith("/api/sign/")) {
+    return NextResponse.next();
+  }
 
   // Field system first — never falls through to office session checks
   if (isFieldPath(pathname)) {

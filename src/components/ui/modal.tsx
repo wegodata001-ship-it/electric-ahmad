@@ -12,7 +12,7 @@ interface ModalProps {
   title?: string;
   description?: string;
   children: React.ReactNode;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "lg" | "xl" | "full";
 }
 
 const sizes = {
@@ -20,6 +20,7 @@ const sizes = {
   md: "max-w-lg",
   lg: "max-w-2xl",
   xl: "max-w-4xl",
+  full: "max-w-6xl",
 };
 
 export function Modal({ open, onClose, title, description, children, size = "md" }: ModalProps) {

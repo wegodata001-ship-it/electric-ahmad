@@ -1,5 +1,10 @@
-import { PartialInvoicesPage } from "@/features/partial-invoices/components/partial-invoices-page";
+import { Suspense } from "react";
+import { InvoicesWorkspacePage } from "@/features/partial-invoices/components/invoices-workspace-page";
 
 export default function Page() {
-  return <PartialInvoicesPage />;
+  return (
+    <Suspense fallback={<p className="p-6 text-sm text-gray-500">טוען…</p>}>
+      <InvoicesWorkspacePage />
+    </Suspense>
+  );
 }

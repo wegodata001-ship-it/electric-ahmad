@@ -33,10 +33,18 @@ function nowTime() {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-export function CreateDeliveryNotePage() {
+export function CreateDeliveryNotePage({
+  embedded = false,
+  lockedProjectId,
+  onComplete,
+}: {
+  embedded?: boolean;
+  lockedProjectId?: string;
+  onComplete?: (noteId: string) => void;
+} = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const projectFromQuery = searchParams.get("projectId") ?? "";
+  const projectFromQuery = lockedProjectId || searchParams.get("projectId") || "";
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -311,7 +319,11 @@ export function CreateDeliveryNotePage() {
         await deliveryNoteService.uploadAttachment(note.id, file);
       }
 
-      router.push(`/delivery-notes/${note.id}`);
+      if (onComplete) {
+        onComplete(note.id);
+      } else {
+        router.push(`/delivery-notes/${note.id}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "שגיאה בשמירה");
     } finally {
@@ -325,17 +337,19 @@ export function CreateDeliveryNotePage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <button
-            onClick={() => router.push("/delivery-notes")}
-            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-2"
-          >
-            <ArrowRight className="h-4 w-4" />
-            חזרה לתעודות משלוח
-          </button>
+          {!embedded && (
+            <button
+              onClick={() => router.push("/delivery-notes")}
+              className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-2"
+            >
+              <ArrowRight className="h-4 w-4" />
+              חזרה לתעודות משלוח
+            </button>
+          )}
           <h1 className="text-2xl font-bold text-gray-900">תעודת משלוח חדשה</h1>
           <p className="text-sm text-gray-500 mt-1">מספר תעודה: {noteNumber}</p>
         </div>
-        <Button onClick={handleSave} loading={saving}>
+        <Button onClick={handleSave} loading={saving} className="min-h-11">
           שמור תעודה
         </Button>
       </div>
@@ -582,6 +596,7 @@ export function CreateDeliveryNotePage() {
           <Field label="פרויקט (אופציונלי)" className="md:col-span-2 lg:col-span-2">
             <select
               value={projectId}
+              disabled={Boolean(lockedProjectId)}
               onChange={(e) => {
                 const id = e.target.value;
                 setProjectId(id);
@@ -590,7 +605,7 @@ export function CreateDeliveryNotePage() {
                   if (project) applyProject(project, clients);
                 }
               }}
-              className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-lg"
+              className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-lg disabled:bg-gray-50"
             >
               <option value="">בחר פרויקט...</option>
               {projects.map((p) => (

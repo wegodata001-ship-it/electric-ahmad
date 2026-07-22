@@ -21,17 +21,29 @@ export const PROJECT_STATUS_COLORS: Record<ProjectStatus, string> = {
 };
 
 export const BOQ_STATUS_LABELS: Record<BoqItemStatus, string> = {
-  not_started: "לא התחיל",
-  in_progress: "בביצוע",
+  active: "פעיל",
+  pending: "ממתין",
+  cancelled: "בוטל",
   completed: "הושלם",
-  on_hold: "מושהה",
+  // Legacy mappings
+  not_started: "פעיל",
+  in_progress: "פעיל",
+  on_hold: "ממתין",
 };
 
 export const BOQ_STATUS_COLORS: Record<BoqItemStatus, string> = {
-  not_started: "bg-gray-50 text-gray-600 border-gray-200",
-  in_progress: "bg-blue-50 text-blue-700 border-blue-200",
-  completed: "bg-green-50 text-green-700 border-green-200",
-  on_hold: "bg-orange-50 text-orange-700 border-orange-200",
+  active: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  pending: "bg-amber-50 text-amber-800 border-amber-200",
+  cancelled: "bg-red-50 text-red-700 border-red-200",
+  completed: "bg-gray-50 text-gray-600 border-gray-200",
+  not_started: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  in_progress: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  on_hold: "bg-amber-50 text-amber-800 border-amber-200",
+};
+
+export const BOQ_KIND_LABELS: Record<"regular" | "exceptional", string> = {
+  regular: "רגיל",
+  exceptional: "חריג",
 };
 
 export const EMPLOYEE_ROLE_LABELS: Record<EmployeeRole, string> = {
@@ -48,6 +60,7 @@ export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   approved_by_foreman: "אושר על ידי מנהל עבודה",
   rejected_by_foreman: "נדחה על ידי מנהל עבודה",
   sent_to_client: "נשלח ללקוח",
+  signed: "חתום",
   paid: "שולם",
   // Legacy labels (existing DB rows)
   submitted: "הוגש",
@@ -61,6 +74,7 @@ export const INVOICE_STATUS_COLORS: Record<InvoiceStatus, string> = {
   approved_by_foreman: "bg-emerald-50 text-emerald-700 border-emerald-200",
   rejected_by_foreman: "bg-red-50 text-red-700 border-red-200",
   sent_to_client: "bg-blue-50 text-blue-700 border-blue-200",
+  signed: "bg-green-50 text-green-800 border-green-200",
   paid: "bg-green-50 text-green-700 border-green-200",
   submitted: "bg-blue-50 text-blue-700 border-blue-200",
   approved: "bg-green-50 text-green-700 border-green-200",

@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Building2,
+  ClipboardCheck,
   ClipboardList,
   HardHat,
   LayoutDashboard,
@@ -12,11 +13,13 @@ import {
 
 /**
  * Office sidebar — ordered by real company workflow:
- * Dashboard → Delivery notes → Projects → BOQ → Invoices → Foremen → Employees → Reports → Settings
+ * Dashboard → Approvals → Delivery notes → Projects → …
  */
 export const mainNavigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "ממתינים לאישור", href: "/approvals", icon: ClipboardCheck },
   { name: "תעודות משלוח", href: "/delivery-notes", icon: Package },
+  { name: "ארכיון מסמכים", href: "/documents-archive", icon: ClipboardList },
   { name: "פרויקטים", href: "/projects", icon: Building2 },
   { name: "כתבי כמויות", href: "/boq", icon: ClipboardList },
   { name: "חשבונות", href: "/invoices", icon: Receipt },
@@ -40,9 +43,8 @@ export const projectTabs = [
 ] as const;
 
 export const quickNavigation = [
-  { name: "תעודת משלוח חדשה", href: "/delivery-notes/new" },
+  { name: "חשבונות / דפי מדידה", href: "/invoices" },
   { name: "פרויקט חדש", href: "/projects/new" },
-  { name: "חשבון חדש", href: "/invoices/new" },
   { name: "כתבי כמויות", href: "/boq" },
   { name: "מנהלי עבודה", href: "/foremen" },
   { name: "אפליקציית שטח", href: "/field" },

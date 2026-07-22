@@ -1,5 +1,14 @@
 export type ProjectStatus = "active" | "completed" | "on_hold" | "planning";
-export type BoqItemStatus = "not_started" | "in_progress" | "completed" | "on_hold";
+export type BoqItemStatus =
+  | "active"
+  | "pending"
+  | "cancelled"
+  | "completed"
+  | "not_started"
+  | "in_progress"
+  | "on_hold";
+
+export type BoqItemKind = "regular" | "exceptional";
 export type EmployeeStatus = "active" | "inactive" | "on_leave";
 export type EmployeeRole = "worker" | "foreman" | "engineer" | "manager" | "admin";
 export type DocumentType = "pdf" | "excel" | "word" | "dwg" | "image" | "video" | "other";
@@ -9,6 +18,7 @@ export type InvoiceStatus =
   | "approved_by_foreman"
   | "rejected_by_foreman"
   | "sent_to_client"
+  | "signed"
   | "paid"
   // Legacy — kept for backward-compatible rows
   | "submitted"
@@ -26,7 +36,9 @@ export interface ProjectInvoiceApproval {
   invoiceId: string;
   projectId: string;
   managerId: string;
+  approverUserId?: string | null;
   managerName?: string;
+  senderName?: string;
   status: InvoiceApprovalStatus;
   sentAt: string | null;
   approvedAt: string | null;
@@ -180,6 +192,9 @@ export interface BoqItem {
   remainingValue: number;
   progress: number;
   status: BoqItemStatus;
+  itemKind: BoqItemKind;
+  category?: string | null;
+  notes?: string | null;
   parentId?: string;
   level: number;
   createdAt: string;
@@ -229,12 +244,30 @@ export interface Document {
   projectName: string;
   name: string;
   type: DocumentType;
+  extension?: string;
   size: number;
   url: string;
   version: number;
   uploadedBy: string;
   uploadedAt: string;
+  folderPath?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
   versions: DocumentVersion[];
+  attachments?: DocumentAttachment[];
+  attachmentCount?: number;
+}
+
+export interface DocumentAttachment {
+  id: string;
+  documentId: string;
+  name: string;
+  type: DocumentType;
+  extension: string;
+  size: number;
+  url: string;
+  uploadedBy: string;
+  uploadedAt: string;
 }
 
 export interface DocumentVersion {
@@ -350,7 +383,8 @@ export type DeliveryNoteStatus =
   | "delivered"
   | "cancelled"
   | "issued"
-  | "in_transit";
+  | "in_transit"
+  | "locked";
 
 export interface DeliveryNoteItem {
   id: string;
@@ -439,6 +473,9 @@ export interface DeliveryNote {
   receiverSigned?: boolean;
   receiverName?: string | null;
   receivedAt?: string | null;
+  receiverSignatureUrl?: string | null;
+  employeeSignatureUrl?: string | null;
+  employeeSignedName?: string | null;
   equipmentCheckedIntact?: boolean;
   receivedComplete?: boolean;
   receivedWithNotes?: boolean;

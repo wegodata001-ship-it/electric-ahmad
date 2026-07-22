@@ -1,5 +1,6 @@
-import { GalleryPage } from "@/features/gallery/components/gallery-page";
+import { redirect } from "next/navigation";
 
+/** מודול הגלריה בוטל — תמונות מנוהלות תחת מסמכים */
 export default function Page() {
-  return <GalleryPage />;
+  redirect("/documents");
 }

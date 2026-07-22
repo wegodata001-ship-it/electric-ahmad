@@ -1,8 +1,10 @@
-import { WmBuildPage } from "@/features/work-management/components/wm-build-page";
+import { redirect } from "next/navigation";
 
-type Props = { params: Promise<{ id: string }> };
-
-export default async function FieldJournalEditPage({ params }: Props) {
-  const { id } = await params;
-  return <WmBuildPage orderId={id} />;
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  await params;
+  redirect("/field/work-diaries");
 }

@@ -1,6 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
-const SCHEMA_VERSION = "work-orders-v1";
+/** Bump when DeliveryNote / MeasurementSheet schema fields change so hot-reload drops stale clients */
+const SCHEMA_VERSION = "workflow-diary-bridge-v1.5";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -11,6 +12,15 @@ function createPrismaClient() {
   return new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
+}
+
+function deliveryNoteClientIsCurrent(): boolean {
+  const fields = Prisma.DeliveryNoteScalarFieldEnum as Record<string, string>;
+  return (
+    fields.receiverSignatureUrl === "receiverSignatureUrl" &&
+    fields.employeeSignatureUrl === "employeeSignatureUrl" &&
+    fields.employeeSignedName === "employeeSignedName"
+  );
 }
 
 function hasRequiredModels(client: PrismaClient): boolean {
@@ -26,6 +36,8 @@ function hasRequiredModels(client: PrismaClient): boolean {
     fieldCrewTimeEntry?: { create?: unknown };
     executionReport?: { create?: unknown };
     workOrder?: { create?: unknown };
+    documentAttachment?: { create?: unknown };
+    workflowDocument?: { create?: unknown };
   };
   return (
     typeof c.aiParseLog?.create === "function" &&
@@ -38,7 +50,10 @@ function hasRequiredModels(client: PrismaClient): boolean {
     typeof c.deliveryNoteVersion?.create === "function" &&
     typeof c.fieldCrewTimeEntry?.create === "function" &&
     typeof c.executionReport?.create === "function" &&
-    typeof c.workOrder?.create === "function"
+    typeof c.workOrder?.create === "function" &&
+    typeof c.documentAttachment?.create === "function" &&
+    typeof c.workflowDocument?.create === "function" &&
+    deliveryNoteClientIsCurrent()
   );
 }
 
@@ -52,6 +67,12 @@ function getPrismaClient(): PrismaClient {
 
   if (existing) {
     void existing.$disconnect().catch(() => undefined);
+  }
+
+  if (!deliveryNoteClientIsCurrent()) {
+    throw new Error(
+      "Prisma Client ישן (חסרים שדות חתימה לתעודת משלוח). עצור את השרת והרץ: npx prisma generate"
+    );
   }
 
   const client = createPrismaClient();

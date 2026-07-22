@@ -45,6 +45,18 @@ type DocumentWithRelations = PrismaDocument & {
   project: { name: string };
   uploadedBy: { name: string };
   versions?: { version: number; uploadedById: string; createdAt: Date; size: number; url: string }[];
+  attachments?: {
+    id: string;
+    documentId: string;
+    name: string;
+    type: PrismaDocument["type"];
+    extension: string;
+    size: number;
+    url: string;
+    createdAt: Date;
+    uploadedBy?: { name: string };
+  }[];
+  _count?: { attachments?: number };
 };
 type InvoiceWithRelations = PrismaPartialInvoice & {
   project: {
@@ -133,6 +145,9 @@ export function mapBoqItem(row: BoqItemRow): BoqItem {
     remainingValue: decimalToNumber(row.remainingValue),
     progress: row.progress,
     status: row.status,
+    itemKind: row.itemKind ?? "regular",
+    category: row.category ?? null,
+    notes: row.notes ?? null,
     parentId: row.parentId ?? undefined,
     level: row.level,
     createdAt: row.createdAt.toISOString(),
@@ -190,11 +205,15 @@ export function mapDocument(row: DocumentWithRelations): Document {
     projectName: row.project.name,
     name: row.name,
     type: row.type,
+    extension: row.extension,
     size: row.size,
     url: row.url,
     version: row.version,
     uploadedBy: row.uploadedBy.name,
     uploadedAt: row.createdAt.toISOString(),
+    folderPath: row.folderPath ?? null,
+    sourceType: row.sourceType ?? null,
+    sourceId: row.sourceId ?? null,
     versions:
       row.versions?.map((v) => ({
         version: v.version,
@@ -203,6 +222,19 @@ export function mapDocument(row: DocumentWithRelations): Document {
         size: v.size,
         url: v.url,
       })) ?? [],
+    attachments:
+      row.attachments?.map((a) => ({
+        id: a.id,
+        documentId: a.documentId,
+        name: a.name,
+        type: a.type,
+        extension: a.extension,
+        size: a.size,
+        url: a.url,
+        uploadedBy: a.uploadedBy?.name ?? row.uploadedBy.name,
+        uploadedAt: a.createdAt.toISOString(),
+      })) ?? [],
+    attachmentCount: row._count?.attachments ?? row.attachments?.length ?? 0,
   };
 }
 

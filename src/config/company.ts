@@ -30,7 +30,7 @@ export const COMPANY_PROFILE = {
   website: (process.env.NEXT_PUBLIC_COMPANY_WEBSITE ?? "").trim(),
   vatId: (process.env.NEXT_PUBLIC_COMPANY_VAT_ID ?? "").trim(),
   /** Optional full logo image URL */
-  logoUrl: (process.env.NEXT_PUBLIC_COMPANY_LOGO_URL ?? "").trim(),
+  logoUrl: (process.env.NEXT_PUBLIC_COMPANY_LOGO_URL ?? "/logopng.jpeg").trim(),
   /** Short mark for placeholder badge when no logoUrl */
   logoText:
     (process.env.NEXT_PUBLIC_COMPANY_LOGO_TEXT ?? "").trim() ||

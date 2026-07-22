@@ -146,7 +146,7 @@ export class ExecutionReportsRepository {
 
     const boqItemIds = [...quantityByBoqItem.keys()];
     const boqItems = await prisma.boqItem.findMany({
-      where: { id: { in: boqItemIds }, projectId },
+      where: { id: { in: boqItemIds }, projectId, deletedAt: null },
       select: {
         id: true,
         code: true,
@@ -203,7 +203,7 @@ export class ExecutionReportsRepository {
 
     // Get all BOQ items for the project
     const boqItems = await prisma.boqItem.findMany({
-      where: { projectId },
+      where: { projectId, deletedAt: null },
       select: { id: true, contractQuantity: true, unitPrice: true },
     });
 

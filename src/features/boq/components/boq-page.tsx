@@ -1,29 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { boqService } from "@/features/boq/services/boq.service";
 import { projectService } from "@/services";
-import type { BoqItem, Project, Employee } from "@/types";
+import type { BoqItem, Project } from "@/types";
 import { BoqTable } from "./boq-table";
+import { BoqItemFormModal } from "./boq-item-form-modal";
 import { Button, Card, useToast } from "@/components/ui";
 import { formatCurrency } from "@/utils/format";
 import { Plus } from "lucide-react";
-import { ExecutionReportModal } from "@/features/projects/components/execution-report-modal";
 
 export function BoqPage() {
-  const router = useRouter();
   const toast = useToast();
   const searchParams = useSearchParams();
   const projectFromQuery = searchParams.get("projectId");
 
   const [items, setItems] = useState<BoqItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [foremen, setForemen] = useState<Employee[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>(
     projectFromQuery || "all"
   );
-  const [showReportModal, setShowReportModal] = useState(false);
+  const [showExceptionalModal, setShowExceptionalModal] = useState(false);
 
   useEffect(() => {
     if (projectFromQuery) setSelectedProject(projectFromQuery);
@@ -34,25 +32,8 @@ export function BoqPage() {
     projectService.getAll().then(setProjects);
   }
 
-  async function loadForemen() {
-    try {
-      const response = await fetch("/api/employees?role=foreman");
-      if (response.ok) {
-        const data = await response.json();
-        // Ensure data is an array
-        setForemen(Array.isArray(data) ? data : []);
-      } else {
-        setForemen([]);
-      }
-    } catch (error) {
-      console.error("Error loading foremen:", error);
-      setForemen([]);
-    }
-  }
-
   useEffect(() => {
     reload();
-    loadForemen();
   }, []);
 
   const filtered =
@@ -60,53 +41,51 @@ export function BoqPage() {
       ? items
       : items.filter((i) => i.projectId === selectedProject);
 
+  const totalItems = filtered.length;
+  const regularCount = filtered.filter((i) => i.itemKind !== "exceptional").length;
+  const exceptionalCount = filtered.filter((i) => i.itemKind === "exceptional").length;
   const totalContract = filtered.reduce(
     (s, i) => s + i.contractQuantity * i.unitPrice,
     0
   );
-  const totalCompleted = filtered.reduce((s, i) => s + i.completedValue, 0);
-  const totalInvoiced = filtered.reduce(
-    (s, i) => s + (i.invoicedQuantity ?? 0) * i.unitPrice,
-    0
-  );
-  const totalAvailable = filtered.reduce(
-    (s, i) => s + (i.availableForInvoice ?? 0) * i.unitPrice,
-    0
-  );
 
-  const handleOpenReportModal = () => {
+  async function createExceptional(values: {
+    code: string | null;
+    description: string;
+    unit: string;
+    contractQuantity: number;
+    unitPrice: number;
+    category: string | null;
+    notes: string | null;
+    itemKind: "regular" | "exceptional";
+    status: BoqItem["status"];
+  }) {
     if (selectedProject === "all") {
-      toast.error("נא לבחור פרויקט ספציפי לפני דיווח ביצוע");
-      return;
+      throw new Error("נא לבחור פרויקט לפני הוספת סעיף");
     }
-    setShowReportModal(true);
-  };
-
-  const boqItemsForReport = filtered.map((item) => ({
-    id: item.id,
-    code: item.code,
-    description: item.description,
-    unit: item.unit,
-    contractQuantity: item.contractQuantity,
-    completedQuantity: item.completedQuantity,
-    remainingQuantity: item.remainingQuantity,
-  }));
+    await boqService.create({
+      projectId: selectedProject,
+      ...values,
+      itemKind: "exceptional",
+    });
+    toast.success("סעיף חריג נוסף");
+    reload();
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">כתבי כמויות</h1>
-          <p className="text-sm text-gray-500 mt-1">{filtered.length} סעיפים</p>
+          <p className="text-sm text-gray-500 mt-1">
+            ניהול סעיפים בלבד · דיווח ביצוע וחשבונות במסך חשבונות
+          </p>
         </div>
         <div className="flex gap-2">
           {selectedProject !== "all" && (
-            <Button
-              onClick={handleOpenReportModal}
-              variant="primary"
-            >
+            <Button onClick={() => setShowExceptionalModal(true)} variant="primary">
               <Plus className="h-4 w-4" />
-              דווח ביצוע
+              הוסף סעיף חריג
             </Button>
           )}
         </div>
@@ -140,43 +119,33 @@ export function BoqPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
-          <p className="text-xs text-gray-400 mb-1">שווי חוזה</p>
-          <p className="text-xl font-bold text-gray-900">
+          <p className="text-xs text-gray-400 mb-1">סך סעיפים</p>
+          <p className="text-xl font-bold text-gray-900">{totalItems}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-gray-400 mb-1">סעיפים רגילים</p>
+          <p className="text-xl font-bold text-gray-900">{regularCount}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-gray-400 mb-1">סעיפים חריגים</p>
+          <p className="text-xl font-bold text-amber-700">{exceptionalCount}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-gray-400 mb-1">שווי חוזה כולל</p>
+          <p className="text-xl font-bold text-primary-700">
             {formatCurrency(totalContract)}
-          </p>
-        </Card>
-        <Card>
-          <p className="text-xs text-gray-400 mb-1">שווי שבוצע</p>
-          <p className="text-xl font-bold text-primary-600">
-            {formatCurrency(totalCompleted)}
-          </p>
-        </Card>
-        <Card>
-          <p className="text-xs text-gray-400 mb-1">שווי שחויב</p>
-          <p className="text-xl font-bold text-gray-700">
-            {formatCurrency(totalInvoiced)}
-          </p>
-        </Card>
-        <Card>
-          <p className="text-xs text-gray-400 mb-1">זמין לחשבון</p>
-          <p className="text-xl font-bold text-emerald-700">
-            {formatCurrency(totalAvailable)}
           </p>
         </Card>
       </div>
 
       <BoqTable items={filtered} onItemsChanged={reload} />
 
-      {selectedProject !== "all" && (
-        <ExecutionReportModal
-          open={showReportModal}
-          onClose={() => setShowReportModal(false)}
-          projectId={selectedProject}
-          boqItems={boqItemsForReport}
-          foremen={foremen}
-          onSuccess={reload}
-        />
-      )}
+      <BoqItemFormModal
+        open={showExceptionalModal}
+        mode="create-exceptional"
+        onClose={() => setShowExceptionalModal(false)}
+        onSubmit={createExceptional}
+      />
     </div>
   );
 }

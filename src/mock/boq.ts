@@ -4,9 +4,8 @@ import { projects } from "./projects";
 import { generateId, pick, randomInt, seededRandom } from "./generators";
 
 function getStatus(completed: number, total: number): BoqItemStatus {
-  if (completed === 0) return "not_started";
-  if (completed >= total) return "completed";
-  return "in_progress";
+  if (completed >= total && total > 0) return "completed";
+  return "active";
 }
 
 export function generateBoqItems(): BoqItem[] {
@@ -46,6 +45,9 @@ export function generateBoqItems(): BoqItem[] {
         remainingValue,
         progress: Math.round(progress * 10) / 10,
         status: getStatus(completedQuantity, contractQuantity),
+        itemKind: "regular",
+        category: null,
+        notes: null,
         level: 0,
         createdAt: project.createdAt,
         updatedAt: new Date().toISOString(),

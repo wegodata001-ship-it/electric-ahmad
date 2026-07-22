@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { DeliveryNotesRepository } from "@/repositories/delivery-notes.repository";
-import { getAuthContext } from "@/lib/auth/session";
+import { getAuthContext, getCurrentUser } from "@/lib/auth/session";
+import { hasDocumentPermission } from "@/lib/auth/document-permissions";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function GET(
@@ -43,6 +44,11 @@ export async function PATCH(
         notes: body.notes,
         receiverName: body.receiverName,
         receivedAt: body.receivedAt,
+        receiverSignatureUrl: body.receiverSignatureUrl,
+        employeeSignatureUrl: body.employeeSignatureUrl,
+        employeeSignedName: body.employeeSignedName,
+        senderSigned: body.senderSigned,
+        receiverSigned: body.receiverSigned,
         driverName: body.driverName,
         driverPhone: body.driverPhone,
         vehicle: body.vehicle,
@@ -57,6 +63,24 @@ export async function PATCH(
       userId
     );
     return apiSuccess(note);
+  } catch (error) {
+    if (error instanceof Error) return apiError(error.message, 400);
+    return handleApiError(error);
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getCurrentUser();
+    const { id } = await params;
+    if (!hasDocumentPermission(user.role, "delete")) {
+      return apiError("אין הרשאה למחיקת תעודת משלוח", 403);
+    }
+    await DeliveryNotesRepository.delete(id, user.dbId);
+    return apiSuccess({ ok: true });
   } catch (error) {
     if (error instanceof Error) return apiError(error.message, 400);
     return handleApiError(error);

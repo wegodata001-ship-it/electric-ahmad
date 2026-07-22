@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { invoiceService } from "@/features/partial-invoices/services/invoice.service";
 import type { PartialInvoice, ProjectInvoiceApproval } from "@/types";
 import { Badge, Button, Card, Progress } from "@/components/ui";
-import { formatCurrency, formatDate, formatNumber, formatPercent } from "@/utils/format";
+import {
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+  formatNumber,
+  formatPercent,
+} from "@/utils/format";
 import {
   INVOICE_STATUS_COLORS,
   INVOICE_STATUS_LABELS,
@@ -19,6 +25,7 @@ import {
   Send,
   CheckCircle2,
 } from "lucide-react";
+import { SendInvoiceApprovalModal } from "./send-invoice-approval-modal";
 
 const CAN_SEND_FOR_APPROVAL = new Set([
   "draft",
@@ -32,8 +39,8 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   const [approvals, setApprovals] = useState<ProjectInvoiceApproval[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
   const [markingSent, setMarkingSent] = useState(false);
+  const [showApproverModal, setShowApproverModal] = useState(false);
 
   const reload = useCallback(async () => {
     const [inv, apps] = await Promise.all([
@@ -50,21 +57,6 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
     );
   }, [reload]);
 
-  async function handleSendForApproval() {
-    setActionError(null);
-    setSending(true);
-    try {
-      await invoiceService.sendForApproval(invoiceId);
-      await reload();
-    } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : "שגיאה בשליחה לאישור"
-      );
-    } finally {
-      setSending(false);
-    }
-  }
-
   async function handleMarkSentToClient() {
     setActionError(null);
     setMarkingSent(true);
@@ -78,6 +70,16 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
     } finally {
       setMarkingSent(false);
     }
+  }
+
+  function handleApprovalSent(channels: {
+    whatsappUrl: string | null;
+    emailUrl: string | null;
+  }) {
+    setActionError(null);
+    if (channels.whatsappUrl) window.open(channels.whatsappUrl, "_blank");
+    if (channels.emailUrl) window.open(channels.emailUrl, "_blank");
+    void reload();
   }
 
   if (error) {
@@ -134,9 +136,9 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
         </div>
         <div className="flex gap-2 flex-wrap">
           {canSend && (
-            <Button onClick={handleSendForApproval} loading={sending}>
+            <Button onClick={() => setShowApproverModal(true)}>
               <Send className="h-4 w-4" />
-              שלח לאישור מנהל עבודה
+              שלח לאישור
             </Button>
           )}
           {canMarkSent && (
@@ -185,10 +187,15 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
 
       {invoice.status === "pending_foreman_approval" && (
         <div className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-          החשבון ממתין לאישור מנהל העבודה. לא נשלח מייל / WhatsApp — נוצרה רק
-          רשומת אישור במערכת
+          החשבון ממתין לאישור
           {latestApproval?.managerName
-            ? ` (מנהל: ${latestApproval.managerName})`
+            ? ` אצל ${latestApproval.managerName}`
+            : ""}
+          {latestApproval?.senderName
+            ? ` · נשלח ע״י ${latestApproval.senderName}`
+            : ""}
+          {latestApproval?.sentAt
+            ? ` · ${formatDateTime(latestApproval.sentAt)}`
             : ""}
           .
         </div>
@@ -245,14 +252,15 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
                     {a.status === "approved" && "אושר"}
                     {a.status === "rejected" && "נדחה"}
                     {a.status === "cancelled" && "בוטל"}
-                    {a.managerName ? ` · ${a.managerName}` : ""}
+                    {a.managerName ? ` · מאשר: ${a.managerName}` : ""}
+                    {a.senderName ? ` · נשלח ע״י: ${a.senderName}` : ""}
                   </p>
                   {a.comment && (
                     <p className="text-gray-500 mt-0.5">{a.comment}</p>
                   )}
                 </div>
                 <p className="text-xs text-gray-400 whitespace-nowrap">
-                  {a.sentAt ? formatDate(a.sentAt) : "—"}
+                  {a.sentAt ? formatDateTime(a.sentAt) : "—"}
                 </p>
               </div>
             ))}
@@ -303,9 +311,6 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
                     {formatNumber(item.quantity)}
                   </td>
                   <td className="px-3 py-2">
-                    {formatNumber(item.cumulativeQuantity)}
-                  </td>
-                  <td className="px-3 py-2">
                     <div className="flex items-center gap-1.5">
                       <Progress
                         value={item.quantityPercent}
@@ -340,6 +345,14 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
           </div>
         )}
       </Card>
+
+      <SendInvoiceApprovalModal
+        open={showApproverModal}
+        onClose={() => setShowApproverModal(false)}
+        invoiceId={invoiceId}
+        onSent={handleApprovalSent}
+        onError={setActionError}
+      />
     </div>
   );
 }

@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { AuditRepository } from "./audit.repository";
+import { DocumentsRepository } from "./documents.repository";
+import {
+  canApproveDocuments,
+  roleGradeLabel,
+} from "@/lib/auth/document-permissions";
+import { isFieldManagerRole, isOfficeRole } from "@/lib/auth/roles";
 import type { DeliveryNoteStatus } from "@prisma/client";
 
 function mapNote(row: {
@@ -33,6 +39,9 @@ function mapNote(row: {
   receiverSigned: boolean;
   receiverName: string | null;
   receivedAt: Date | null;
+  receiverSignatureUrl?: string | null;
+  employeeSignatureUrl?: string | null;
+  employeeSignedName?: string | null;
   equipmentCheckedIntact: boolean;
   receivedComplete: boolean;
   receivedWithNotes: boolean;
@@ -97,6 +106,9 @@ function mapNote(row: {
     receiverSigned: row.receiverSigned,
     receiverName: row.receiverName,
     receivedAt: row.receivedAt?.toISOString() ?? null,
+    receiverSignatureUrl: row.receiverSignatureUrl ?? null,
+    employeeSignatureUrl: row.employeeSignatureUrl ?? null,
+    employeeSignedName: row.employeeSignedName ?? null,
     equipmentCheckedIntact: row.equipmentCheckedIntact,
     receivedComplete: row.receivedComplete,
     receivedWithNotes: row.receivedWithNotes,
@@ -270,6 +282,11 @@ export type CreateDeliveryNoteInput = {
   notes?: string;
   receiverName?: string;
   receivedAt?: string;
+  receiverSignatureUrl?: string | null;
+  employeeSignatureUrl?: string | null;
+  employeeSignedName?: string | null;
+  senderSigned?: boolean;
+  receiverSigned?: boolean;
   driverName?: string;
   driverPhone?: string;
   vehicle?: string;
@@ -361,6 +378,15 @@ export class DeliveryNotesRepository {
         notes: input.notes?.trim() || null,
         receiverName: input.receiverName?.trim() || null,
         receivedAt: input.receivedAt ? new Date(input.receivedAt) : null,
+        receiverSignatureUrl: input.receiverSignatureUrl || null,
+        employeeSignatureUrl: input.employeeSignatureUrl || null,
+        employeeSignedName: input.employeeSignedName?.trim() || null,
+        senderSigned: Boolean(
+          input.senderSigned ?? Boolean(input.employeeSignatureUrl)
+        ),
+        receiverSigned: Boolean(
+          input.receiverSigned ?? Boolean(input.receiverSignatureUrl)
+        ),
         driverName: input.driverName?.trim() || null,
         driverPhone: input.driverPhone?.trim() || null,
         vehicle: input.vehicle?.trim() || null,
@@ -443,6 +469,14 @@ export class DeliveryNotesRepository {
       include: noteInclude,
     });
     if (!existing) throw new Error("תעודת משלוח לא נמצאה");
+    if (
+      existing.status === "locked" ||
+      existing.status === "sent" ||
+      existing.status === "delivered" ||
+      existing.status === "cancelled"
+    ) {
+      throw new Error("תעודת המשלוח נעולה לעריכה");
+    }
     if (!input.client?.trim()) throw new Error("לקוח חובה");
     if (!input.items?.length) throw new Error("יש להוסיף לפחות פריט אחד");
 
@@ -478,6 +512,15 @@ export class DeliveryNotesRepository {
         notes: input.notes?.trim() || null,
         receiverName: input.receiverName?.trim() || null,
         receivedAt: input.receivedAt ? new Date(input.receivedAt) : null,
+        receiverSignatureUrl: input.receiverSignatureUrl || null,
+        employeeSignatureUrl: input.employeeSignatureUrl || null,
+        employeeSignedName: input.employeeSignedName?.trim() || null,
+        senderSigned: Boolean(
+          input.senderSigned ?? Boolean(input.employeeSignatureUrl)
+        ),
+        receiverSigned: Boolean(
+          input.receiverSigned ?? Boolean(input.receiverSignatureUrl)
+        ),
         driverName: input.driverName?.trim() || null,
         driverPhone: input.driverPhone?.trim() || null,
         vehicle: input.vehicle?.trim() || null,
@@ -615,6 +658,305 @@ export class DeliveryNotesRepository {
       editedByName: r.editedBy.name,
       createdAt: r.createdAt.toISOString(),
     }));
+  }
+
+  static async delete(id: string, userId: string) {
+    const existing = await prisma.deliveryNote.findUnique({ where: { id } });
+    if (!existing) throw new Error("תעודת משלוח לא נמצאה");
+
+    await prisma.deliveryNote.delete({ where: { id } });
+
+    await AuditRepository.log({
+      action: "DELETE",
+      entityType: "DeliveryNote",
+      entityId: id,
+      userId,
+      metadata: { noteNumber: existing.noteNumber },
+    });
+
+    return { ok: true };
+  }
+
+  /** Ensure PDF document exists under תעודות משלוח */
+  static async saveDocument(id: string, userId: string, printBaseUrl?: string) {
+    const note = await prisma.deliveryNote.findUnique({ where: { id } });
+    if (!note) throw new Error("תעודת משלוח לא נמצאה");
+    if (!note.projectId) {
+      throw new Error("לא ניתן לשמור במסמכים ללא פרויקט מקושר");
+    }
+
+    const folderPath = "תעודות משלוח";
+    const printPath = `/print/delivery-notes/${id}`;
+    const url = printBaseUrl
+      ? `${printBaseUrl.replace(/\/$/, "")}${printPath}`
+      : printPath;
+    const docName = `תעודת משלוח ${note.noteNumber}.pdf`;
+
+    const existing = await prisma.document.findFirst({
+      where: {
+        projectId: note.projectId,
+        folderPath,
+        path: `print/delivery-notes/${id}`,
+      },
+    });
+    if (existing) {
+      return {
+        document: {
+          id: existing.id,
+          name: existing.name,
+          folderPath: existing.folderPath,
+          url: existing.url,
+        },
+        created: false,
+      };
+    }
+
+    const doc = await DocumentsRepository.create(
+      {
+        projectId: note.projectId,
+        name: docName,
+        type: "pdf",
+        extension: "pdf",
+        size: 0,
+        bucket: "documents",
+        path: `print/delivery-notes/${id}`,
+        url,
+        folderPath,
+        sourceType: "delivery_note",
+        sourceId: id,
+      },
+      userId
+    );
+
+    return {
+      document: {
+        id: doc.id,
+        name: doc.name,
+        folderPath: doc.folderPath,
+        url: doc.url,
+      },
+      created: true,
+    };
+  }
+
+  /**
+   * סיום תעודה: נעילה + שמירה אוטומטית במסמכי הפרויקט
+   */
+  static async complete(id: string, userId: string, printBaseUrl?: string) {
+    const note = await prisma.deliveryNote.findUnique({ where: { id } });
+    if (!note) throw new Error("תעודת משלוח לא נמצאה");
+    if (note.status === "locked" || note.status === "sent" || note.status === "delivered") {
+      throw new Error("התעודה כבר הושלמה או נשלחה");
+    }
+    if (note.status === "cancelled") {
+      throw new Error("לא ניתן לסיים תעודה שבוטלה");
+    }
+    if (!note.projectId) {
+      throw new Error("יש לשייך את התעודה לפרויקט לפני הסיום");
+    }
+
+    await prisma.deliveryNote.update({
+      where: { id },
+      data: { status: "locked", updatedById: userId },
+    });
+
+    const docResult = await this.saveDocument(id, userId, printBaseUrl);
+
+    await prisma.activity.create({
+      data: {
+        projectId: note.projectId,
+        type: "document_uploaded",
+        title: "תעודת משלוח הושלמה",
+        description: `תעודה ${note.noteNumber} ננעלה ונשמרה במסמכי הפרויקט`,
+        userId,
+        metadata: JSON.stringify({ deliveryNoteId: id }),
+      },
+    });
+
+    return {
+      note: await this.findById(id),
+      document: docResult.document,
+    };
+  }
+
+  static async listRecipients(projectId?: string | null) {
+    const users = await prisma.user.findMany({
+      where: { passwordHash: { not: null } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        employee: {
+          select: {
+            phone: true,
+            email: true,
+            role: true,
+            isDeleted: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: { name: "asc" },
+    });
+
+    void projectId;
+
+    return users
+      .filter((u) => {
+        if (canApproveDocuments(u.role)) return true;
+        if (isOfficeRole(u.role) || isFieldManagerRole(u.role)) return true;
+        if (u.employee && !u.employee.isDeleted) return true;
+        return false;
+      })
+      .map((u) => {
+        const emp = u.employee && !u.employee.isDeleted ? u.employee : null;
+        let roleLabel = roleGradeLabel(u.role);
+        if (emp?.role === "foreman") roleLabel = "מנהל עבודה";
+        else if (emp?.role === "manager") roleLabel = "מנהל";
+        else if (canApproveDocuments(u.role)) {
+          roleLabel = roleGradeLabel(u.role) || "מנהל פרויקט";
+        }
+
+        return {
+          id: u.id,
+          kind: "user" as const,
+          fullName: u.name,
+          roleLabel,
+          phone: emp?.phone || "",
+          email: emp?.email || u.email || "",
+          status:
+            emp?.status === "inactive"
+              ? ("inactive" as const)
+              : ("active" as const),
+        };
+      });
+  }
+
+  static async sendToRecipients(
+    id: string,
+    userId: string,
+    options: {
+      recipientIds: string[];
+      includeClient?: boolean;
+      notifyInApp?: boolean;
+      sendWhatsApp?: boolean;
+      sendEmail?: boolean;
+    }
+  ) {
+    const note = await prisma.deliveryNote.findUnique({
+      where: { id },
+      include: { project: { select: { id: true, name: true } } },
+    });
+    if (!note) throw new Error("תעודת משלוח לא נמצאה");
+    if (note.status === "draft") {
+      throw new Error("יש לסיים את התעודה לפני השליחה");
+    }
+    if (note.status === "cancelled") {
+      throw new Error("לא ניתן לשלוח תעודה שבוטלה");
+    }
+
+    const recipients = await this.listRecipients(note.projectId);
+    const selected = recipients.filter((r) =>
+      options.recipientIds.includes(r.id)
+    );
+    if (!selected.length && !options.includeClient) {
+      throw new Error("יש לבחור לפחות נמען אחד");
+    }
+
+    const notifyInApp = options.notifyInApp !== false;
+    const printUrl = `/print/delivery-notes/${id}`;
+
+    if (notifyInApp && note.projectId) {
+      for (const r of selected) {
+        await prisma.notification.create({
+          data: {
+            userId: r.id,
+            projectId: note.projectId,
+            type: "document",
+            title: "תעודת משלוח חדשה",
+            message: `תעודת משלוח ${note.noteNumber}${
+              note.project?.name ? ` — ${note.project.name}` : ""
+            } נשלחה אליך`,
+            link: printUrl,
+          },
+        });
+      }
+    }
+
+    await prisma.deliveryNote.update({
+      where: { id },
+      data: {
+        status: "sent",
+        whatsappSentAt: options.sendWhatsApp ? new Date() : undefined,
+        emailSentAt: options.sendEmail ? new Date() : undefined,
+        updatedById: userId,
+      },
+    });
+
+    if (note.projectId) {
+      await prisma.activity.create({
+        data: {
+          projectId: note.projectId,
+          type: "status_changed",
+          title: "תעודת משלוח נשלחה",
+          description: `תעודה ${note.noteNumber} נשלחה ל־${
+            selected.map((s) => s.fullName).join(", ") || "נמענים"
+          }`,
+          userId,
+          metadata: JSON.stringify({
+            deliveryNoteId: id,
+            recipientIds: selected.map((s) => s.id),
+            includeClient: Boolean(options.includeClient),
+          }),
+        },
+      });
+    }
+
+    const message = encodeURIComponent(
+      `תעודת משלוח ${note.noteNumber}\nלקוח: ${note.client}\n${
+        note.project?.name ? `פרויקט: ${note.project.name}\n` : ""
+      }\nקישור:\n${printUrl}`
+    );
+
+    const withPhone = [
+      ...selected.filter((s) => s.phone),
+      ...(options.includeClient && note.phone
+        ? [{ phone: note.phone, fullName: note.contactName || note.client }]
+        : []),
+    ];
+    const withEmail = [
+      ...selected.filter((s) => s.email),
+      ...(options.includeClient && note.phoneSecondary
+        ? []
+        : []),
+    ];
+    // Client email not always on note — use phone for WA primarily
+
+    const firstPhone = withPhone[0]?.phone?.replace(/\D/g, "") || "";
+    const firstEmail = withEmail[0]?.email || "";
+
+    return {
+      note: await this.findById(id),
+      channels: {
+        whatsappUrl:
+          options.sendWhatsApp && firstPhone
+            ? `https://wa.me/${
+                firstPhone.startsWith("972")
+                  ? firstPhone
+                  : firstPhone.replace(/^0/, "972")
+              }?text=${message}`
+            : options.sendWhatsApp && options.includeClient && note.phone
+              ? `https://wa.me/${note.phone.replace(/\D/g, "").replace(/^0/, "972")}?text=${message}`
+              : null,
+        emailUrl:
+          options.sendEmail && firstEmail
+            ? `mailto:${firstEmail}?subject=${encodeURIComponent(
+                `תעודת משלוח ${note.noteNumber}`
+              )}&body=${message}`
+            : null,
+      },
+    };
   }
 
   static async deleteAttachment(deliveryNoteId: string, attachmentId: string) {

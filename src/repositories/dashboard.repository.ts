@@ -68,6 +68,7 @@ export class DashboardRepository {
       boqResults,
       invoiceResults,
       deliveryResults,
+      documentResults,
     ] = await Promise.all([
       prisma.project.findMany({
         where: {
@@ -89,6 +90,7 @@ export class DashboardRepository {
       }),
       prisma.boqItem.findMany({
         where: {
+          deletedAt: null,
           OR: [
             { description: { contains: q, mode: "insensitive" } },
             { code: { contains: q, mode: "insensitive" } },
@@ -113,6 +115,21 @@ export class DashboardRepository {
           ],
         },
         take: 3,
+      }),
+      prisma.document.findMany({
+        where: {
+          OR: [
+            { name: { contains: q, mode: "insensitive" } },
+            { folderPath: { contains: q, mode: "insensitive" } },
+            {
+              attachments: {
+                some: { name: { contains: q, mode: "insensitive" } },
+              },
+            },
+          ],
+        },
+        take: 8,
+        orderBy: { updatedAt: "desc" },
       }),
     ]);
 
@@ -151,6 +168,13 @@ export class DashboardRepository {
         title: dn.noteNumber,
         subtitle: dn.client,
         link: `/delivery-notes/${dn.id}`,
+      })),
+      ...documentResults.map((d) => ({
+        id: d.id,
+        type: "document" as const,
+        title: d.name,
+        subtitle: d.folderPath || "מסמכים",
+        link: `/invoices?projectId=${d.projectId}&module=documents`,
       })),
     ];
   }

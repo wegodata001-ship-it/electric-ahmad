@@ -9,7 +9,6 @@ import {
   BarChart3,
   ClipboardList,
   FileText,
-  Image,
   LayoutDashboard,
   Receipt,
   Settings,
@@ -49,16 +48,6 @@ export const managerNavigation = [
     name: "מסמכים",
     href: `${MANAGER_WORKSPACE_BASE}/documents`,
     icon: FileText,
-  },
-  {
-    name: "תמונות",
-    href: `${MANAGER_WORKSPACE_BASE}/photos`,
-    icon: Image,
-  },
-  {
-    name: "גלריה",
-    href: `${MANAGER_WORKSPACE_BASE}/gallery`,
-    icon: Image,
   },
   {
     name: "הגדרות",

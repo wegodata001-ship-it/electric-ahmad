@@ -1,10 +1,11 @@
-import { ProjectDetailPage } from "@/features/projects/components/project-detail-page";
+import { redirect } from "next/navigation";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+/** Legacy links: project click goes to invoices workspace */
 export default async function Page({ params }: PageProps) {
   const { id } = await params;
-  return <ProjectDetailPage projectId={id} />;
+  redirect(`/invoices?projectId=${id}`);
 }

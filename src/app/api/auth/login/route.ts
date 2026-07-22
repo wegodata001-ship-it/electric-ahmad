@@ -27,13 +27,26 @@ export async function POST(request: NextRequest) {
 
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ username: identifier }, { email: identifier }],
+        OR: [
+          { username: { equals: identifier, mode: "insensitive" } },
+          { email: { equals: identifier, mode: "insensitive" } },
+        ],
       },
       include: { employee: true },
     });
 
-    if (!user || !user.passwordHash || !isOfficeRole(user.role)) {
+    if (!user || !user.passwordHash) {
       return apiError("שם משתמש או סיסמה שגויים", 401);
+    }
+
+    if (!isOfficeRole(user.role)) {
+      if (user.role === "FIELD_MANAGER") {
+        return apiError(
+          "חשבון זה מיועד לאפליקציית שטח — היכנס דרך /field/login",
+          401
+        );
+      }
+      return apiError("אין הרשאת מנהל פרויקט לחשבון זה", 401);
     }
 
     if (user.employee) {

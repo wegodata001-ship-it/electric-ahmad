@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { mapDocument } from "@/lib/mappers";
 import { AuditRepository } from "./audit.repository";
 import { deleteFromStorage } from "@/lib/supabase/storage";
+import { defaultFolderForDocumentType } from "@/lib/documents/archive-folders";
 import type { DocumentType } from "@prisma/client";
 
 export class DocumentsRepository {
@@ -18,6 +19,11 @@ export class DocumentsRepository {
         url: true,
       },
     },
+    attachments: {
+      orderBy: { createdAt: "desc" as const },
+      include: { uploadedBy: { select: { name: true } } },
+    },
+    _count: { select: { attachments: true } },
   };
 
   static async findAll() {
@@ -45,11 +51,45 @@ export class DocumentsRepository {
     return row ? mapDocument(row) : null;
   }
 
+  static async findBySource(sourceType: string, sourceId: string) {
+    const row = await prisma.document.findFirst({
+      where: { sourceType, sourceId },
+      include: this.documentInclude,
+      orderBy: { updatedAt: "desc" },
+    });
+    return row ? mapDocument(row) : null;
+  }
+
   static async findRecent(limit = 5) {
     const rows = await prisma.document.findMany({
       take: limit,
       include: this.documentInclude,
       orderBy: { createdAt: "desc" },
+    });
+    return rows.map(mapDocument);
+  }
+
+  /** חיפוש במסמכים ובקבצים מצורפים */
+  static async search(query: string, projectId?: string) {
+    const q = query.trim();
+    if (!q) return [];
+
+    const rows = await prisma.document.findMany({
+      where: {
+        ...(projectId ? { projectId } : {}),
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { folderPath: { contains: q, mode: "insensitive" } },
+          {
+            attachments: {
+              some: { name: { contains: q, mode: "insensitive" } },
+            },
+          },
+        ],
+      },
+      include: this.documentInclude,
+      take: 40,
+      orderBy: { updatedAt: "desc" },
     });
     return rows.map(mapDocument);
   }
@@ -64,12 +104,38 @@ export class DocumentsRepository {
       bucket: string;
       path: string;
       url: string;
+      folderPath?: string | null;
+      partialInvoiceId?: string | null;
+      sourceType?: string | null;
+      sourceId?: string | null;
+      legacyGalleryId?: string | null;
+      boqItemId?: string | null;
+      employeeId?: string | null;
+      reportId?: string | null;
     },
     userId: string
   ) {
+    const folderPath =
+      data.folderPath ?? defaultFolderForDocumentType(data.type);
+
     const row = await prisma.document.create({
       data: {
-        ...data,
+        projectId: data.projectId,
+        name: data.name,
+        type: data.type,
+        extension: data.extension,
+        size: data.size,
+        bucket: data.bucket,
+        path: data.path,
+        url: data.url,
+        folderPath,
+        partialInvoiceId: data.partialInvoiceId ?? null,
+        sourceType: data.sourceType ?? null,
+        sourceId: data.sourceId ?? null,
+        legacyGalleryId: data.legacyGalleryId ?? null,
+        boqItemId: data.boqItemId ?? null,
+        employeeId: data.employeeId ?? null,
+        reportId: data.reportId ?? null,
         uploadedById: userId,
         ownerId: userId,
         createdById: userId,
@@ -103,24 +169,116 @@ export class DocumentsRepository {
       entityType: "Document",
       entityId: row.id,
       userId,
-      metadata: { name: data.name, type: data.type, bucket: data.bucket, path: data.path },
+      metadata: {
+        name: data.name,
+        type: data.type,
+        bucket: data.bucket,
+        path: data.path,
+        folderPath,
+      },
     });
 
     return mapDocument(row);
   }
 
+  static async updateFolder(
+    id: string,
+    folderPath: string | null,
+    userId: string
+  ) {
+    const row = await prisma.document.update({
+      where: { id },
+      data: { folderPath, updatedById: userId },
+      include: this.documentInclude,
+    });
+    return mapDocument(row);
+  }
+
+  static async addAttachment(
+    documentId: string,
+    data: {
+      name: string;
+      type: DocumentType;
+      extension: string;
+      size: number;
+      bucket: string;
+      path: string;
+      url: string;
+    },
+    userId: string
+  ) {
+    const doc = await prisma.document.findUnique({ where: { id: documentId } });
+    if (!doc) throw new Error("מסמך לא נמצא");
+
+    await prisma.documentAttachment.create({
+      data: {
+        documentId,
+        name: data.name,
+        type: data.type,
+        extension: data.extension,
+        size: data.size,
+        bucket: data.bucket,
+        path: data.path,
+        url: data.url,
+        uploadedById: userId,
+      },
+    });
+
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { updatedById: userId },
+    });
+
+    await AuditRepository.log({
+      action: "UPLOAD",
+      entityType: "DocumentAttachment",
+      entityId: documentId,
+      userId,
+      metadata: { name: data.name, type: data.type },
+    });
+
+    return this.findById(documentId);
+  }
+
+  static async deleteAttachment(attachmentId: string, userId: string) {
+    const att = await prisma.documentAttachment.findUnique({
+      where: { id: attachmentId },
+    });
+    if (!att) throw new Error("קובץ מצורף לא נמצא");
+
+    await deleteFromStorage(att.bucket, att.path).catch(() => undefined);
+    await prisma.documentAttachment.delete({ where: { id: attachmentId } });
+
+    await prisma.document.update({
+      where: { id: att.documentId },
+      data: { updatedById: userId },
+    });
+
+    await AuditRepository.log({
+      action: "DELETE",
+      entityType: "DocumentAttachment",
+      entityId: attachmentId,
+      userId,
+    });
+
+    return this.findById(att.documentId);
+  }
+
   static async delete(id: string, userId: string) {
     const doc = await prisma.document.findUnique({
       where: { id },
-      include: { versions: true },
+      include: { versions: true, attachments: true },
     });
     if (!doc) throw new Error("מסמך לא נמצא");
 
-    await deleteFromStorage(doc.bucket, doc.path);
+    await deleteFromStorage(doc.bucket, doc.path).catch(() => undefined);
     for (const v of doc.versions) {
       if (v.path !== doc.path) {
         await deleteFromStorage(v.bucket, v.path).catch(() => undefined);
       }
+    }
+    for (const a of doc.attachments) {
+      await deleteFromStorage(a.bucket, a.path).catch(() => undefined);
     }
 
     await prisma.document.delete({ where: { id } });
@@ -131,5 +289,70 @@ export class DocumentsRepository {
       entityId: id,
       userId,
     });
+  }
+
+  /**
+   * מיגרציה חד-פעמית: GalleryItem → Document (תמונות/סרטונים).
+   * לא מוחק את רשומות הגלריה הישנות; מדלג על פריטים שכבר הועברו.
+   */
+  static async migrateGalleryItemsToDocuments() {
+    const items = await prisma.galleryItem.findMany({
+      orderBy: { createdAt: "asc" },
+    });
+    let created = 0;
+    let skipped = 0;
+
+    for (const item of items) {
+      const existing = await prisma.document.findUnique({
+        where: { legacyGalleryId: item.id },
+      });
+      if (existing) {
+        skipped += 1;
+        continue;
+      }
+
+      const folderPath = item.type === "video" ? "סרטונים" : "תמונות";
+      const extension =
+        item.path.split(".").pop()?.toLowerCase() ||
+        (item.type === "video" ? "mp4" : "jpg");
+
+      await prisma.document.create({
+        data: {
+          projectId: item.projectId,
+          name: item.title,
+          type: item.type === "video" ? "video" : "image",
+          extension,
+          size: 0,
+          bucket: item.bucket,
+          path: item.path,
+          url: item.url,
+          folderPath,
+          legacyGalleryId: item.id,
+          boqItemId: item.boqItemId,
+          employeeId: item.employeeId,
+          reportId: item.reportId,
+          uploadedById: item.uploadedById,
+          ownerId: item.uploadedById,
+          createdById: item.uploadedById,
+          updatedById: item.uploadedById,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          versions: {
+            create: {
+              version: 1,
+              size: 0,
+              bucket: item.bucket,
+              path: item.path,
+              url: item.url,
+              uploadedById: item.uploadedById,
+              createdAt: item.createdAt,
+            },
+          },
+        },
+      });
+      created += 1;
+    }
+
+    return { total: items.length, created, skipped };
   }
 }

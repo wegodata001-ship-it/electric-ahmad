@@ -1,20 +1,52 @@
 import { prisma } from "@/lib/prisma";
 import { AuditRepository } from "./audit.repository";
+import { DocumentsRepository } from "./documents.repository";
 import { emitDomainEvent } from "@/lib/events/domain-events";
+import {
+  canApproveDocuments,
+  roleGradeLabel,
+} from "@/lib/auth/document-permissions";
 import type { InvoiceStatus } from "@prisma/client";
 
 const SENDABLE: InvoiceStatus[] = [
   "draft",
   "rejected_by_foreman",
-  // legacy re-submit paths
   "rejected",
 ];
+
+const APPROVER_ROLE_FILTER = [
+  { role: "ADMIN" },
+  { role: "admin" },
+  { role: "מנהל מערכת" },
+  { role: "PROJECT_MANAGER" },
+  { role: "OPERATIONS_MANAGER" },
+];
+
+export type SendForApprovalOptions = {
+  /** Single approver (legacy) */
+  approverUserId?: string;
+  /** One or more approvers */
+  approverUserIds?: string[];
+  createTask?: boolean;
+  notifyInApp?: boolean;
+  sendWhatsApp?: boolean;
+  sendEmail?: boolean;
+};
+
+function departmentForRole(role?: string | null): string {
+  const label = roleGradeLabel(role);
+  if (label === "מנהל מערכת") return "הנהלה";
+  if (label === "מנהל תפעול") return "תפעול";
+  if (label === "מנהל פרויקט") return "פרויקטים";
+  return "משרד";
+}
 
 function mapApproval(row: {
   id: string;
   invoiceId: string;
   projectId: string;
-  managerId: string;
+  managerId: string | null;
+  approverUserId?: string | null;
   status: string;
   sentAt: Date | null;
   approvedAt: Date | null;
@@ -23,17 +55,25 @@ function mapApproval(row: {
   createdById: string;
   createdAt: Date;
   updatedAt: Date;
-  manager?: { firstName: string; lastName: string };
+  manager?: { firstName: string; lastName: string } | null;
+  approverUser?: { id: string; name: string; email: string; role: string } | null;
+  createdBy?: { id: string; name: string } | null;
   invoice?: { sequenceNumber: number; invoiceNumber: string; amount: unknown };
 }) {
+  const managerName = row.approverUser?.name
+    ? row.approverUser.name
+    : row.manager
+      ? `${row.manager.firstName} ${row.manager.lastName}`
+      : undefined;
+
   return {
     id: row.id,
     invoiceId: row.invoiceId,
     projectId: row.projectId,
-    managerId: row.managerId,
-    managerName: row.manager
-      ? `${row.manager.firstName} ${row.manager.lastName}`
-      : undefined,
+    managerId: row.managerId ?? "",
+    approverUserId: row.approverUserId ?? null,
+    managerName,
+    senderName: row.createdBy?.name,
     status: row.status as "pending" | "approved" | "rejected" | "cancelled",
     sentAt: row.sentAt?.toISOString() ?? null,
     approvedAt: row.approvedAt?.toISOString() ?? null,
@@ -48,16 +88,110 @@ function mapApproval(row: {
   };
 }
 
+const approvalInclude = {
+  manager: { select: { firstName: true, lastName: true } },
+  approverUser: { select: { id: true, name: true, email: true, role: true } },
+  createdBy: { select: { id: true, name: true } },
+  invoice: {
+    select: { sequenceNumber: true, invoiceNumber: true, amount: true },
+  },
+} as const;
+
 export class InvoiceApprovalsRepository {
+  static async listApprovers() {
+    const users = await prisma.user.findMany({
+      where: {
+        passwordHash: { not: null },
+        OR: APPROVER_ROLE_FILTER,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        employee: {
+          select: {
+            id: true,
+            phone: true,
+            email: true,
+            status: true,
+            role: true,
+            isDeleted: true,
+          },
+        },
+      },
+      orderBy: { name: "asc" },
+    });
+
+    const eligible = users.filter((u) => canApproveDocuments(u.role));
+    const userIds = eligible.map((u) => u.id);
+    const employeeIds = eligible
+      .map((u) => u.employee?.id)
+      .filter((id): id is string => Boolean(id));
+
+    const [pendingByUser, pendingByEmployee] = await Promise.all([
+      prisma.projectInvoiceApproval.groupBy({
+        by: ["approverUserId"],
+        where: {
+          status: "pending",
+          approverUserId: { in: userIds },
+        },
+        _count: { _all: true },
+      }),
+      employeeIds.length
+        ? prisma.projectInvoiceApproval.groupBy({
+            by: ["managerId"],
+            where: {
+              status: "pending",
+              managerId: { in: employeeIds },
+            },
+            _count: { _all: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const pendingUserMap = new Map(
+      pendingByUser
+        .filter((r) => r.approverUserId)
+        .map((r) => [r.approverUserId!, r._count._all])
+    );
+    const pendingEmpMap = new Map(
+      pendingByEmployee
+        .filter((r) => r.managerId)
+        .map((r) => [r.managerId!, r._count._all])
+    );
+
+    return eligible.map((u) => {
+      const emp = u.employee;
+      const roleLabel = roleGradeLabel(u.role);
+      const pendingCount =
+        (pendingUserMap.get(u.id) ?? 0) +
+        (emp?.id ? pendingEmpMap.get(emp.id) ?? 0 : 0);
+      const active =
+        emp && !emp.isDeleted
+          ? emp.status === "active"
+          : Boolean(u.email);
+
+      return {
+        id: u.id,
+        fullName: u.name,
+        role: u.role,
+        roleLabel,
+        department: departmentForRole(u.role),
+        phone: emp?.phone ?? "",
+        email: emp?.email || u.email,
+        status: active ? ("active" as const) : ("inactive" as const),
+        statusLabel: active ? "פעיל" : "לא פעיל",
+        pendingApprovals: pendingCount,
+        employeeId: emp?.id ?? null,
+      };
+    });
+  }
+
   static async findByInvoice(invoiceId: string) {
     const rows = await prisma.projectInvoiceApproval.findMany({
       where: { invoiceId },
-      include: {
-        manager: { select: { firstName: true, lastName: true } },
-        invoice: {
-          select: { sequenceNumber: true, invoiceNumber: true, amount: true },
-        },
-      },
+      include: approvalInclude,
       orderBy: { createdAt: "desc" },
     });
     return rows.map(mapApproval);
@@ -65,26 +199,43 @@ export class InvoiceApprovalsRepository {
 
   static async findPendingForManager(managerId: string) {
     const rows = await prisma.projectInvoiceApproval.findMany({
-      where: { managerId, status: "pending" },
-      include: {
-        manager: { select: { firstName: true, lastName: true } },
-        invoice: {
-          select: { sequenceNumber: true, invoiceNumber: true, amount: true },
-        },
+      where: {
+        status: "pending",
+        OR: [{ managerId }, { approverUserId: managerId }],
       },
+      include: approvalInclude,
       orderBy: { sentAt: "desc" },
     });
     return rows.map(mapApproval);
   }
 
   /**
-   * Office action: send invoice to project foreman for approval.
-   * Creates Approval row only — no email / WhatsApp / push.
+   * Office action: send invoice to one or more selected approver users.
    */
-  static async sendForApproval(invoiceId: string, userId: string) {
+  static async sendForApproval(
+    invoiceId: string,
+    userId: string,
+    options: SendForApprovalOptions
+  ) {
+    const ids = [
+      ...new Set(
+        [
+          ...(options.approverUserIds ?? []),
+          ...(options.approverUserId ? [options.approverUserId] : []),
+        ]
+          .map((id) => id.trim())
+          .filter(Boolean)
+      ),
+    ];
+    if (!ids.length) {
+      throw new Error("יש לבחור מנהל לאישור החשבון");
+    }
+
     const invoice = await prisma.partialInvoice.findUnique({
       where: { id: invoiceId },
-      include: { project: { select: { id: true, foremanId: true } } },
+      include: {
+        project: { select: { id: true, name: true, foremanId: true } },
+      },
     });
     if (!invoice) throw new Error("חשבון לא נמצא");
 
@@ -94,36 +245,93 @@ export class InvoiceApprovalsRepository {
       );
     }
 
-    const managerId = invoice.project.foremanId;
-    if (!managerId) {
-      throw new Error("לפרויקט לא משויך מנהל עבודה");
+    const approvers = await prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        employee: {
+          select: { id: true, phone: true, email: true, isDeleted: true },
+        },
+      },
+    });
+    if (approvers.length !== ids.length) {
+      throw new Error("אחד או יותר מהמנהלים שנבחרו לא נמצאו");
+    }
+    for (const a of approvers) {
+      if (!canApproveDocuments(a.role)) {
+        throw new Error(`המשתמש ${a.name} אינו מורשה לאשר חשבונות`);
+      }
     }
 
     const now = new Date();
+    const createTask = options.createTask !== false;
+    const notifyInApp = options.notifyInApp !== false;
+    const sendWhatsApp = Boolean(options.sendWhatsApp);
+    const sendEmail = Boolean(options.sendEmail);
 
-    const result = await prisma.$transaction(async (tx) => {
-      // Cancel any previous pending approvals for this invoice
+    const approvals = await prisma.$transaction(async (tx) => {
       await tx.projectInvoiceApproval.updateMany({
         where: { invoiceId, status: "pending" },
         data: { status: "cancelled", updatedAt: now },
       });
 
-      const approval = await tx.projectInvoiceApproval.create({
-        data: {
-          invoiceId,
-          projectId: invoice.projectId,
-          managerId,
-          status: "pending",
-          sentAt: now,
-          createdById: userId,
-        },
-        include: {
-          manager: { select: { firstName: true, lastName: true } },
-          invoice: {
-            select: { sequenceNumber: true, invoiceNumber: true, amount: true },
+      const created = [];
+      for (const approver of approvers) {
+        const managerId =
+          approver.employee && !approver.employee.isDeleted
+            ? approver.employee.id
+            : null;
+
+        const approval = await tx.projectInvoiceApproval.create({
+          data: {
+            invoiceId,
+            projectId: invoice.projectId,
+            managerId,
+            approverUserId: approver.id,
+            status: "pending",
+            sentAt: now,
+            createdById: userId,
           },
-        },
-      });
+          include: approvalInclude,
+        });
+        created.push(approval);
+
+        if (createTask) {
+          await tx.activity.create({
+            data: {
+              projectId: invoice.projectId,
+              type: "status_changed",
+              title: "משימת אישור חשבון",
+              description: `חשבון ${invoice.invoiceNumber} ממתין לאישור של ${approver.name}`,
+              userId: approver.id,
+              metadata: JSON.stringify({
+                kind: "invoice_approval_task",
+                invoiceId,
+                approvalId: approval.id,
+                approverUserId: approver.id,
+                sentByUserId: userId,
+                sentAt: now.toISOString(),
+              }),
+            },
+          });
+        }
+
+        if (notifyInApp) {
+          await tx.notification.create({
+            data: {
+              userId: approver.id,
+              projectId: invoice.projectId,
+              type: "invoice",
+              title: "חשבון ממתין לאישורך",
+              message: `חשבון ${invoice.invoiceNumber} בפרויקט ${invoice.project.name} נשלח לאישורך`,
+              link: `/invoices/${invoiceId}`,
+            },
+          });
+        }
+      }
 
       await tx.partialInvoice.update({
         where: { id: invoiceId },
@@ -133,52 +341,145 @@ export class InvoiceApprovalsRepository {
         },
       });
 
+      const names = approvers.map((a) => a.name).join(", ");
       await tx.activity.create({
         data: {
           projectId: invoice.projectId,
           type: "status_changed",
-          title: "חשבון נשלח לאישור מנהל עבודה",
-          description: `חשבון ${invoice.sequenceNumber} ממתין לאישור מנהל העבודה`,
+          title: "חשבון נשלח לאישור",
+          description: `חשבון ${invoice.sequenceNumber} נשלח לאישור של: ${names}`,
           userId,
           metadata: JSON.stringify({
             invoiceId,
-            approvalId: approval.id,
-            managerId,
+            approvalIds: created.map((a) => a.id),
+            approverUserIds: approvers.map((a) => a.id),
+            createTask,
+            notifyInApp,
+            sendWhatsApp,
+            sendEmail,
           }),
         },
       });
 
-      return approval;
+      return created;
     });
 
     await AuditRepository.log({
       action: "UPDATE",
       entityType: "ProjectInvoiceApproval",
-      entityId: result.id,
+      entityId: approvals[0]!.id,
       userId,
       metadata: {
         action: "send_for_approval",
         invoiceId,
-        managerId,
+        approverUserIds: approvers.map((a) => a.id),
       },
     });
 
     emitDomainEvent("invoice.sent_for_foreman_approval", {
       invoiceId,
       projectId: invoice.projectId,
-      approvalId: result.id,
-      managerId,
+      approvalId: approvals[0]!.id,
+      managerId: approvals[0]!.managerId ?? undefined,
       sequenceNumber: invoice.sequenceNumber,
       amount: Number(invoice.amount),
       actorUserId: userId,
     });
 
-    return mapApproval(result);
+    const first = approvers[0]!;
+    const phone = (first.employee?.phone || "").replace(/\D/g, "");
+    const email = first.employee?.email || first.email;
+    const names = approvers.map((a) => a.name).join(", ");
+    const message = encodeURIComponent(
+      `שלום,\nחשבון ${invoice.invoiceNumber} בפרויקט ${invoice.project.name} ממתין לאישור (${names}) במערכת.`
+    );
+
+    return {
+      approval: mapApproval(approvals[0]!),
+      approvals: approvals.map(mapApproval),
+      channels: {
+        whatsappUrl:
+          sendWhatsApp && phone
+            ? `https://wa.me/${phone.startsWith("972") ? phone : phone.replace(/^0/, "972")}?text=${message}`
+            : null,
+        emailUrl:
+          sendEmail && email
+            ? `mailto:${email}?subject=${encodeURIComponent(`אישור חשבון ${invoice.invoiceNumber}`)}&body=${message}`
+            : null,
+      },
+    };
   }
 
-  /**
-   * Future manager workspace action — no UI yet.
-   */
+  static async saveInvoiceDocument(
+    invoiceId: string,
+    userId: string,
+    printBaseUrl?: string
+  ) {
+    const invoice = await prisma.partialInvoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        projectId: true,
+        invoiceNumber: true,
+        sequenceNumber: true,
+      },
+    });
+    if (!invoice) throw new Error("חשבון לא נמצא");
+
+    const printPath = `/print/invoices/${invoiceId}`;
+    const url = printBaseUrl
+      ? `${printBaseUrl.replace(/\/$/, "")}${printPath}`
+      : printPath;
+    const folderPath = "חשבונות";
+    const docName = `חשבון ${invoice.invoiceNumber || invoice.sequenceNumber}.pdf`;
+
+    const existing = await prisma.document.findFirst({
+      where: {
+        projectId: invoice.projectId,
+        partialInvoiceId: invoiceId,
+        folderPath,
+        extension: "pdf",
+      },
+    });
+    if (existing) {
+      return {
+        document: {
+          id: existing.id,
+          name: existing.name,
+          folderPath: existing.folderPath,
+          url: existing.url,
+        },
+        created: false,
+      };
+    }
+
+    const doc = await DocumentsRepository.create(
+      {
+        projectId: invoice.projectId,
+        name: docName,
+        type: "pdf",
+        extension: "pdf",
+        size: 0,
+        bucket: "documents",
+        path: `print/invoices/${invoiceId}`,
+        url,
+        folderPath,
+        partialInvoiceId: invoiceId,
+      },
+      userId
+    );
+
+    return {
+      document: {
+        id: doc.id,
+        name: doc.name,
+        folderPath: doc.folderPath,
+        url: doc.url,
+      },
+      created: true,
+    };
+  }
+
   static async approve(approvalId: string, actorUserId: string, comment?: string) {
     const approval = await prisma.projectInvoiceApproval.findUnique({
       where: { id: approvalId },
@@ -199,12 +500,7 @@ export class InvoiceApprovalsRepository {
           approvedAt: now,
           comment: comment?.trim() || approval.comment,
         },
-        include: {
-          manager: { select: { firstName: true, lastName: true } },
-          invoice: {
-            select: { sequenceNumber: true, invoiceNumber: true, amount: true },
-          },
-        },
+        include: approvalInclude,
       });
 
       await tx.partialInvoice.update({
@@ -219,7 +515,7 @@ export class InvoiceApprovalsRepository {
         data: {
           projectId: approval.projectId,
           type: "status_changed",
-          title: "חשבון אושר על ידי מנהל עבודה",
+          title: "חשבון אושר",
           description: `חשבון ${approval.invoice.sequenceNumber} אושר`,
           userId: actorUserId,
           metadata: JSON.stringify({ approvalId, invoiceId: approval.invoiceId }),
@@ -241,7 +537,7 @@ export class InvoiceApprovalsRepository {
       invoiceId: approval.invoiceId,
       projectId: approval.projectId,
       approvalId,
-      managerId: approval.managerId,
+      managerId: approval.managerId ?? undefined,
       sequenceNumber: approval.invoice.sequenceNumber,
       amount: Number(approval.invoice.amount),
       comment: comment ?? null,
@@ -251,9 +547,6 @@ export class InvoiceApprovalsRepository {
     return mapApproval(updated);
   }
 
-  /**
-   * Future manager workspace action — no UI yet.
-   */
   static async reject(
     approvalId: string,
     actorUserId: string,
@@ -282,12 +575,7 @@ export class InvoiceApprovalsRepository {
           rejectedAt: now,
           comment: comment.trim(),
         },
-        include: {
-          manager: { select: { firstName: true, lastName: true } },
-          invoice: {
-            select: { sequenceNumber: true, invoiceNumber: true, amount: true },
-          },
-        },
+        include: approvalInclude,
       });
 
       await tx.partialInvoice.update({
@@ -302,7 +590,7 @@ export class InvoiceApprovalsRepository {
         data: {
           projectId: approval.projectId,
           type: "status_changed",
-          title: "חשבון נדחה על ידי מנהל עבודה",
+          title: "חשבון נדחה",
           description: comment.trim(),
           userId: actorUserId,
           metadata: JSON.stringify({ approvalId, invoiceId: approval.invoiceId }),
@@ -328,7 +616,7 @@ export class InvoiceApprovalsRepository {
       invoiceId: approval.invoiceId,
       projectId: approval.projectId,
       approvalId,
-      managerId: approval.managerId,
+      managerId: approval.managerId ?? undefined,
       sequenceNumber: approval.invoice.sequenceNumber,
       amount: Number(approval.invoice.amount),
       comment: comment.trim(),
@@ -338,7 +626,6 @@ export class InvoiceApprovalsRepository {
     return mapApproval(updated);
   }
 
-  /** Office action after foreman approval — prepare for client send (no channel yet). */
   static async markSentToClient(invoiceId: string, userId: string) {
     const invoice = await prisma.partialInvoice.findUnique({
       where: { id: invoiceId },

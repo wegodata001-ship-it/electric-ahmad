@@ -1,10 +1,12 @@
-import { Suspense } from "react";
-import { SimpleInvoicePage } from "@/features/partial-invoices/components/simple-invoice-page";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return (
-    <Suspense fallback={<p className="text-sm text-gray-400">טוען...</p>}>
-      <SimpleInvoicePage />
-    </Suspense>
-  );
+/** יצירת חשבון עוברת דרך דפי מדידה בעץ הפרויקט */
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string }>;
+}) {
+  const sp = await searchParams;
+  const q = sp.projectId ? `?projectId=${encodeURIComponent(sp.projectId)}` : "";
+  redirect(`/invoices${q}`);
 }

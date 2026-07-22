@@ -75,7 +75,7 @@ export function FieldDashboardPage() {
           שלום, {data.foreman.name.split(" ")[0]}
         </p>
         <p className="text-base text-gray-500 mt-1">
-          סידור עבודה, עובדים ודיווחי ביצוע — הכל במקום אחד
+          יומן עבודה, תעודות משלוח ועובדים — הכל במקום אחד
         </p>
       </section>
 
@@ -124,11 +124,11 @@ export function FieldDashboardPage() {
       </section>
 
       <div className="wm-quick-tiles">
-        <Link href="/field/journal/new" className="wm-tile">
+        <Link href="/field/work-diaries/new" className="wm-tile">
           <Plus className="h-5 w-5" />
-          סידור עבודה חדש
+          יומן עבודה חדש
         </Link>
-        <Link href="/field/journal" className="wm-tile">
+        <Link href="/field/work-diaries" className="wm-tile">
           <BookOpen className="h-5 w-5" />
           יומן עבודה
         </Link>
@@ -142,23 +142,23 @@ export function FieldDashboardPage() {
         <section className="rounded-2xl bg-white border border-gray-200 p-5 lg:col-span-2">
           <p className="text-sm font-semibold text-gray-400 mb-2">יומן עבודה</p>
           <p className="text-lg text-gray-800">
-            צרו סידור, שבצו עובדים ורשמו דיווח ביצוע
+            צרו יומן עבודה, שבצו עובדים ושלחו לאישור
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => router.push("/field/journal/new")}
+              onClick={() => router.push("/field/work-diaries/new")}
               disabled={data.projects.length === 0}
               className="h-14 rounded-2xl bg-[#03142F] text-white text-base font-bold disabled:opacity-50 px-6"
             >
-              סידור חדש
+              יומן חדש
             </button>
             <button
               type="button"
-              onClick={() => router.push("/field/journal")}
+              onClick={() => router.push("/field/work-diaries")}
               className="h-14 rounded-2xl border border-gray-300 text-base font-semibold px-6"
             >
-              כל הסידורים
+              כל היומנים
             </button>
           </div>
         </section>
