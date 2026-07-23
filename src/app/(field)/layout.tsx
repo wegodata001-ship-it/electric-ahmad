@@ -1,5 +1,16 @@
-import { FieldLayout } from "@/components/layout/field-layout";
+"use client";
 
-export default function Layout({ children }: { children: React.ReactNode }) {
-  return <FieldLayout>{children}</FieldLayout>;
+import { usePathname } from "next/navigation";
+import { PortalShell } from "@/components/portal";
+
+export default function FieldPortalLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  if (pathname === "/field/login") {
+    return <>{children}</>;
+  }
+  return <PortalShell portalId="field">{children}</PortalShell>;
 }

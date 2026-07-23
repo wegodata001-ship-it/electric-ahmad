@@ -1,5 +1,5 @@
-import { FieldDashboardPage } from "@/features/field/components/field-dashboard-page";
+import { FieldPortalDashboard } from "@/features/platform/components";
 
 export default function Page() {
-  return <FieldDashboardPage />;
+  return <FieldPortalDashboard />;
 }

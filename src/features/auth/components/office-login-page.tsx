@@ -27,17 +27,22 @@ export function OfficeLoginPage() {
       if (!res.ok || !json.success) {
         throw new Error(json.error || "התחברות נכשלה");
       }
-      const next = searchParams.get("next") || "/dashboard";
+      const portalPath =
+        typeof json.data?.portalPath === "string"
+          ? json.data.portalPath
+          : null;
+      const next = searchParams.get("next");
       const safeNext =
+        next &&
         next.startsWith("/") &&
         !next.startsWith("//") &&
-        !next.startsWith("/field") &&
-        !next.startsWith("/api")
-          ? next === "/project-manager" || next === "/login"
-            ? "/dashboard"
-            : next
-          : "/dashboard";
-      router.replace(safeNext);
+        !next.startsWith("/api") &&
+        next !== "/login" &&
+        next !== "/field/login"
+          ? next
+          : null;
+      const dest = safeNext || portalPath || "/login";
+      router.replace(dest);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "שגיאה בהתחברות");
@@ -70,7 +75,7 @@ export function OfficeLoginPage() {
             {COMPANY_PROFILE.name || "מערכת ניהול"}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            התחברות מנהל פרויקט / מערכת ניהול
+            התחברות אחת · הפניה אוטומטית ל־Portal
           </p>
         </div>
 
@@ -82,7 +87,7 @@ export function OfficeLoginPage() {
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="admin או office@..."
+            placeholder="admin / pm1 / sysmgr…"
             className="w-full h-11 border border-gray-300 rounded-xl px-3 text-sm"
             required
             dir="ltr"
@@ -96,7 +101,7 @@ export function OfficeLoginPage() {
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full h-11 border border-gray-300 rounded-xl px-3 text-sm"
+            className="w-full h-11 border border-gray-200 rounded-xl px-3 text-sm"
             required
             dir="ltr"
           />
@@ -125,13 +130,6 @@ export function OfficeLoginPage() {
         >
           {loading ? "מתחבר..." : "התחבר"}
         </button>
-
-        <p className="text-center text-xs text-gray-400 pt-1">
-          מנהלי עבודה בשטח:{" "}
-          <a href="/field/login" className="text-blue-700 underline">
-            התחברות שטח
-          </a>
-        </p>
       </form>
     </div>
   );

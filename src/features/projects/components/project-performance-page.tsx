@@ -9,6 +9,7 @@ import {
   GripVertical,
   Maximize2,
   Minimize2,
+  Plus,
   Save,
   X,
 } from "lucide-react";

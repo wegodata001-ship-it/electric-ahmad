@@ -7,6 +7,7 @@ import {
   OFFICE_SESSION_COOKIE,
   verifyOfficeSession,
 } from "@/lib/auth/office-cookie";
+import { portalHomeForRole } from "@/lib/portals/config";
 
 function isPublicFieldPath(pathname: string): boolean {
   return (
@@ -52,6 +53,19 @@ function isOfficeAliasPath(pathname: string): boolean {
   );
 }
 
+function safeNextPath(next: string | null, fallback: string): string {
+  if (
+    next &&
+    next.startsWith("/") &&
+    !next.startsWith("//") &&
+    next !== "/login" &&
+    next !== "/field/login"
+  ) {
+    return next;
+  }
+  return fallback;
+}
+
 async function handleFieldAuth(request: NextRequest, pathname: string) {
   const isFieldApi =
     pathname.startsWith("/api/field/") || pathname === "/api/field";
@@ -63,6 +77,11 @@ async function handleFieldAuth(request: NextRequest, pathname: string) {
       if (session) {
         return NextResponse.redirect(new URL("/field", request.url));
       }
+      // Unified login is the primary entry — keep /field/login as BC redirect
+      const unified = new URL("/login", request.url);
+      const next = request.nextUrl.searchParams.get("next");
+      if (next) unified.searchParams.set("next", next);
+      return NextResponse.redirect(unified);
     }
     return NextResponse.next();
   }
@@ -77,7 +96,7 @@ async function handleFieldAuth(request: NextRequest, pathname: string) {
         { status: 401 }
       );
     }
-    const login = new URL("/field/login", request.url);
+    const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname);
     return NextResponse.redirect(login);
   }
@@ -90,17 +109,24 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
 
   if (isPublicOfficePath(pathname)) {
     if (pathname === "/login") {
+      // Field session wins when present
+      const fieldToken = request.cookies.get(FIELD_SESSION_COOKIE)?.value;
+      const fieldSession = await verifyFieldSession(fieldToken);
+      if (fieldSession) {
+        const next = request.nextUrl.searchParams.get("next");
+        const dest = safeNextPath(next, "/field");
+        return NextResponse.redirect(new URL(dest, request.url));
+      }
+
       const token = request.cookies.get(OFFICE_SESSION_COOKIE)?.value;
       const session = await verifyOfficeSession(token);
       if (session) {
         const next = request.nextUrl.searchParams.get("next");
-        const dest =
-          next &&
-          next.startsWith("/") &&
-          !next.startsWith("//") &&
-          next !== "/login"
-            ? next
-            : "/dashboard";
+        const portalHome = portalHomeForRole(session.role);
+        const dest = safeNextPath(
+          next,
+          portalHome === "/login" ? "/dashboard" : portalHome
+        );
         return NextResponse.redirect(new URL(dest, request.url));
       }
     }
@@ -108,7 +134,10 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       const token = request.cookies.get(OFFICE_SESSION_COOKIE)?.value;
       const session = await verifyOfficeSession(token);
       if (session) {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
+        const home = portalHomeForRole(session.role);
+        return NextResponse.redirect(
+          new URL(home === "/login" ? "/dashboard" : home, request.url)
+        );
       }
       return NextResponse.redirect(new URL("/login", request.url));
     }
@@ -123,7 +152,10 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       login.searchParams.set("next", "/dashboard");
       return NextResponse.redirect(login);
     }
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    const home = portalHomeForRole(session.role);
+    return NextResponse.redirect(
+      new URL(home === "/login" ? "/dashboard" : home, request.url)
+    );
   }
 
   const token = request.cookies.get(OFFICE_SESSION_COOKIE)?.value;

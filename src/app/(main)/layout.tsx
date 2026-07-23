@@ -1,5 +1,10 @@
-import { MainLayout } from "@/components/layout";
+import { OfficePortalBridge } from "@/components/portal/office-portal-bridge";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return <MainLayout>{children}</MainLayout>;
+/** Legacy office routes → Portal shell by role (Sprint 1 demo) */
+export default function OfficeLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <OfficePortalBridge>{children}</OfficePortalBridge>;
 }

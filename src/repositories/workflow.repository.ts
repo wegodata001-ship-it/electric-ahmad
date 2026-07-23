@@ -1,3 +1,5 @@
+import { CONVERSATION_EVENT_TYPE } from "@/lib/engines/conversation";
+import type { ConversationMessage } from "@/lib/engines/conversation";
 import { prisma } from "@/lib/prisma";
 import { getWorkflowDefinition } from "@/lib/workflow/definitions";
 import { notifyWorkflowUsers } from "@/lib/workflow/notifications";
@@ -568,6 +570,63 @@ export class WorkflowRepository {
       createdAt: e.createdAt.toISOString(),
       metadata: e.metadata,
     }));
+  }
+
+  static async addConversationMessage(
+    documentId: string,
+    actor: WorkflowActor,
+    body: string
+  ): Promise<ConversationMessage> {
+    const trimmed = body.trim();
+    if (!trimmed) throw new WorkflowTransitionError("הודעה ריקה");
+
+    const doc = await prisma.workflowDocument.findUnique({
+      where: { id: documentId },
+      select: { id: true },
+    });
+    if (!doc) throw new WorkflowTransitionError("מסמך לא נמצא");
+
+    const preview =
+      trimmed.length > 120 ? `${trimmed.slice(0, 120)}…` : trimmed;
+
+    await this.addEvent(documentId, {
+      type: CONVERSATION_EVENT_TYPE,
+      message: preview,
+      actorId: actor.userId,
+      metadata: { body: trimmed },
+    });
+
+    const messages = await this.listConversation(documentId);
+    const last = messages[messages.length - 1];
+    if (!last) throw new WorkflowTransitionError("שגיאה בשמירת הודעה");
+    return last;
+  }
+
+  static async listConversation(documentId: string): Promise<ConversationMessage[]> {
+    const events = await prisma.workflowEvent.findMany({
+      where: { documentId, type: CONVERSATION_EVENT_TYPE },
+      include: { actor: { select: { name: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return events.map((e) => {
+      let body = e.message;
+      if (e.metadata) {
+        try {
+          const meta = JSON.parse(e.metadata) as { body?: string };
+          if (meta.body) body = meta.body;
+        } catch {
+          /* keep preview message */
+        }
+      }
+      return {
+        id: e.id,
+        documentId,
+        body,
+        actorName: e.actor?.name ?? null,
+        createdAt: e.createdAt.toISOString(),
+      };
+    });
   }
 
   static async listPendingForApprover(approverId: string) {
