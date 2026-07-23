@@ -328,10 +328,31 @@ model Project {
   defaultApprovers ProjectDefaultApprover[]
   measurementSheets MeasurementSheet[]
   workflowDocuments WorkflowDocument[]
+  rooms             ProjectRoom[]
 
   @@index([status])
   @@index([foremanId])
   @@index([ownerId])
+}
+
+/** חדר / יחידה ברמת פרויקט — מקור אמת משותף לכל המסכים */
+model ProjectRoom {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  floor     String?
+  code      String?
+  sortOrder Int       @default(0)
+  isHidden  Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  sheetRows MeasurementSheetRow[]
+
+  @@index([projectId, sortOrder])
+  @@index([projectId, deletedAt])
 }
 
 // ─── BOQ ─────────────────────────────────────────────────────────────────────
@@ -1775,12 +1796,16 @@ model MeasurementSheetRow {
   name      String
   sortOrder Int              @default(0)
   notes     String?
+  /** קישור לחדר ברמת פרויקט (מקור אמת) */
+  projectRoomId String?
+  projectRoom   ProjectRoom? @relation(fields: [projectRoomId], references: [id], onDelete: SetNull)
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
   cells MeasurementCell[]
 
   @@index([sheetId])
+  @@index([projectRoomId])
 }
 
 model MeasurementCell {

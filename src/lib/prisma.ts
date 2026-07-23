@@ -1,7 +1,7 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 
 /** Bump when DeliveryNote / MeasurementSheet schema fields change so hot-reload drops stale clients */
-const SCHEMA_VERSION = "workflow-diary-bridge-v1.5";
+const SCHEMA_VERSION = "project-rooms-v1";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -38,6 +38,7 @@ function hasRequiredModels(client: PrismaClient): boolean {
     workOrder?: { create?: unknown };
     documentAttachment?: { create?: unknown };
     workflowDocument?: { create?: unknown };
+    projectRoom?: { create?: unknown };
   };
   return (
     typeof c.aiParseLog?.create === "function" &&
@@ -53,6 +54,7 @@ function hasRequiredModels(client: PrismaClient): boolean {
     typeof c.workOrder?.create === "function" &&
     typeof c.documentAttachment?.create === "function" &&
     typeof c.workflowDocument?.create === "function" &&
+    typeof c.projectRoom?.create === "function" &&
     deliveryNoteClientIsCurrent()
   );
 }

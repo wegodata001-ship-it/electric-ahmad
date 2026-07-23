@@ -6,9 +6,9 @@ import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CheckCircle2,
+  GripVertical,
   Maximize2,
   Minimize2,
-  Plus,
   Save,
   X,
 } from "lucide-react";
@@ -24,6 +24,7 @@ import { invoiceService } from "@/features/partial-invoices/services/invoice.ser
 import { SendInvoiceApprovalModal } from "@/features/partial-invoices/components/send-invoice-approval-modal";
 import { approvalsService } from "@/features/work-diaries/services/work-diaries.service";
 import { boqService } from "@/features/boq/services/boq.service";
+import { ProjectRoomsToolbar } from "@/features/projects/components/project-rooms-toolbar";
 import type { BoqItem } from "@/types";
 
 type DraftMap = Record<string, string>;
@@ -49,9 +50,9 @@ export function ProjectPerformancePage({
   const [saved, setSaved] = useState<DraftMap>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [newUnit, setNewUnit] = useState("");
   const [creating, setCreating] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [dragRoomId, setDragRoomId] = useState<string | null>(null);
 
   // Submit / invoice / ops review flow
   const [completing, setCompleting] = useState(false);
@@ -227,18 +228,35 @@ export function ProjectPerformancePage({
     }
   }
 
-  async function addUnit() {
-    if (!sheetId || !newUnit.trim() || locked) return;
+  async function refreshSheetLocal() {
+    if (!sheetId) return;
+    const s = await invoicesWorkspaceService.getSheet(sheetId);
+    applySheet(s);
+  }
+
+  async function onRoomsChanged() {
     try {
-      if (dirty) {
-        const ok = await saveAll();
-        if (!ok) return;
-      }
-      await invoicesWorkspaceService.addRows(sheetId, [newUnit.trim()]);
-      setNewUnit("");
-      const s = await invoicesWorkspaceService.getSheet(sheetId);
-      applySheet(s);
-      toast.success("יחידה נוספה");
+      await refreshSheetLocal();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
+  async function reorderRoomsByRowIds(fromRowId: string, toRowId: string) {
+    if (fromRowId === toRowId || locked) return;
+    const ordered = rooms.map((r: any) => r.projectRoomId).filter(Boolean);
+    const fromRoomId = rooms.find((r: any) => r.id === fromRowId)?.projectRoomId;
+    const toRoomId = rooms.find((r: any) => r.id === toRowId)?.projectRoomId;
+    if (!fromRoomId || !toRoomId) return;
+    const fromIdx = ordered.indexOf(fromRoomId);
+    const toIdx = ordered.indexOf(toRoomId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const next = [...ordered];
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, fromRoomId);
+    try {
+      await invoicesWorkspaceService.reorderRooms(projectId, next);
+      await refreshSheetLocal();
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -253,6 +271,7 @@ export function ProjectPerformancePage({
         rowNames: ["חדר 101", "חדר 102", "חדר 103"],
       });
       setSheetId(created.id);
+      applySheet(created);
       await loadSheets();
       toast.success("דף מדידה נוצר");
     } catch (e: any) {
@@ -427,21 +446,11 @@ export function ProjectPerformancePage({
           ))}
         </select>
         {!locked && (
-          <>
-            <input
-              className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
-              placeholder="הוסף חדר (למשל חדר 104)"
-              value={newUnit}
-              onChange={(e) => setNewUnit(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void addUnit();
-              }}
-            />
-            <Button size="sm" onClick={() => void addUnit()}>
-              <Plus className="h-4 w-4" />
-              הוסף חדר
-            </Button>
-          </>
+          <ProjectRoomsToolbar
+            projectId={projectId}
+            disabled={!sheetId}
+            onChanged={onRoomsChanged}
+          />
         )}
         <Button
           size="sm"
@@ -633,10 +642,26 @@ export function ProjectPerformancePage({
                 <tr
                   key={room.id}
                   className="border-b border-gray-50 hover:bg-gray-50/50"
+                  draggable={!locked && !!room.projectRoomId}
+                  onDragStart={() => setDragRoomId(room.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    if (dragRoomId) void reorderRoomsByRowIds(dragRoomId, room.id);
+                    setDragRoomId(null);
+                  }}
+                  onDragEnd={() => setDragRoomId(null)}
                 >
                   <td className="sticky right-0 z-10 border-l border-gray-100 bg-white px-3 py-2 font-semibold text-gray-900 whitespace-nowrap">
                     <span className="inline-flex items-center gap-1.5">
+                      {!locked && room.projectRoomId && (
+                        <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-gray-300" />
+                      )}
                       {room.name}
+                      {room.floor ? (
+                        <span className="text-[10px] font-normal text-gray-400">
+                          · קומה {room.floor}
+                        </span>
+                      ) : null}
                       {activeReviewNotes.some(
                         (n: any) => n.rowId === room.id
                       ) && (

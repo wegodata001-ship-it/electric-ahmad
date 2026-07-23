@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, History, Plus, Save } from "lucide-react";
+import { ArrowRight, History, Save } from "lucide-react";
 import { Button, useToast } from "@/components/ui";
 import { invoicesWorkspaceService } from "../services/invoices-workspace.service";
+import { ProjectRoomsToolbar } from "@/features/projects/components/project-rooms-toolbar";
 import { formatNumber } from "@/utils/format";
 
 export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
@@ -13,7 +14,6 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [newRowName, setNewRowName] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [entries, setEntries] = useState<any[]>([]);
 
@@ -71,18 +71,6 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
     }
   }
 
-  async function addRow() {
-    if (!newRowName.trim()) return;
-    try {
-      await invoicesWorkspaceService.addRows(sheetId, [newRowName.trim()]);
-      setNewRowName("");
-      await reload();
-      toast.success("יחידה נוספה");
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  }
-
   async function loadHistory() {
     setShowHistory(true);
     try {
@@ -125,19 +113,11 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
         </Button>
       </div>
 
-      {!locked && (
-        <div className="flex gap-2 flex-wrap">
-          <input
-            className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
-            placeholder={`הוסף ${axis}`}
-            value={newRowName}
-            onChange={(e) => setNewRowName(e.target.value)}
-          />
-          <Button size="sm" onClick={addRow}>
-            <Plus className="h-4 w-4" />
-            הוסף {axis}
-          </Button>
-        </div>
+      {!locked && sheet?.projectId && (
+        <ProjectRoomsToolbar
+          projectId={sheet.projectId}
+          onChanged={reload}
+        />
       )}
 
       {!columns.length && (

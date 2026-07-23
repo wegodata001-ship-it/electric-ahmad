@@ -7,7 +7,22 @@ function num(v: unknown): number {
 }
 
 const sheetInclude = {
-  rows: { orderBy: { sortOrder: "asc" as const } },
+  rows: {
+    orderBy: { sortOrder: "asc" as const },
+    include: {
+      projectRoom: {
+        select: {
+          id: true,
+          name: true,
+          floor: true,
+          code: true,
+          sortOrder: true,
+          isHidden: true,
+          deletedAt: true,
+        },
+      },
+    },
+  },
   cells: {
     include: {
       boqItem: {
@@ -89,14 +104,36 @@ function mapSheet(row: any) {
     updatedAt: row.updatedAt.toISOString(),
     project: row.project,
     editable: isSheetEditable(row.status),
-    rows: (row.rows ?? []).map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      sortOrder: r.sortOrder,
-      notes: r.notes,
-    })),
+    rows: (row.rows ?? [])
+      .filter((r: any) => {
+        if (r.projectRoom?.deletedAt) return false;
+        if (r.projectRoom?.isHidden) return false;
+        return true;
+      })
+      .sort((a: any, b: any) => {
+        const sa = a.projectRoom?.sortOrder ?? a.sortOrder ?? 0;
+        const sb = b.projectRoom?.sortOrder ?? b.sortOrder ?? 0;
+        return sa - sb;
+      })
+      .map((r: any) => ({
+        id: r.id,
+        name: r.projectRoom?.name ?? r.name,
+        sortOrder: r.projectRoom?.sortOrder ?? r.sortOrder,
+        notes: r.notes,
+        projectRoomId: r.projectRoomId ?? r.projectRoom?.id ?? null,
+        floor: r.projectRoom?.floor ?? null,
+        code: r.projectRoom?.code ?? null,
+        isHidden: r.projectRoom?.isHidden ?? false,
+      })),
     cells: (row.cells ?? [])
       .filter((c: any) => !c.boqItem?.deletedAt)
+      .filter((c: any) => {
+        const rowMeta = (row.rows ?? []).find((r: any) => r.id === c.rowId);
+        if (!rowMeta) return true;
+        if (rowMeta.projectRoom?.deletedAt) return false;
+        if (rowMeta.projectRoom?.isHidden) return false;
+        return true;
+      })
       .map((c: any) => ({
         id: c.id,
         rowId: c.rowId,
@@ -224,8 +261,35 @@ export class MeasurementSheetsRepository {
       select: { id: true },
     });
 
+    const projectRooms = await prisma.projectRoom.findMany({
+      where: { projectId: input.projectId, deletedAt: null },
+      orderBy: { sortOrder: "asc" },
+    });
+
     const rowNames =
       input.rowNames?.map((n) => n.trim()).filter(Boolean) ?? [];
+
+    // אם אין חדרים בפרויקט — צור מ־rowNames; אחרת השתמש בחדרים הקיימים
+    if (!projectRooms.length && rowNames.length) {
+      const { ProjectRoomsRepository } = await import(
+        "@/repositories/project-rooms.repository"
+      );
+      for (const name of rowNames) {
+        await ProjectRoomsRepository.create(input.projectId, { name });
+      }
+    } else if (!projectRooms.length && !rowNames.length) {
+      const { ProjectRoomsRepository } = await import(
+        "@/repositories/project-rooms.repository"
+      );
+      for (const name of ["חדר 101", "חדר 102", "חדר 103"]) {
+        await ProjectRoomsRepository.create(input.projectId, { name });
+      }
+    }
+
+    const rooms = await prisma.projectRoom.findMany({
+      where: { projectId: input.projectId, deletedAt: null, isHidden: false },
+      orderBy: { sortOrder: "asc" },
+    });
 
     const sheet = await prisma.$transaction(async (tx) => {
       const created = await tx.measurementSheet.create({
@@ -240,12 +304,13 @@ export class MeasurementSheetsRepository {
         },
       });
 
-      if (rowNames.length) {
+      if (rooms.length) {
         await tx.measurementSheetRow.createMany({
-          data: rowNames.map((name, i) => ({
+          data: rooms.map((room) => ({
             sheetId: created.id,
-            name,
-            sortOrder: i,
+            name: room.name,
+            sortOrder: room.sortOrder,
+            projectRoomId: room.id,
           })),
         });
       }
@@ -300,7 +365,6 @@ export class MeasurementSheetsRepository {
   static async addRows(sheetId: string, names: string[], userId: string) {
     const sheet = await prisma.measurementSheet.findUnique({
       where: { id: sheetId },
-      include: { cells: { select: { boqItemId: true }, distinct: ["boqItemId"] } },
     });
     if (!sheet) throw new Error("דף מדידה לא נמצא");
     if (!isSheetEditable(sheet.status)) {
@@ -310,47 +374,19 @@ export class MeasurementSheetsRepository {
     const clean = names.map((n) => n.trim()).filter(Boolean);
     if (!clean.length) throw new Error("יש להזין שם יחידה");
 
-    const last = await prisma.measurementSheetRow.findFirst({
-      where: { sheetId },
-      orderBy: { sortOrder: "desc" },
-    });
-    let sort = (last?.sortOrder ?? -1) + 1;
+    const { ProjectRoomsRepository } = await import(
+      "@/repositories/project-rooms.repository"
+    );
+    for (const name of clean) {
+      await ProjectRoomsRepository.create(sheet.projectId, { name });
+    }
 
-    const boqIds = [...new Set(sheet.cells.map((c) => c.boqItemId))];
-    // If no cells yet, load project BOQ
-    const columns =
-      boqIds.length > 0
-        ? boqIds
-        : (
-            await prisma.boqItem.findMany({
-              where: { projectId: sheet.projectId, deletedAt: null, status: { not: "cancelled" } },
-              select: { id: true },
-            })
-          ).map((b) => b.id);
-
-    await prisma.$transaction(async (tx) => {
-      for (const name of clean) {
-        const row = await tx.measurementSheetRow.create({
-          data: { sheetId, name, sortOrder: sort++ },
-        });
-        if (columns.length) {
-          await tx.measurementCell.createMany({
-            data: columns.map((boqItemId) => ({
-              sheetId,
-              rowId: row.id,
-              boqItemId,
-              quantity: 0,
-            })),
-          });
-        }
-      }
-      await tx.measurementSheet.update({
-        where: { id: sheetId },
-        data: {
-          updatedById: userId,
-          status: sheet.status === "revision" ? "revision" : "in_progress",
-        },
-      });
+    await prisma.measurementSheet.update({
+      where: { id: sheetId },
+      data: {
+        updatedById: userId,
+        status: sheet.status === "revision" ? "revision" : "in_progress",
+      },
     });
 
     return this.getById(sheetId);

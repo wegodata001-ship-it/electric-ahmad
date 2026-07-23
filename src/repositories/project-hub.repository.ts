@@ -127,7 +127,9 @@ export class ProjectHubRepository {
           ) / 10
         : project.progress;
 
-    const unitRowCount = sheets.reduce((s, sh) => s + sh._count.rows, 0);
+    const unitRowCount = await prisma.projectRoom.count({
+      where: { projectId, deletedAt: null, isHidden: false },
+    });
 
     const invoiceGroups = {
       draft: invoices.filter((i) => i.status === "draft").length,

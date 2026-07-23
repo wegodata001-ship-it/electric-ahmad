@@ -343,16 +343,17 @@ export class WorkflowRepository {
       const mine = existing.approvals.find(
         (a) => a.approverId === input.actor.userId && a.status === "pending"
       );
-      if (mine) {
-        await prisma.workflowApproval.update({
-          where: { id: mine.id },
-          data: {
-            status: "rejected",
-            comment: input.comment?.trim() || null,
-            decidedAt: new Date(),
-          },
-        });
+      if (!mine) {
+        throw new WorkflowTransitionError("אין בקשת אישור ממתינה עבורך");
       }
+      await prisma.workflowApproval.update({
+        where: { id: mine.id },
+        data: {
+          status: "rejected",
+          comment: input.comment?.trim() || null,
+          decidedAt: new Date(),
+        },
+      });
       await prisma.workflowApproval.updateMany({
         where: { documentId: input.documentId, status: "pending" },
         data: { status: "cancelled" },

@@ -40,6 +40,49 @@ export const invoicesWorkspaceService = {
     return apiClient.post<any>(`/api/measurement-sheets/${sheetId}/rows`, { names });
   },
 
+  listRooms(projectId: string, includeHidden = false) {
+    const q = includeHidden ? "?includeHidden=1" : "";
+    return apiClient.get<{ items: any[] }>(
+      `/api/projects/${projectId}/rooms${q}`
+    );
+  },
+
+  createRoom(
+    projectId: string,
+    body: {
+      name: string;
+      floor?: string | null;
+      code?: string | null;
+      sortOrder?: number | null;
+    }
+  ) {
+    return apiClient.post<any>(`/api/projects/${projectId}/rooms`, body);
+  },
+
+  updateRoom(
+    projectId: string,
+    roomId: string,
+    body: Record<string, unknown>
+  ) {
+    return apiClient.patch<any>(
+      `/api/projects/${projectId}/rooms/${roomId}`,
+      body
+    );
+  },
+
+  deleteRoom(projectId: string, roomId: string) {
+    return apiClient.delete<{ ok: boolean }>(
+      `/api/projects/${projectId}/rooms/${roomId}`
+    );
+  },
+
+  reorderRooms(projectId: string, orderedIds: string[]) {
+    return apiClient.put<{ items: any[] }>(
+      `/api/projects/${projectId}/rooms`,
+      { orderedIds }
+    );
+  },
+
   setCell(sheetId: string, body: { rowId: string; boqItemId: string; quantity: number }) {
     return apiClient.put<any>(`/api/measurement-sheets/${sheetId}/cells`, body);
   },
