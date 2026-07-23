@@ -1,5 +1,5 @@
-import { OperationsPortalDashboard } from "@/features/platform/components";
+import { OpsQueueHome } from "@/apps/operations/ops-queue-home";
 
 export default function Page() {
-  return <OperationsPortalDashboard />;
+  return <OpsQueueHome />;
 }

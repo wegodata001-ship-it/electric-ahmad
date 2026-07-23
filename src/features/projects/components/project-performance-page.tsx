@@ -74,6 +74,8 @@ export function ProjectPerformancePage({
   const [opsRejectComment, setOpsRejectComment] = useState("");
   const [opsMarkedRooms, setOpsMarkedRooms] = useState<string[]>([]);
   const [opsDeciding, setOpsDeciding] = useState(false);
+  const [ensuringGrid, setEnsuringGrid] = useState(false);
+  const [gridEnsuredFor, setGridEnsuredFor] = useState<string | null>(null);
 
   const locked = sheet ? sheet.editable === false : false;
   const isRevision = sheet?.status === "revision";
@@ -143,6 +145,30 @@ export function ProjectPerformancePage({
       .catch((e) => toast.error(e.message));
   }, [sheetId, toast]);
 
+  /** If sheet has rooms but no BOQ columns — build the fillable grid automatically. */
+  useEffect(() => {
+    if (!sheetId || !sheet || locked) return;
+    if (gridEnsuredFor === sheetId) return;
+    const roomCount = sheet.rows?.length ?? 0;
+    const cellCount = sheet.cells?.length ?? 0;
+    if (!roomCount || cellCount > 0) {
+      setGridEnsuredFor(sheetId);
+      return;
+    }
+    setEnsuringGrid(true);
+    invoicesWorkspaceService
+      .ensureGrid(sheetId, true)
+      .then(async (s) => {
+        applySheet(s);
+        const items = await boqService.getByProject(projectId);
+        setBoq(items);
+        setGridEnsuredFor(sheetId);
+        toast.success("טבלת המדידה מוכנה להזנה");
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setEnsuringGrid(false));
+  }, [sheet, sheetId, locked, gridEnsuredFor, projectId, toast]);
+
   useEffect(() => {
     if (!fullscreen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -155,15 +181,33 @@ export function ProjectPerformancePage({
   const rooms: any[] = sheet?.rows ?? [];
 
   const sections = useMemo(() => {
-    const fromSheet = new Map<string, any>();
-    for (const c of sheet?.cells ?? []) {
-      if (c.boqItem) fromSheet.set(c.boqItemId, c.boqItem);
+    const map = new Map<string, any>();
+    for (const item of boq) {
+      if (item?.id) map.set(item.id, item);
     }
-    if (boq.length) return boq;
-    return [...fromSheet.values()].sort((a, b) =>
-      String(a.code).localeCompare(String(b.code), "he")
+    for (const c of sheet?.cells ?? []) {
+      if (c.boqItem) map.set(c.boqItemId, c.boqItem);
+    }
+    return [...map.values()].sort((a, b) =>
+      String(a.code ?? "").localeCompare(String(b.code ?? ""), "he")
     );
   }, [boq, sheet]);
+
+  async function ensureFillableGrid() {
+    if (!sheetId || locked) return;
+    setEnsuringGrid(true);
+    try {
+      const s = await invoicesWorkspaceService.ensureGrid(sheetId, true);
+      applySheet(s);
+      setBoq(await boqService.getByProject(projectId));
+      setGridEnsuredFor(sheetId);
+      toast.success("טבלת המדידה מוכנה להזנה");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setEnsuringGrid(false);
+    }
+  }
 
   function cellKey(roomId: string, boqId: string) {
     return `${roomId}:${boqId}`;
@@ -292,7 +336,9 @@ export function ProjectPerformancePage({
     setSubmitApproverOpen(true);
     setSelectedApproverIds([]);
     try {
-      setApprovers(await invoiceService.listApprovers());
+      setApprovers(
+        await invoiceService.listApprovers({ includeFieldManagers: true })
+      );
     } catch (e: any) {
       toast.error(e.message);
       setSubmitApproverOpen(false);
@@ -602,7 +648,27 @@ export function ProjectPerformancePage({
         </details>
       )}
 
-      {sheet && (
+      {sheet && !sections.length && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-5 text-center">
+          <p className="font-bold text-amber-950">
+            {ensuringGrid
+              ? "מכינים את טבלת המדידה…"
+              : "אין עמודות להזנה — חסר כתב כמויות בפרויקט"}
+          </p>
+          <p className="mt-1 text-sm text-amber-800">
+            נצור סעיפי בסיס ונפתח את הטבלה למילוי
+          </p>
+          <Button
+            className="mt-4"
+            onClick={() => void ensureFillableGrid()}
+            disabled={ensuringGrid || locked}
+          >
+            {ensuringGrid ? "מכין…" : "הצג טבלה למילוי"}
+          </Button>
+        </div>
+      )}
+
+      {sheet && !!sections.length && (
         <div
           className={
             fullscreen
@@ -794,8 +860,8 @@ export function ProjectPerformancePage({
       <Modal
         open={submitApproverOpen}
         onClose={() => setSubmitApproverOpen(false)}
-        title="שלח לאישור מנהל תפעול"
-        description="בחרו מנהל אחד או יותר לאישור דוח הביצוע"
+        title="שלח לאישור"
+        description="בחרו מנהל תפעול, מנהל פרויקט או מנהל עבודה לאישור דוח הביצוע"
         size="lg"
       >
         <div className="space-y-4">

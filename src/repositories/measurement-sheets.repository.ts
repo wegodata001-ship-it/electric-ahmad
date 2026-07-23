@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { PartialInvoicesRepository } from "@/repositories/partial-invoices.repository";
+import {
+  buildSignUrl,
+  generateSignToken,
+  hashSignToken,
+  parseSignQuery,
+} from "@/lib/documents/sign-tokens";
 import type { MeasurementAxisType, MeasurementSheetStatus } from "@prisma/client";
 
 function num(v: unknown): number {
@@ -99,6 +105,10 @@ function mapSheet(row: any) {
     returnedAt: row.returnedAt?.toISOString() ?? null,
     lastReturnComment: row.lastReturnComment ?? null,
     partialInvoiceId: row.partialInvoiceId,
+    clientSignatureUrl: row.clientSignatureUrl ?? null,
+    clientSignedName: row.clientSignedName ?? null,
+    clientSignedAt: row.clientSignedAt?.toISOString() ?? null,
+    documentNumber: `MS-${row.sequenceNumber}`,
     createdById: row.createdById,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -250,7 +260,7 @@ export class MeasurementSheetsRepository {
     const sequenceNumber = (last?.sequenceNumber ?? 0) + 1;
     const title = input.title.trim() || `דף מדידה ${sequenceNumber}`;
 
-    const boqItems = await prisma.boqItem.findMany({
+    let boqItems = await prisma.boqItem.findMany({
       where: {
         projectId: input.projectId,
         deletedAt: null,
@@ -260,6 +270,20 @@ export class MeasurementSheetsRepository {
       orderBy: { code: "asc" },
       select: { id: true },
     });
+
+    // Without BOQ columns the grid is empty — seed starter sections so the table is fillable
+    if (!boqItems.length && !input.boqItemIds?.length) {
+      await this.seedStarterBoq(input.projectId, userId);
+      boqItems = await prisma.boqItem.findMany({
+        where: {
+          projectId: input.projectId,
+          deletedAt: null,
+          status: { not: "cancelled" },
+        },
+        orderBy: { code: "asc" },
+        select: { id: true },
+      });
+    }
 
     const projectRooms = await prisma.projectRoom.findMany({
       where: { projectId: input.projectId, deletedAt: null },
@@ -360,6 +384,158 @@ export class MeasurementSheetsRepository {
       },
     });
     return this.getById(id);
+  }
+
+  /** Default BOQ sections so measurement grids are never column-less. */
+  static async seedStarterBoq(projectId: string, userId: string) {
+    const existing = await prisma.boqItem.count({
+      where: { projectId, deletedAt: null, status: { not: "cancelled" } },
+    });
+    if (existing > 0) return existing;
+
+    const starters = [
+      {
+        code: "1.01",
+        description: "התקנת לוחות חשמל",
+        unit: "יח'",
+        contractQuantity: 10,
+        unitPrice: 2500,
+      },
+      {
+        code: "1.02",
+        description: "כבלים מא״ז",
+        unit: "מ׳",
+        contractQuantity: 500,
+        unitPrice: 45,
+      },
+      {
+        code: "1.03",
+        description: "תאורה LED",
+        unit: "יח'",
+        contractQuantity: 80,
+        unitPrice: 180,
+      },
+      {
+        code: "1.04",
+        description: "שקעים ומפסקים",
+        unit: "יח'",
+        contractQuantity: 120,
+        unitPrice: 95,
+      },
+      {
+        code: "1.05",
+        description: "תעלות כבלים",
+        unit: "מ׳",
+        contractQuantity: 200,
+        unitPrice: 35,
+      },
+    ];
+
+    await prisma.boqItem.createMany({
+      data: starters.map((item) => ({
+        projectId,
+        code: item.code,
+        description: item.description,
+        unit: item.unit,
+        contractQuantity: item.contractQuantity,
+        completedQuantity: 0,
+        invoicedQuantity: 0,
+        remainingQuantity: item.contractQuantity,
+        unitPrice: item.unitPrice,
+        completedValue: 0,
+        remainingValue: item.contractQuantity * item.unitPrice,
+        progress: 0,
+        status: "active" as const,
+        itemKind: "regular" as const,
+        createdById: userId,
+        updatedById: userId,
+      })),
+    });
+    return starters.length;
+  }
+
+  /**
+   * Ensure every room×BOQ cell exists on the sheet.
+   * Optionally seed starter BOQ when the project has none.
+   */
+  static async ensureBoqGrid(
+    sheetId: string,
+    userId: string,
+    opts?: { seedIfEmpty?: boolean }
+  ) {
+    const sheet = await prisma.measurementSheet.findUnique({
+      where: { id: sheetId },
+      select: { id: true, projectId: true, status: true },
+    });
+    if (!sheet) throw new Error("דף מדידה לא נמצא");
+    if (!isSheetEditable(sheet.status)) {
+      throw new Error("הדף נעול לעריכה");
+    }
+
+    let boqItems = await prisma.boqItem.findMany({
+      where: {
+        projectId: sheet.projectId,
+        deletedAt: null,
+        status: { not: "cancelled" },
+      },
+      orderBy: { code: "asc" },
+      select: { id: true },
+    });
+
+    if (!boqItems.length && opts?.seedIfEmpty !== false) {
+      await this.seedStarterBoq(sheet.projectId, userId);
+      boqItems = await prisma.boqItem.findMany({
+        where: {
+          projectId: sheet.projectId,
+          deletedAt: null,
+          status: { not: "cancelled" },
+        },
+        orderBy: { code: "asc" },
+        select: { id: true },
+      });
+    }
+
+    if (!boqItems.length) {
+      throw new Error("אין סעיפי כתב כמויות בפרויקט");
+    }
+
+    const rows = await prisma.measurementSheetRow.findMany({
+      where: { sheetId },
+      select: { id: true },
+    });
+    if (!rows.length) {
+      throw new Error("אין חדרים בדף המדידה");
+    }
+
+    const existing = await prisma.measurementCell.findMany({
+      where: { sheetId },
+      select: { rowId: true, boqItemId: true },
+    });
+    const have = new Set(existing.map((c) => `${c.rowId}:${c.boqItemId}`));
+
+    const missing = rows.flatMap((row) =>
+      boqItems
+        .filter((b) => !have.has(`${row.id}:${b.id}`))
+        .map((b) => ({
+          sheetId,
+          rowId: row.id,
+          boqItemId: b.id,
+          quantity: 0,
+        }))
+    );
+
+    if (missing.length) {
+      await prisma.measurementCell.createMany({ data: missing });
+      await prisma.measurementSheet.update({
+        where: { id: sheetId },
+        data: {
+          updatedById: userId,
+          status: sheet.status === "revision" ? "revision" : "in_progress",
+        },
+      });
+    }
+
+    return this.getById(sheetId);
   }
 
   static async addRows(sheetId: string, names: string[], userId: string) {
@@ -928,8 +1104,164 @@ export class MeasurementSheetsRepository {
       version: r.sheet.currentVersion,
       status: r.sheet.status,
       sentAt: r.sentAt.toISOString(),
-      link: `/invoices?projectId=${r.sheet.projectId}&module=performance&sheetId=${r.sheetId}`,
+      link: `/operations/approvals/sheets/${r.sheetId}`,
     }));
+  }
+
+  /** Create WhatsApp/client signature link after office approval */
+  static async createClientSignLink(
+    sheetId: string,
+    actorId: string,
+    baseUrl: string
+  ): Promise<{ url: string; documentNumber: string }> {
+    const sheet = await prisma.measurementSheet.findUnique({
+      where: { id: sheetId },
+      select: {
+        id: true,
+        status: true,
+        sequenceNumber: true,
+        title: true,
+        projectId: true,
+        createdById: true,
+      },
+    });
+    if (!sheet) throw new Error("דף מדידה לא נמצא");
+    if (sheet.status !== "approved" && sheet.status !== "locked") {
+      throw new Error("ניתן לשלוח ללקוח רק לאחר אישור הדוח");
+    }
+
+    await prisma.measurementSheetSignToken.updateMany({
+      where: { sheetId, usedAt: null, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    const { raw, hash, publicId } = generateSignToken();
+    await prisma.measurementSheetSignToken.create({
+      data: {
+        sheetId,
+        tokenHash: hash,
+        publicId,
+        createdById: actorId,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    const documentNumber = `MS-${sheet.sequenceNumber}`;
+    const url = buildSignUrl({
+      baseUrl,
+      kind: "measurement-sheet",
+      documentNumber: sheetId,
+      publicId,
+      rawToken: raw,
+    });
+
+    await this.addEvent(
+      sheetId,
+      "sent_to_client",
+      `נשלח ללקוח לחתימה · ${documentNumber}`,
+      actorId,
+      { url: url.slice(0, 200) }
+    );
+
+    await this.notify(
+      [sheet.createdById, actorId],
+      "דוח ביצוע נשלח ללקוח",
+      `${sheet.title} (${documentNumber}) נשלח לחתימת לקוח`,
+      `/operations/approvals/sheets/${sheetId}`,
+      sheet.projectId
+    );
+
+    return { url, documentNumber };
+  }
+
+  static async getPublicForSign(sheetId: string, tokenParam: string) {
+    const parsed = parseSignQuery(tokenParam);
+    if (!parsed) throw new Error("קישור לא תקין");
+
+    const token = await prisma.measurementSheetSignToken.findFirst({
+      where: {
+        publicId: parsed.publicId,
+        revokedAt: null,
+        sheetId,
+      },
+      include: {
+        sheet: { include: sheetInclude },
+      },
+    });
+    if (!token) throw new Error("קישור לא נמצא");
+    if (token.usedAt) throw new Error("הקישור כבר נוצל");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("הקישור פג תוקף");
+    }
+    if (token.tokenHash !== hashSignToken(parsed.raw)) {
+      throw new Error("קישור לא תקין");
+    }
+
+    const mapped = mapSheet(token.sheet);
+    return {
+      ...mapped,
+      kind: "measurement_sheet" as const,
+      alreadySigned: Boolean(token.sheet.clientSignedAt),
+    };
+  }
+
+  static async applyClientSignature(opts: {
+    sheetId: string;
+    tokenParam: string;
+    signatureDataUrl: string;
+    signerName: string;
+    ip?: string | null;
+    device?: string | null;
+  }) {
+    const parsed = parseSignQuery(opts.tokenParam);
+    if (!parsed) throw new Error("קישור לא תקין");
+
+    const token = await prisma.measurementSheetSignToken.findFirst({
+      where: {
+        publicId: parsed.publicId,
+        revokedAt: null,
+        sheetId: opts.sheetId,
+      },
+    });
+    if (!token) throw new Error("קישור לא נמצא");
+    if (token.usedAt) throw new Error("הקישור כבר נוצל");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("הקישור פג תוקף");
+    }
+    if (token.tokenHash !== hashSignToken(parsed.raw)) {
+      throw new Error("קישור לא תקין");
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.measurementSheetSignToken.update({
+        where: { id: token.id },
+        data: { usedAt: new Date() },
+      });
+      await tx.measurementSheet.update({
+        where: { id: opts.sheetId },
+        data: {
+          clientSignatureUrl: opts.signatureDataUrl,
+          clientSignedName: opts.signerName,
+          clientSignedAt: new Date(),
+          clientSignedIp: opts.ip ?? null,
+          clientSignedDevice: opts.device?.slice(0, 255) ?? null,
+          status: "locked",
+        },
+      });
+    });
+
+    const sheet = await prisma.measurementSheet.findUnique({
+      where: { id: opts.sheetId },
+      select: { createdById: true },
+    });
+    await this.addEvent(
+      opts.sheetId,
+      "client_signed",
+      `נחתם ע״י לקוח: ${opts.signerName}`,
+      token.createdById || sheet?.createdById || opts.sheetId
+    );
+
+    return this.getById(opts.sheetId);
   }
 
   static async listRevisionForCreator(userId: string) {

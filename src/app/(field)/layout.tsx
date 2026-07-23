@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { PortalShell } from "@/components/portal";
+import { FieldAppShell } from "@/apps/field/field-app-shell";
 
 export default function FieldPortalLayout({
   children,
@@ -12,5 +12,5 @@ export default function FieldPortalLayout({
   if (pathname === "/field/login") {
     return <>{children}</>;
   }
-  return <PortalShell portalId="field">{children}</PortalShell>;
+  return <FieldAppShell>{children}</FieldAppShell>;
 }

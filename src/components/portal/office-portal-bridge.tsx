@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PortalShell } from "@/components/portal/portal-shell";
 import type { PortalId } from "@/lib/portals/config";
 import { portalIdForRole } from "@/lib/portals/config";
+import { SystemAppShell } from "@/apps/system/system-app-shell";
+import { ProjectAppShell } from "@/apps/project/project-app-shell";
+import { OpsAppShell } from "@/apps/operations/ops-app-shell";
 
 /**
- * Wraps legacy (main) office routes with the role's PortalShell
+ * Wraps legacy (main) office routes with the role's new portal app shell
  * so deep links (/projects/…, /boq, …) stay in the portal chrome.
  */
 export function OfficePortalBridge({
@@ -24,7 +26,8 @@ export function OfficePortalBridge({
           setPortalId("project");
           return;
         }
-        setPortalId(portalIdForRole(json.data?.role) ?? "project");
+        const id = portalIdForRole(json.data?.role);
+        setPortalId(id === "field" ? "project" : id ?? "project");
       })
       .catch(() => setPortalId("project"));
   }, []);
@@ -37,5 +40,11 @@ export function OfficePortalBridge({
     );
   }
 
-  return <PortalShell portalId={portalId}>{children}</PortalShell>;
+  if (portalId === "system") {
+    return <SystemAppShell>{children}</SystemAppShell>;
+  }
+  if (portalId === "operations") {
+    return <OpsAppShell>{children}</OpsAppShell>;
+  }
+  return <ProjectAppShell>{children}</ProjectAppShell>;
 }

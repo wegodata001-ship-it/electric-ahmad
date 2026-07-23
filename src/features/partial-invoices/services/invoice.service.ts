@@ -102,7 +102,7 @@ export const invoiceService = {
     return apiClient.post(`/api/partial-invoices/${invoiceId}/save-document`);
   },
 
-  async listApprovers(): Promise<
+  async listApprovers(opts?: { includeFieldManagers?: boolean }): Promise<
     {
       id: string;
       fullName: string;
@@ -117,8 +117,9 @@ export const invoiceService = {
       employeeId: string | null;
     }[]
   > {
+    const q = opts?.includeFieldManagers ? "?includeFieldManagers=1" : "";
     const res = await apiClient.get<{ items: any[] }>(
-      "/api/partial-invoices/approvers"
+      `/api/partial-invoices/approvers${q}`
     );
     return res.items;
   },

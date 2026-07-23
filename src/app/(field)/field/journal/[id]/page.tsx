@@ -5,6 +5,6 @@ export default async function Page({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await params;
-  redirect("/field/work-diaries");
+  const { id } = await params;
+  redirect(`/field/work-orders/${id}`);
 }

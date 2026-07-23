@@ -319,9 +319,13 @@ async function main() {
       console.log("Could not set diary pending status — left draft");
     }
 
-    // Legacy approval row for ApprovalsInbox
+    // Single approver (Ops) so "אשר" completes the workflow in Client QA
     const existingAppr = await prisma.workDiaryApproval.findFirst({
-      where: { workDiaryId: pendingDiary.id, approverId: ops.id, status: "pending" },
+      where: {
+        workDiaryId: pendingDiary.id,
+        approverId: ops.id,
+        status: "pending",
+      },
     });
     if (!existingAppr) {
       await prisma.workDiaryApproval.create({
@@ -331,17 +335,9 @@ async function main() {
           status: "pending",
         },
       });
-      // also PM
-      await prisma.workDiaryApproval.create({
-        data: {
-          workDiaryId: pendingDiary.id,
-          approverId: pm.id,
-          status: "pending",
-        },
-      });
     }
 
-    // Workflow document + pending approvals + conversation
+    // Workflow document + pending approval + conversation
     let wf = await prisma.workflowDocument.findFirst({
       where: {
         legacyEntityType: "WorkDiary",
@@ -368,15 +364,22 @@ async function main() {
         data: { workflowDocumentId: wf.id },
       });
     }
-    for (const approverId of [ops.id, pm.id]) {
-      const wa = await prisma.workflowApproval.findFirst({
-        where: { documentId: wf.id, approverId, status: "pending" },
+    // Ensure only Ops has a pending WorkflowApproval (demo clarity)
+    await prisma.workflowApproval.updateMany({
+      where: {
+        documentId: wf.id,
+        approverId: { not: ops.id },
+        status: "pending",
+      },
+      data: { status: "cancelled" },
+    });
+    const wa = await prisma.workflowApproval.findFirst({
+      where: { documentId: wf.id, approverId: ops.id, status: "pending" },
+    });
+    if (!wa) {
+      await prisma.workflowApproval.create({
+        data: { documentId: wf.id, approverId: ops.id, status: "pending" },
       });
-      if (!wa) {
-        await prisma.workflowApproval.create({
-          data: { documentId: wf.id, approverId, status: "pending" },
-        });
-      }
     }
 
     const convCount = await prisma.workflowEvent.count({

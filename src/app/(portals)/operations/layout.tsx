@@ -1,9 +1,9 @@
-import { PortalShell } from "@/components/portal";
+import { OpsAppShell } from "@/apps/operations/ops-app-shell";
 
 export default function OperationsPortalLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <PortalShell portalId="operations">{children}</PortalShell>;
+  return <OpsAppShell>{children}</OpsAppShell>;
 }

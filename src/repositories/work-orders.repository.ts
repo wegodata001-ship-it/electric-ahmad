@@ -210,6 +210,96 @@ export class WorkOrdersRepository {
     return { todayCount, draft, inProgress, completed };
   }
 
+  /** Operations queue — all work orders (office) */
+  static async listAll(opts?: { status?: WorkOrderStatus; take?: number; date?: Date }) {
+    const take = Math.min(opts?.take ?? 80, 100);
+    const dayStart = opts?.date ? new Date(opts.date) : undefined;
+    if (dayStart) dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = dayStart
+      ? new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+      : undefined;
+
+    const rows = await prisma.workOrder.findMany({
+      where: {
+        ...(opts?.status ? { status: opts.status } : {}),
+        ...(dayStart && dayEnd
+          ? { date: { gte: dayStart, lt: dayEnd } }
+          : {}),
+      },
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            location: true,
+            contractor: true,
+            contractNumber: true,
+          },
+        },
+        foreman: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+        _count: { select: { workers: true, vehicles: true } },
+      },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      take,
+    });
+    return rows.map((r) =>
+      mapOrder({ ...r, workers: [], vehicles: [], media: [] })
+    );
+  }
+
+  static async getOpsQueueCounts() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [
+      workOrdersToday,
+      diariesPending,
+      deliveryPending,
+      diariesRevision,
+      workOrdersDone,
+    ] = await Promise.all([
+      prisma.workOrder.count({
+        where: {
+          date: { gte: today, lt: tomorrow },
+          status: { not: "cancelled" },
+        },
+      }),
+      prisma.workflowApproval.count({
+        where: {
+          status: "pending",
+          document: { kind: "WORK_DIARY", status: "pending_approval" },
+        },
+      }),
+      prisma.workflowApproval.count({
+        where: {
+          status: "pending",
+          document: { kind: "DELIVERY_NOTE", status: "pending_approval" },
+        },
+      }),
+      prisma.workDiary.count({
+        where: { deletedAt: null, status: "revision" },
+      }),
+      prisma.workOrder.count({
+        where: {
+          date: { gte: today, lt: tomorrow },
+          status: "completed",
+        },
+      }),
+    ]);
+
+    return {
+      workOrdersToday,
+      diariesPending,
+      deliveryPending,
+      diariesRevision,
+      workOrdersDone,
+    };
+  }
+
   static async findById(id: string, foremanId?: string) {
     const row = await prisma.workOrder.findFirst({
       where: { id, ...(foremanId ? { foremanId } : {}) },

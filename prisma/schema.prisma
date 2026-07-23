@@ -1701,6 +1701,11 @@ model MeasurementSheet {
   lastReturnComment String?               @db.Text
   partialInvoiceId String?
   partialInvoice   PartialInvoice?        @relation(fields: [partialInvoiceId], references: [id], onDelete: SetNull)
+  clientSignatureUrl  String?
+  clientSignedName    String?
+  clientSignedAt      DateTime?
+  clientSignedIp      String?
+  clientSignedDevice  String?
   createdById      String
   createdBy        User                   @relation("MeasurementSheetCreatedBy", fields: [createdById], references: [id])
   updatedById      String
@@ -1715,11 +1720,27 @@ model MeasurementSheet {
   events      MeasurementSheetEvent[]
   reviewNotes MeasurementSheetReviewNote[]
   versions    MeasurementSheetVersion[]
+  signTokens  MeasurementSheetSignToken[]
 
   @@unique([projectId, sequenceNumber])
   @@index([projectId])
   @@index([status])
   @@index([partialInvoiceId])
+}
+
+model MeasurementSheetSignToken {
+  id          String           @id @default(cuid())
+  sheetId     String
+  sheet       MeasurementSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  tokenHash   String           @unique
+  publicId    String           @unique
+  expiresAt   DateTime?
+  usedAt      DateTime?
+  revokedAt   DateTime?
+  createdById String?
+  createdAt   DateTime         @default(now())
+
+  @@index([sheetId])
 }
 
 model MeasurementSheetApproval {

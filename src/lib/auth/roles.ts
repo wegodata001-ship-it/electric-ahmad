@@ -27,6 +27,7 @@ export function isOfficeRole(role?: string | null): boolean {
 export function officeRoleLabel(role?: string | null): string {
   if (role === PROJECT_MANAGER_ROLE) return "מנהל פרויקט";
   if (role === OPERATIONS_MANAGER_ROLE) return "מנהל תפעול";
+  if (role === FIELD_MANAGER_ROLE) return "מנהל עבודה";
   if (
     role === ADMIN_ROLE ||
     role === SYSTEM_MANAGER_ROLE ||

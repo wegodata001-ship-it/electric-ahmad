@@ -1,9 +1,9 @@
-import { PortalShell } from "@/components/portal";
+import { SystemAppShell } from "@/apps/system/system-app-shell";
 
 export default function SystemPortalLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <PortalShell portalId="system">{children}</PortalShell>;
+  return <SystemAppShell>{children}</SystemAppShell>;
 }

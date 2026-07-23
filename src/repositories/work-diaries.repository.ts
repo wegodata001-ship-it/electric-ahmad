@@ -744,13 +744,51 @@ export const WorkDiariesRepository = {
       actor,
     });
 
+    const stillPending = await prisma.workflowApproval.count({
+      where: {
+        documentId: existing.workflowDocumentId,
+        status: "pending",
+      },
+    });
+
+    const wfStatus = (wf?.status as WorkflowStatus) ?? "approved";
+    const diaryStatus: WorkDiaryStatus =
+      decision === "rejected" || wfStatus === "revision"
+        ? "revision"
+        : stillPending > 0
+          ? "in_approval"
+          : wfStatus === "approved"
+            ? "approved"
+            : "pending_approval";
+
+    await prisma.workDiary.update({
+      where: { id },
+      data: { status: diaryStatus, updatedById: approverId },
+    });
+
+    // Sync legacy WorkDiaryApproval rows (inbox uses Workflow; keep legacy aligned)
+    await prisma.workDiaryApproval.updateMany({
+      where: { workDiaryId: id, approverId, status: "pending" },
+      data: {
+        status: decision === "approved" ? "approved" : "rejected",
+        comment: comment?.trim() || null,
+        decidedAt: new Date(),
+      },
+    });
+    if (decision === "rejected") {
+      await prisma.workDiaryApproval.updateMany({
+        where: { workDiaryId: id, status: "pending" },
+        data: { status: "cancelled" },
+      });
+    }
+
     await syncWorkDiaryArchiveDocument({
       workflowDocumentId: existing.workflowDocumentId,
       workDiaryId: id,
       projectId: existing.projectId,
       documentNumber: existing.documentNumber,
       title: wf?.title,
-      status: (wf?.status as WorkflowStatus) ?? "approved",
+      status: wfStatus,
       userId: approverId,
     });
 
@@ -762,7 +800,7 @@ export const WorkDiariesRepository = {
         `/field/work-diaries/${id}`,
         existing.projectId
       );
-    } else if (wf?.status === "approved") {
+    } else if (wfStatus === "approved" && stillPending === 0) {
       await notifyUsers(
         [existing.createdById],
         "יומן עבודה אושר",
@@ -772,7 +810,12 @@ export const WorkDiariesRepository = {
       );
     }
 
-    return this.getById(id);
+    const diary = await this.getById(id);
+    return {
+      ...diary,
+      approvalComplete: decision === "approved" && stillPending === 0,
+      awaitingOtherApprovers: decision === "approved" && stillPending > 0,
+    };
   },
 
   async createClientSignLink(

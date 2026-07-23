@@ -121,9 +121,32 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
       )}
 
       {!columns.length && (
-        <p className="text-sm text-amber-700 bg-amber-50 rounded-xl p-4">
-          אין סעיפי כתב כמויות בפרויקט. הוסיפו סעיפים במסך כתבי כמויות ואז צרו דף חדש.
-        </p>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-bold">אין עמודות להזנה בדף זה</p>
+          <p className="mt-1">
+            נצור סעיפי בסיס ונפתח את הטבלה למילוי.
+          </p>
+          <Button
+            className="mt-3"
+            size="sm"
+            onClick={async () => {
+              try {
+                const s = await invoicesWorkspaceService.ensureGrid(sheetId, true);
+                setSheet(s);
+                const next: Record<string, string> = {};
+                for (const c of s.cells ?? []) {
+                  next[`${c.rowId}:${c.boqItemId}`] = String(c.quantity ?? 0);
+                }
+                setDraft(next);
+                toast.success("טבלת המדידה מוכנה");
+              } catch (e: any) {
+                toast.error(e.message);
+              }
+            }}
+          >
+            הצג טבלה למילוי
+          </Button>
+        </div>
       )}
 
       <div className="overflow-auto rounded-2xl border border-gray-200 bg-white max-h-[70vh]">

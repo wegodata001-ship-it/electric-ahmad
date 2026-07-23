@@ -5,7 +5,7 @@ import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** שליחת דוח ביצוע לאישור מנהל תפעול */
+/** שליחת דוח ביצוע לאישור (תפעול / פרויקט / מנהל עבודה) */
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const session = await requireOfficeUser();

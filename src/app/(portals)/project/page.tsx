@@ -1,5 +1,5 @@
-import { ProjectPortalDashboard } from "@/features/platform/components";
+import { ProjectHome } from "@/apps/project/project-home";
 
 export default function Page() {
-  return <ProjectPortalDashboard />;
+  return <ProjectHome />;
 }

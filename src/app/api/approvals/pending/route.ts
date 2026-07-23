@@ -1,14 +1,40 @@
 import { NextRequest } from "next/server";
 import { requireOfficeUser } from "@/lib/auth/office-session";
+import { requireFieldManager } from "@/lib/auth/field-session";
 import { canApproveDocuments } from "@/lib/auth/document-permissions";
+import { isFieldManagerRole } from "@/lib/auth/roles";
 import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
 import { OpsDeliveryNotesRepository } from "@/repositories/ops-delivery-notes.repository";
 import { MeasurementSheetsRepository } from "@/repositories/measurement-sheets.repository";
+import { WorkflowTransitionError } from "@/lib/workflow/status-engine";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+
+async function resolveApproverSession(): Promise<{
+  userId: string;
+  role: string;
+  isField: boolean;
+}> {
+  try {
+    const office = await requireOfficeUser();
+    return { userId: office.userId, role: office.role, isField: false };
+  } catch {
+    const field = await requireFieldManager();
+    return { userId: field.userId, role: field.role, isField: true };
+  }
+}
 
 export async function GET() {
   try {
-    const session = await requireOfficeUser();
+    const session = await resolveApproverSession();
+
+    if (session.isField || isFieldManagerRole(session.role)) {
+      // Field managers may approve measurement sheets assigned to them
+      const sheets = await MeasurementSheetsRepository.listPendingApprovals(
+        session.userId
+      );
+      return apiSuccess({ items: sheets });
+    }
+
     if (!canApproveDocuments(session.role)) {
       return apiError("אין הרשאת אישור", 403);
     }
@@ -31,11 +57,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireOfficeUser();
-    if (!canApproveDocuments(session.role)) {
-      return apiError("אין הרשאת אישור", 403);
-    }
-
+    const session = await resolveApproverSession();
     const body = await req.json();
     const kind = body.kind as string;
     const documentId = String(body.documentId ?? "");
@@ -46,6 +68,25 @@ export async function POST(req: NextRequest) {
       : undefined;
 
     if (!documentId || !decision) return apiError("חסרים פרטים");
+
+    if (session.isField || isFieldManagerRole(session.role)) {
+      if (kind !== "measurement_sheet") {
+        return apiError("מנהל עבודה יכול לאשר רק דפי מדידה", 403);
+      }
+      const sheet = await MeasurementSheetsRepository.decideApproval(
+        documentId,
+        session.userId,
+        decision,
+        comment,
+        reviewNotes,
+        req.nextUrl.origin
+      );
+      return apiSuccess(sheet);
+    }
+
+    if (!canApproveDocuments(session.role)) {
+      return apiError("אין הרשאת אישור", 403);
+    }
 
     if (kind === "work_diary") {
       const diary = await WorkDiariesRepository.decideApproval(
@@ -81,6 +122,12 @@ export async function POST(req: NextRequest) {
 
     return apiError("סוג מסמך לא תקין");
   } catch (error) {
+    if (error instanceof WorkflowTransitionError) {
+      return apiError(error.message, 400);
+    }
+    if (error instanceof Error) {
+      return apiError(error.message, 400);
+    }
     return handleApiError(error);
   }
 }

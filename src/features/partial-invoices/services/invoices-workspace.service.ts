@@ -96,6 +96,14 @@ export const invoicesWorkspaceService = {
     });
   },
 
+  /** Fill missing BOQ columns on an existing sheet (seeds starter BOQ if needed). */
+  ensureGrid(sheetId: string, seedIfEmpty = true) {
+    return apiClient.post<any>(
+      `/api/measurement-sheets/${sheetId}/ensure-grid`,
+      { seedIfEmpty }
+    );
+  },
+
   completeSheet(sheetId: string) {
     return apiClient.post<{
       sheet: any;

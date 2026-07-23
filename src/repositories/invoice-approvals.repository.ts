@@ -6,6 +6,7 @@ import {
   canApproveDocuments,
   roleGradeLabel,
 } from "@/lib/auth/document-permissions";
+import { FIELD_MANAGER_ROLE } from "@/lib/auth/roles";
 import type { InvoiceStatus } from "@prisma/client";
 
 const SENDABLE: InvoiceStatus[] = [
@@ -18,8 +19,14 @@ const APPROVER_ROLE_FILTER = [
   { role: "ADMIN" },
   { role: "admin" },
   { role: "מנהל מערכת" },
+  { role: "SYSTEM_MANAGER" },
   { role: "PROJECT_MANAGER" },
   { role: "OPERATIONS_MANAGER" },
+];
+
+const MEASUREMENT_APPROVER_ROLE_FILTER = [
+  ...APPROVER_ROLE_FILTER,
+  { role: FIELD_MANAGER_ROLE },
 ];
 
 export type SendForApprovalOptions = {
@@ -38,6 +45,7 @@ function departmentForRole(role?: string | null): string {
   if (label === "מנהל מערכת") return "הנהלה";
   if (label === "מנהל תפעול") return "תפעול";
   if (label === "מנהל פרויקט") return "פרויקטים";
+  if (label === "מנהל עבודה") return "שטח";
   return "משרד";
 }
 
@@ -98,11 +106,18 @@ const approvalInclude = {
 } as const;
 
 export class InvoiceApprovalsRepository {
-  static async listApprovers() {
+  /**
+   * @param opts.includeFieldManagers — for measurement sheets: also list מנהלי עבודה
+   */
+  static async listApprovers(opts?: { includeFieldManagers?: boolean }) {
+    const roleFilter = opts?.includeFieldManagers
+      ? MEASUREMENT_APPROVER_ROLE_FILTER
+      : APPROVER_ROLE_FILTER;
+
     const users = await prisma.user.findMany({
       where: {
         passwordHash: { not: null },
-        OR: APPROVER_ROLE_FILTER,
+        OR: roleFilter,
       },
       select: {
         id: true,
@@ -123,7 +138,11 @@ export class InvoiceApprovalsRepository {
       orderBy: { name: "asc" },
     });
 
-    const eligible = users.filter((u) => canApproveDocuments(u.role));
+    const eligible = users.filter(
+      (u) =>
+        canApproveDocuments(u.role) ||
+        (opts?.includeFieldManagers && u.role === FIELD_MANAGER_ROLE)
+    );
     const userIds = eligible.map((u) => u.id);
     const employeeIds = eligible
       .map((u) => u.employee?.id)

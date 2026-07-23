@@ -12,6 +12,7 @@ import {
 import { apiClient } from "@/lib/api/client";
 import { notificationService } from "@/features/notifications/services/notification.service";
 import { FieldDashboardPage } from "@/features/field/components/field-dashboard-page";
+import { OpsQueueHome } from "@/apps/operations/ops-queue-home";
 import {
   DashboardWidgetContainer,
   ActionBarContainer,
@@ -270,68 +271,9 @@ export function ProjectPortalDashboard() {
   );
 }
 
+/** Legacy dashboard removed — Operations is button-first queue app. */
 export function OperationsPortalDashboard() {
-  const { counts, loading, reload } = useLiveCounts("operations");
-  const theme = PORTALS.operations.theme;
-
-  return (
-    <PortalDashboardShell portalId="operations" onRefresh={reload}>
-      <DashboardWidgetContainer
-        title="תור Workflow"
-        accent={theme.accent}
-      >
-        <p className="text-3xl font-bold" style={{ color: theme.accent }}>
-          {loading ? "…" : counts.workflowPending}
-        </p>
-        <Link
-          href="/operations/workflow"
-          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-800"
-        >
-          <GitBranch className="h-3.5 w-3.5" />
-          Workflow
-        </Link>
-      </DashboardWidgetContainer>
-
-      <DashboardWidgetContainer title="אישורים Legacy" accent={theme.accent}>
-        <p className="text-3xl font-bold" style={{ color: theme.accent }}>
-          {loading ? "…" : counts.approvalsPending}
-        </p>
-        <Link
-          href="/operations/approvals"
-          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-800"
-        >
-          <CheckSquare className="h-3.5 w-3.5" />
-          מרכז אישורים
-        </Link>
-      </DashboardWidgetContainer>
-
-      <DashboardWidgetContainer title="התראות" accent={theme.accent}>
-        <p className="text-3xl font-bold" style={{ color: theme.accent }}>
-          {loading ? "…" : counts.notifications}
-        </p>
-        <Link
-          href="/operations/notifications"
-          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-800"
-        >
-          <Bell className="h-3.5 w-3.5" />
-          התראות
-        </Link>
-      </DashboardWidgetContainer>
-
-      <DashboardWidgetContainer title="Share Links" accent={theme.accent}>
-        <p className="text-3xl font-bold" style={{ color: theme.accent }}>
-          {loading ? "…" : counts.shareLinks}
-        </p>
-        <Link
-          href="/operations/share-links"
-          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-800"
-        >
-          <Link2 className="h-3.5 w-3.5" />
-          קישורים
-        </Link>
-      </DashboardWidgetContainer>
-    </PortalDashboardShell>
-  );
+  return <OpsQueueHome />;
 }
 
 /** Field portal re-uses the live field dashboard module. */

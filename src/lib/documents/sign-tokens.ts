@@ -13,7 +13,7 @@ export function hashSignToken(raw: string): string {
 
 export function buildSignUrl(opts: {
   baseUrl: string;
-  kind: "work-diary" | "delivery-note";
+  kind: "work-diary" | "delivery-note" | "measurement-sheet";
   documentNumber: string;
   publicId: string;
   rawToken: string;
@@ -21,7 +21,9 @@ export function buildSignUrl(opts: {
   const path =
     opts.kind === "work-diary"
       ? `/sign/work-diary/${opts.documentNumber}`
-      : `/sign/delivery-note/${opts.documentNumber}`;
+      : opts.kind === "delivery-note"
+        ? `/sign/delivery-note/${opts.documentNumber}`
+        : `/sign/measurement-sheet/${opts.documentNumber}`;
   const url = new URL(path, opts.baseUrl);
   url.searchParams.set("t", `${opts.publicId}.${opts.rawToken}`);
   return url.toString();

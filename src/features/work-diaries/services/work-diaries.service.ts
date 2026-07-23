@@ -108,4 +108,11 @@ export const approvalsService = {
       { phone }
     );
   },
+
+  sendMeasurementSheetToClient(id: string, phone?: string) {
+    return apiClient.post<{ url: string; whatsappUrl: string; message: string }>(
+      `/api/measurement-sheets/${id}/send-client`,
+      { phone }
+    );
+  },
 };
