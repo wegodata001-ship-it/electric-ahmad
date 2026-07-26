@@ -1,0 +1,204 @@
+{
+  "measuredAt": "2026-07-26T12:03:46.492Z",
+  "projectId": "cms034ch70002kz04wu99jp4h",
+  "dbHost": "aws-0-eu-north-1.pooler.supabase.com:6543",
+  "stages": [
+    {
+      "name": "Login API (context only)",
+      "ms": 1404,
+      "queries": null
+    },
+    {
+      "name": "Cookie parse + HMAC verify (Web Crypto)",
+      "ms": 14,
+      "queries": 0,
+      "rtt": 0,
+      "ok": true,
+      "role": "SYSTEM_MANAGER"
+    },
+    {
+      "name": "HMAC verify x20 avg",
+      "ms": 0,
+      "queries": 0,
+      "rtt": 0
+    },
+    {
+      "name": "RTT floor SELECT 1",
+      "ms": 1146,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "name": "requireOfficeUser: findUnique include employee (FULL)",
+      "ms": 598,
+      "queries": 1,
+      "rtt": 1,
+      "hasEmployee": false,
+      "userKeys": 11,
+      "employeeKeys": 0
+    },
+    {
+      "name": "ALT: findUnique slim select (user+employee fields only)",
+      "ms": 605,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "name": "ALT: user only (no employee)",
+      "ms": 422,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "name": "ALT: user ‖ employee parallel (2 queries)",
+      "ms": 1008,
+      "queries": 2,
+      "rtt": 2,
+      "hasEmployee": false,
+      "userId": "cmrx8s6br0002r11k77j75h8c"
+    },
+    {
+      "name": "ALT: raw SQL user LEFT JOIN employee (1 query)",
+      "ms": 483,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "name": "Double HMAC (proxy + requireOfficeUser)",
+      "ms": 1,
+      "queries": 0,
+      "rtt": 0
+    },
+    {
+      "name": "HTTP /api/auth/me #1",
+      "ms": 722,
+      "queries": 1,
+      "status": 200,
+      "bytes": 228
+    },
+    {
+      "name": "HTTP /api/auth/me #2",
+      "ms": 680,
+      "queries": 1,
+      "status": 200,
+      "bytes": 228
+    },
+    {
+      "name": "HTTP hub #1 (auth+repo today)",
+      "ms": 1158,
+      "status": 200,
+      "bytes": 875,
+      "queries": 2,
+      "rtt": 2
+    },
+    {
+      "name": "HTTP hub #2 (auth+repo today)",
+      "ms": 1158,
+      "status": 200,
+      "bytes": 875,
+      "queries": 2,
+      "rtt": 2
+    },
+    {
+      "name": "HTTP hub #3 (auth+repo today)",
+      "ms": 1172,
+      "status": 200,
+      "bytes": 875,
+      "queries": 2,
+      "rtt": 2
+    },
+    {
+      "name": "THEORY: fused auth gate + project probe (1 RTT)",
+      "ms": 427,
+      "queries": 1,
+      "rtt": 1,
+      "rows": 1
+    },
+    {
+      "name": "THEORY: hub KPIs+auth gate fused (min of 3)",
+      "ms": 424,
+      "queries": 1,
+      "rtt": 1,
+      "samples": [
+        429,
+        453,
+        424
+      ]
+    },
+    {
+      "name": "THEORY: hub KPIs+auth gate fused (avg of 3)",
+      "ms": 435,
+      "queries": 1,
+      "rtt": 1
+    }
+  ],
+  "breakdown": [
+    {
+      "stage": "Cookie parse + HMAC",
+      "ms": 14,
+      "queries": 0,
+      "rtt": 0
+    },
+    {
+      "stage": "Proxy HMAC (duplicate of route)",
+      "ms": 1,
+      "queries": 0,
+      "rtt": 0,
+      "note": "CPU only; runs before route"
+    },
+    {
+      "stage": "user.findUnique include employee",
+      "ms": 598,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "stage": "Role / permission / tenant / org lookup",
+      "ms": 0,
+      "queries": 0,
+      "rtt": 0,
+      "note": "None — role is column on User; no tenant/org tables in path"
+    },
+    {
+      "stage": "Supabase Auth API",
+      "ms": 0,
+      "queries": 0,
+      "rtt": 0,
+      "note": "Not used — local HMAC cookie + Prisma Postgres"
+    },
+    {
+      "stage": "Hub repository SQL (P1)",
+      "ms": 565,
+      "queries": 1,
+      "rtt": 1,
+      "note": "Estimated as HTTP − auth query (approx)"
+    },
+    {
+      "stage": "HTTP hub total (measured)",
+      "ms": 1163,
+      "queries": 2,
+      "rtt": 2
+    }
+  ],
+  "summary": {
+    "rttFloorMs": 1146,
+    "authFullIncludeMs": 598,
+    "authSlimSelectMs": 605,
+    "hubHttpAvgMs": 1163,
+    "hubHttpMinMs": 1158,
+    "theoryFusedAuthHubAvgMs": 435,
+    "queriesOnHubToday": 2,
+    "queriesIfFused": 1,
+    "codeSaveableMsEstimate": 678,
+    "irreducibleLatencyMs": 1146,
+    "canBeat1sWithCodeOnly": true
+  },
+  "findings": {
+    "duplicateHmac": "proxy + requireOfficeUser both verify cookie (no DB)",
+    "duplicateUserFetch": "Not within single hub request — only once",
+    "middlewareDb": "proxy has 0 DB queries",
+    "overFetch": "include employee loads full Employee row; only id/status/isDeleted needed",
+    "noTenantOrg": true,
+    "noSupabaseAuthApi": true
+  }
+}

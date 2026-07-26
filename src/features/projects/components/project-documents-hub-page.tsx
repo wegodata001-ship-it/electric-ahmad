@@ -66,17 +66,14 @@ export function ProjectDocumentsHubPage({
   }
 
   useEffect(() => {
-    (async () => {
-      try {
-        // מיגרציה שקטה של תמונות ישנות (גלריה → מסמכים) — חד-פעמית / אידמפוטנטית
-        await documentService.migrateGallery().catch(() => null);
-        await reload();
-      } catch (e: any) {
-        toast.error(e.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    // List first; migrate in background so first paint is not blocked.
+    reload()
+      .catch((e: any) => toast.error(e.message))
+      .finally(() => setLoading(false));
+    documentService
+      .migrateGallery()
+      .then(() => reload())
+      .catch(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 

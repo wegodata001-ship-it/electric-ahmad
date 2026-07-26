@@ -36,42 +36,47 @@ export function FieldLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f6f8] flex items-center justify-center px-4">
+    <div
+      className="flex min-h-dvh items-center justify-center bg-[#F7F8FA] px-4"
+      dir="rtl"
+    >
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-2xl bg-white border border-gray-200 p-6 space-y-4"
+        className="w-full max-w-sm space-y-5 rounded-3xl border border-[#E5E7EB] bg-white p-6 shadow-sm"
       >
-        <div className="text-center mb-2">
-          <div className="mx-auto h-12 w-12 rounded-md bg-[#1e40af] text-white flex items-center justify-center font-bold mb-3">
+        <div className="mb-2 text-center">
+          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-lg font-black text-white">
             WG
           </div>
-          <h1 className="text-xl font-bold text-gray-900">WEGO Field</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            התחברות מנהל עבודה בלבד
+          <h1 className="text-2xl font-black text-[#111827]">עבודה בשטח</h1>
+          <p className="mt-1 text-base text-[#6B7280]">
+            התחברות מנהל עבודה
           </p>
         </div>
 
         <div>
-          <label className="block text-sm text-gray-600 mb-1">
+          <label className="mb-2 block text-base font-bold text-[#111827]">
             שם משתמש
           </label>
           <input
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full min-h-12 border border-gray-300 rounded-xl px-3 text-base"
+            className="w-full min-h-14 rounded-2xl border border-[#E5E7EB] px-4 text-lg"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm text-gray-600 mb-1">סיסמה</label>
+          <label className="mb-2 block text-base font-bold text-[#111827]">
+            סיסמה
+          </label>
           <input
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full min-h-12 border border-gray-300 rounded-xl px-3 text-base"
+            className="w-full min-h-14 rounded-2xl border border-[#E5E7EB] px-4 text-lg"
             required
           />
         </div>
@@ -85,7 +90,7 @@ export function FieldLoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full h-14 rounded-2xl bg-[#1e40af] text-white text-lg font-bold disabled:opacity-50"
+          className="h-16 w-full rounded-2xl bg-blue-600 text-xl font-black text-white disabled:opacity-50"
         >
           {loading ? "מתחבר..." : "התחברות"}
         </button>

@@ -1,5 +1,5 @@
-import { OpsQueueHome } from "@/apps/operations/ops-queue-home";
+import { OpsHome } from "@/apps/operations/ops-home";
 
 export default function Page() {
-  return <OpsQueueHome />;
+  return <OpsHome />;
 }

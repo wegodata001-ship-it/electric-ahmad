@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
 import { EmployeesRepository } from "@/repositories/employees.repository";
+import { requireOfficeAuth } from "@/lib/auth/assert-office";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
 
 export async function GET(request: NextRequest) {
   try {
+    await requireOfficeAuth();
     const projectId = request.nextUrl.searchParams.get("projectId");
     const active = request.nextUrl.searchParams.get("active");
     const role = request.nextUrl.searchParams.get("role");

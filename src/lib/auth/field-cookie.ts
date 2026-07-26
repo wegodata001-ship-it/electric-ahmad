@@ -1,4 +1,5 @@
 import { FIELD_MANAGER_ROLE } from "@/lib/auth/roles";
+import { getSessionSecret } from "@/lib/env/required-secrets";
 
 export const FIELD_SESSION_COOKIE = "wego_field_session";
 export const FIELD_SESSION_TTL_SECONDS = 60 * 60 * 12; // 12h
@@ -11,11 +12,7 @@ export type FieldSessionPayload = {
 };
 
 function getSecret(): string {
-  return (
-    process.env.SESSION_SECRET ||
-    process.env.AUTH_SECRET ||
-    "wego-dev-field-session-secret-change-me"
-  );
+  return getSessionSecret();
 }
 
 function toBase64Url(bytes: ArrayBuffer | Uint8Array): string {

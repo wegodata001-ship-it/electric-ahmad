@@ -1,0 +1,34 @@
+import { NextRequest } from "next/server";
+import { requireOfficeUser } from "@/lib/auth/office-session";
+import { hasDocumentPermission } from "@/lib/auth/document-permissions";
+import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
+import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+
+type Ctx = { params: Promise<{ id: string }> };
+
+/** Office — submit work diary into existing Workflow engine */
+export async function POST(req: NextRequest, ctx: Ctx) {
+  try {
+    const session = await requireOfficeUser();
+    if (!hasDocumentPermission(session.role, "send_for_approval")) {
+      return apiError("אין הרשאה לשליחה לאישור", 403);
+    }
+    const { id } = await ctx.params;
+    const existing = await WorkDiariesRepository.getById(id);
+    if (!existing) return apiError("יומן עבודה לא נמצא", 404);
+
+    const body = await req.json();
+    const approverIds: string[] = Array.isArray(body.approverIds)
+      ? body.approverIds.map(String)
+      : [];
+
+    const diary = await WorkDiariesRepository.submitForApproval(
+      id,
+      approverIds,
+      session.userId
+    );
+    return apiSuccess(diary);
+  } catch (error) {
+    return handleApiError(error);
+  }
+}

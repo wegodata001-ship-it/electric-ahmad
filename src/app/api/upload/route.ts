@@ -9,26 +9,54 @@ import { DocumentsRepository } from "@/repositories/documents.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { defaultFolderForDocumentType } from "@/lib/documents/archive-folders";
 import type { StorageBucketKey } from "@/config/storage";
+import {
+  formDataToObject,
+  parseObjectBody,
+} from "@/lib/validation/parse-body";
+import { uploadFieldsSchema } from "@/lib/validation/schemas";
+import {
+  enforceRateLimit,
+  getClientIp,
+} from "@/lib/security/rate-limit";
+
+const UPLOAD_BUCKET = "api-upload";
+const UPLOAD_LIMIT = 60;
+const UPLOAD_WINDOW_MS = 60 * 60 * 1000;
 
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await getAuthContext();
+
+    const ip = getClientIp(request);
+    const limited = enforceRateLimit(
+      {
+        key: `${UPLOAD_BUCKET}:${ip}:${userId}`,
+        limit: UPLOAD_LIMIT,
+        windowMs: UPLOAD_WINDOW_MS,
+      },
+      "יותר מדי העלאות. נסו שוב בעוד רגע."
+    );
+    if (limited) return limited;
+
     const formData = await request.formData();
-
     const file = formData.get("file") as File | null;
-    const projectId = formData.get("projectId") as string | null;
-    const uploadType = (formData.get("type") as string) ?? "document";
-    const title = (formData.get("title") as string) ?? file?.name ?? "קובץ";
-    const folderPathRaw = formData.get("folderPath") as string | null;
-    const documentId = (formData.get("documentId") as string) ?? undefined;
-    const boqItemId = (formData.get("boqItemId") as string) ?? undefined;
-    const reportId = (formData.get("reportId") as string) ?? undefined;
-    const employeeId = (formData.get("employeeId") as string) ?? undefined;
-    const bucketKey = (formData.get("bucketKey") as StorageBucketKey) ?? undefined;
-
-    if (!file || !projectId) {
+    if (!file) {
       return apiError("קובץ ומזהה פרויקט נדרשים");
     }
+
+    const fields = parseObjectBody(
+      formDataToObject(formData),
+      uploadFieldsSchema
+    );
+    const projectId = fields.projectId;
+    const uploadType = fields.type ?? "document";
+    const title = fields.title ?? file.name ?? "קובץ";
+    const folderPathRaw = fields.folderPath;
+    const documentId = fields.documentId;
+    const boqItemId = fields.boqItemId;
+    const reportId = fields.reportId;
+    const employeeId = fields.employeeId;
+    const bucketKey = fields.bucketKey as StorageBucketKey | undefined;
 
     const mimeType = file.type || "application/octet-stream";
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";

@@ -1,10 +1,12 @@
 import { NextRequest } from "next/server";
 import { ProjectsRepository } from "@/repositories/projects.repository";
 import { getAuthContext } from "@/lib/auth/session";
+import { requireOfficeAuth } from "@/lib/auth/assert-office";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function GET(request: NextRequest) {
   try {
+    await requireOfficeAuth();
     const status = request.nextUrl.searchParams.get("status") ?? undefined;
     const recent = request.nextUrl.searchParams.get("recent");
 

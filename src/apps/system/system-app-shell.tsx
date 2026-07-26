@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/system", label: "לוח שליטה", exact: true },
   { href: "/system/companies", label: "חברות / פרויקטים" },
+  { href: "/system/accounts", label: "חשבונות / עץ פרויקט" },
   { href: "/system/users", label: "משתמשים" },
   { href: "/system/workflow", label: "Workflow" },
   { href: "/system/documents", label: "מסמכים" },

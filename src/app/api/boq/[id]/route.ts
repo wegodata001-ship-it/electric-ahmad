@@ -2,6 +2,9 @@ import { NextRequest } from "next/server";
 import { BOQRepository } from "@/repositories/boq.repository";
 import { requireOfficeUser } from "@/lib/auth/office-session";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import type { BoqItemKind, BoqItemStatus } from "@prisma/client";
+import { parseJsonBody } from "@/lib/validation/parse-body";
+import { boqUpdateSchema } from "@/lib/validation/schemas";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -21,9 +24,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   try {
     const session = await requireOfficeUser();
     const { id } = await ctx.params;
-    const body = await req.json();
+    const body = await parseJsonBody(req, boqUpdateSchema);
 
-    if (body.description !== undefined && !String(body.description).trim()) {
+    if (body.description !== undefined && !body.description) {
       return apiError("יש להזין תיאור");
     }
 
@@ -33,13 +36,12 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         code: body.code,
         description: body.description,
         unit: body.unit,
-        contractQuantity:
-          body.contractQuantity !== undefined ? Number(body.contractQuantity) : undefined,
-        unitPrice: body.unitPrice !== undefined ? Number(body.unitPrice) : undefined,
+        contractQuantity: body.contractQuantity,
+        unitPrice: body.unitPrice,
         category: body.category,
         notes: body.notes,
-        itemKind: body.itemKind,
-        status: body.status,
+        itemKind: body.itemKind as BoqItemKind | undefined,
+        status: body.status as BoqItemStatus | undefined,
       },
       session.userId
     );

@@ -1,0 +1,706 @@
+{
+  "base": "http://localhost:3000",
+  "measuredAt": "2026-07-26T11:44:43.635Z",
+  "results": [
+    {
+      "action": "GET /login (HTML cold)",
+      "ok": true,
+      "totalMs": 144,
+      "status": 200,
+      "bytes": 17795,
+      "detail": "http=200 bytes=17795",
+      "layer": "frontend"
+    },
+    {
+      "action": "GET /login (HTML warm)",
+      "ok": true,
+      "totalMs": 93,
+      "status": 200,
+      "bytes": 17795,
+      "detail": "http=200 bytes=17795",
+      "layer": "frontend"
+    },
+    {
+      "action": "Login API (sysmgr → system)",
+      "ok": true,
+      "totalMs": 1428,
+      "status": 200,
+      "bytes": 188,
+      "detail": "http=200 bytes=188",
+      "layer": "api",
+      "portal": "system"
+    },
+    {
+      "action": "GET /api/projects",
+      "ok": true,
+      "totalMs": 1197,
+      "status": 200,
+      "bytes": 11699,
+      "detail": "http=200 bytes=11699",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/projects (2nd)",
+      "ok": true,
+      "totalMs": 657,
+      "status": 200,
+      "bytes": 11699,
+      "detail": "http=200 bytes=11699",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/documents?recent=5",
+      "ok": true,
+      "totalMs": 1409,
+      "status": 200,
+      "bytes": 4007,
+      "detail": "http=200 bytes=4007",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/approvals/pending",
+      "ok": true,
+      "totalMs": 1863,
+      "status": 200,
+      "bytes": 478,
+      "detail": "http=200 bytes=478",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/documents/hub",
+      "ok": true,
+      "totalMs": 2514,
+      "status": 200,
+      "bytes": 30945,
+      "detail": "http=200 bytes=30945",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/documents-archive",
+      "ok": true,
+      "totalMs": 3228,
+      "status": 200,
+      "bytes": 5105,
+      "detail": "http=200 bytes=5105",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/notifications (or unread)",
+      "ok": true,
+      "totalMs": 1256,
+      "status": 200,
+      "bytes": 1415,
+      "detail": "http=200 bytes=1415",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/system/settings",
+      "ok": true,
+      "totalMs": 782,
+      "status": 200,
+      "bytes": 55,
+      "detail": "http=200 bytes=55",
+      "layer": "api"
+    },
+    {
+      "action": "GET /system (HTML)",
+      "ok": true,
+      "totalMs": 461,
+      "status": 200,
+      "bytes": 40585,
+      "detail": "http=200 bytes=40585",
+      "layer": "frontend"
+    },
+    {
+      "action": "GET /project (HTML)",
+      "ok": true,
+      "totalMs": 794,
+      "status": 200,
+      "bytes": 19162,
+      "detail": "http=200 bytes=19162",
+      "layer": "frontend"
+    },
+    {
+      "action": "GET /operations (HTML)",
+      "ok": true,
+      "totalMs": 847,
+      "status": 200,
+      "bytes": 19243,
+      "detail": "http=200 bytes=19243",
+      "layer": "frontend"
+    },
+    {
+      "action": "GET /api/projects/:id",
+      "ok": true,
+      "totalMs": 815,
+      "status": 200,
+      "bytes": 732,
+      "detail": "http=200 bytes=732",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/projects/:id/hub",
+      "ok": true,
+      "totalMs": 2455,
+      "status": 200,
+      "bytes": 875,
+      "detail": "http=200 bytes=875",
+      "layer": "api"
+    },
+    {
+      "action": "GET BOQ by project",
+      "ok": true,
+      "totalMs": 1258,
+      "status": 200,
+      "bytes": 2540,
+      "detail": "http=200 bytes=2540",
+      "layer": "api"
+    },
+    {
+      "action": "GET measurement-sheets list",
+      "ok": true,
+      "totalMs": 1273,
+      "status": 200,
+      "bytes": 257,
+      "detail": "http=200 bytes=257",
+      "layer": "api"
+    },
+    {
+      "action": "GET documents by project",
+      "ok": true,
+      "totalMs": 1232,
+      "status": 200,
+      "bytes": 939,
+      "detail": "http=200 bytes=939",
+      "layer": "api"
+    },
+    {
+      "action": "GET documents hub filtered",
+      "ok": true,
+      "totalMs": 1947,
+      "status": 200,
+      "bytes": 1389,
+      "detail": "http=200 bytes=1389",
+      "layer": "api"
+    },
+    {
+      "action": "GET invoices workspace tree?",
+      "ok": true,
+      "totalMs": 2584,
+      "status": 200,
+      "bytes": 1014,
+      "detail": "http=200 bytes=1014",
+      "layer": "api"
+    },
+    {
+      "action": "GET measurement-sheet/:id (cold)",
+      "ok": true,
+      "totalMs": 3177,
+      "status": 200,
+      "bytes": 6574,
+      "detail": "http=200 bytes=6574",
+      "layer": "api"
+    },
+    {
+      "action": "GET measurement-sheet/:id (warm)",
+      "ok": true,
+      "totalMs": 3088,
+      "status": 200,
+      "bytes": 6574,
+      "detail": "http=200 bytes=6574",
+      "layer": "api"
+    },
+    {
+      "action": "GET print/measurement-sheets/:id HTML",
+      "ok": true,
+      "totalMs": 204,
+      "status": 200,
+      "bytes": 18215,
+      "detail": "http=200 bytes=18215",
+      "layer": "frontend"
+    },
+    {
+      "action": "PUT cells single (same value)",
+      "ok": true,
+      "totalMs": 2406,
+      "status": 200,
+      "bytes": 147,
+      "detail": "http=200 bytes=147",
+      "layer": "api"
+    },
+    {
+      "action": "PUT cells batch (1 cell)",
+      "ok": true,
+      "totalMs": 1668,
+      "status": 200,
+      "bytes": 35,
+      "detail": "http=200 bytes=35",
+      "layer": "api"
+    },
+    {
+      "action": "GET partial-invoices?",
+      "ok": true,
+      "totalMs": 602,
+      "status": 200,
+      "bytes": 26,
+      "detail": "http=200 bytes=26",
+      "layer": "api"
+    },
+    {
+      "action": "Login API (pm1 → project)",
+      "ok": true,
+      "totalMs": 1258,
+      "status": 200,
+      "bytes": 193,
+      "detail": "http=200 bytes=193",
+      "layer": "api",
+      "portal": "project"
+    },
+    {
+      "action": "pm1 GET /api/approvals/pending",
+      "ok": true,
+      "totalMs": 1278,
+      "status": 200,
+      "bytes": 36,
+      "detail": "http=200 bytes=36",
+      "layer": "api",
+      "portal": "project"
+    },
+    {
+      "action": "pm1 GET /api/documents/hub",
+      "ok": true,
+      "totalMs": 2204,
+      "status": 200,
+      "bytes": 30945,
+      "detail": "http=200 bytes=30945",
+      "layer": "api",
+      "portal": "project"
+    },
+    {
+      "action": "Login API (opsmgr → operations)",
+      "ok": true,
+      "totalMs": 1233,
+      "status": 200,
+      "bytes": 205,
+      "detail": "http=200 bytes=205",
+      "layer": "api",
+      "portal": "operations"
+    },
+    {
+      "action": "opsmgr GET /api/approvals/pending",
+      "ok": true,
+      "totalMs": 2528,
+      "status": 200,
+      "bytes": 999,
+      "detail": "http=200 bytes=999",
+      "layer": "api",
+      "portal": "operations"
+    },
+    {
+      "action": "opsmgr GET /api/operations/attendance?",
+      "ok": true,
+      "totalMs": 1116,
+      "status": 200,
+      "bytes": 61,
+      "detail": "http=200 bytes=61",
+      "layer": "api",
+      "portal": "operations"
+    },
+    {
+      "action": "Login API (fieldmgr → field)",
+      "ok": true,
+      "totalMs": 1112,
+      "status": 200,
+      "bytes": 188,
+      "detail": "http=200 bytes=188",
+      "layer": "api",
+      "portal": "field"
+    },
+    {
+      "action": "fieldmgr GET /api/field/me",
+      "ok": true,
+      "totalMs": 1991,
+      "status": 200,
+      "bytes": 2845,
+      "detail": "http=200 bytes=2845",
+      "layer": "api",
+      "portal": "field"
+    },
+    {
+      "action": "fieldmgr GET work diaries",
+      "ok": true,
+      "totalMs": 1752,
+      "status": 200,
+      "bytes": 4517,
+      "detail": "http=200 bytes=4517",
+      "layer": "api",
+      "portal": "field"
+    },
+    {
+      "action": "fieldmgr GET ops delivery notes",
+      "ok": true,
+      "totalMs": 1460,
+      "status": 200,
+      "bytes": 383,
+      "detail": "http=200 bytes=383",
+      "layer": "api",
+      "portal": "field"
+    },
+    {
+      "action": "fieldmgr GET work orders",
+      "ok": true,
+      "totalMs": 1659,
+      "status": 200,
+      "bytes": 101,
+      "detail": "http=200 bytes=101",
+      "layer": "api",
+      "portal": "field"
+    },
+    {
+      "action": "GET /field (HTML)",
+      "ok": true,
+      "totalMs": 385,
+      "status": 200,
+      "bytes": 19363,
+      "detail": "http=200 bytes=19363",
+      "layer": "frontend",
+      "portal": "field"
+    },
+    {
+      "action": "SERIAL waterfall: projects→sheet→boq→docs",
+      "ok": true,
+      "totalMs": 7223,
+      "status": 200,
+      "bytes": 0,
+      "detail": "serial 4-5 calls",
+      "layer": "waterfall"
+    },
+    {
+      "action": "PARALLEL Promise.all same set",
+      "ok": true,
+      "totalMs": 1247,
+      "status": 200,
+      "bytes": 0,
+      "detail": "parallel 4 calls",
+      "layer": "waterfall"
+    },
+    {
+      "action": "P0 OLD journey: me→me→workspace→tree→sheets→boq→sheet",
+      "ok": true,
+      "totalMs": 10427,
+      "status": 200,
+      "bytes": 0,
+      "detail": "pre-P0 serial FE path",
+      "layer": "waterfall"
+    },
+    {
+      "action": "P0 NEW journey: me + (workspace‖tree) + (sheets‖boq‖sheet)",
+      "ok": true,
+      "totalMs": 6125,
+      "status": 200,
+      "bytes": 0,
+      "detail": "post-P0 parallel FE path",
+      "layer": "waterfall"
+    },
+    {
+      "action": "P0 docs hub: projects‖hub (parallel)",
+      "ok": true,
+      "totalMs": 2168,
+      "status": 200,
+      "bytes": 0,
+      "detail": "docs hub bootstrap",
+      "layer": "waterfall"
+    },
+    {
+      "action": "P0 docs hub OLD: projects→hub (serial)",
+      "ok": true,
+      "totalMs": 2739,
+      "status": 200,
+      "bytes": 0,
+      "detail": "docs hub serial",
+      "layer": "waterfall"
+    }
+  ],
+  "topSlow": [
+    {
+      "action": "P0 OLD journey: me→me→workspace→tree→sheets→boq→sheet",
+      "ok": true,
+      "totalMs": 10427,
+      "status": 200,
+      "bytes": 0,
+      "detail": "pre-P0 serial FE path",
+      "layer": "waterfall"
+    },
+    {
+      "action": "SERIAL waterfall: projects→sheet→boq→docs",
+      "ok": true,
+      "totalMs": 7223,
+      "status": 200,
+      "bytes": 0,
+      "detail": "serial 4-5 calls",
+      "layer": "waterfall"
+    },
+    {
+      "action": "P0 NEW journey: me + (workspace‖tree) + (sheets‖boq‖sheet)",
+      "ok": true,
+      "totalMs": 6125,
+      "status": 200,
+      "bytes": 0,
+      "detail": "post-P0 parallel FE path",
+      "layer": "waterfall"
+    },
+    {
+      "action": "GET /api/documents-archive",
+      "ok": true,
+      "totalMs": 3228,
+      "status": 200,
+      "bytes": 5105,
+      "detail": "http=200 bytes=5105",
+      "layer": "api"
+    },
+    {
+      "action": "GET measurement-sheet/:id (cold)",
+      "ok": true,
+      "totalMs": 3177,
+      "status": 200,
+      "bytes": 6574,
+      "detail": "http=200 bytes=6574",
+      "layer": "api"
+    },
+    {
+      "action": "GET measurement-sheet/:id (warm)",
+      "ok": true,
+      "totalMs": 3088,
+      "status": 200,
+      "bytes": 6574,
+      "detail": "http=200 bytes=6574",
+      "layer": "api"
+    },
+    {
+      "action": "P0 docs hub OLD: projects→hub (serial)",
+      "ok": true,
+      "totalMs": 2739,
+      "status": 200,
+      "bytes": 0,
+      "detail": "docs hub serial",
+      "layer": "waterfall"
+    },
+    {
+      "action": "GET invoices workspace tree?",
+      "ok": true,
+      "totalMs": 2584,
+      "status": 200,
+      "bytes": 1014,
+      "detail": "http=200 bytes=1014",
+      "layer": "api"
+    },
+    {
+      "action": "opsmgr GET /api/approvals/pending",
+      "ok": true,
+      "totalMs": 2528,
+      "status": 200,
+      "bytes": 999,
+      "detail": "http=200 bytes=999",
+      "layer": "api",
+      "portal": "operations"
+    },
+    {
+      "action": "GET /api/documents/hub",
+      "ok": true,
+      "totalMs": 2514,
+      "status": 200,
+      "bytes": 30945,
+      "detail": "http=200 bytes=30945",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/projects/:id/hub",
+      "ok": true,
+      "totalMs": 2455,
+      "status": 200,
+      "bytes": 875,
+      "detail": "http=200 bytes=875",
+      "layer": "api"
+    },
+    {
+      "action": "PUT cells single (same value)",
+      "ok": true,
+      "totalMs": 2406,
+      "status": 200,
+      "bytes": 147,
+      "detail": "http=200 bytes=147",
+      "layer": "api"
+    },
+    {
+      "action": "pm1 GET /api/documents/hub",
+      "ok": true,
+      "totalMs": 2204,
+      "status": 200,
+      "bytes": 30945,
+      "detail": "http=200 bytes=30945",
+      "layer": "api",
+      "portal": "project"
+    },
+    {
+      "action": "P0 docs hub: projects‖hub (parallel)",
+      "ok": true,
+      "totalMs": 2168,
+      "status": 200,
+      "bytes": 0,
+      "detail": "docs hub bootstrap",
+      "layer": "waterfall"
+    },
+    {
+      "action": "fieldmgr GET /api/field/me",
+      "ok": true,
+      "totalMs": 1991,
+      "status": 200,
+      "bytes": 2845,
+      "detail": "http=200 bytes=2845",
+      "layer": "api",
+      "portal": "field"
+    },
+    {
+      "action": "GET documents hub filtered",
+      "ok": true,
+      "totalMs": 1947,
+      "status": 200,
+      "bytes": 1389,
+      "detail": "http=200 bytes=1389",
+      "layer": "api"
+    },
+    {
+      "action": "GET /api/approvals/pending",
+      "ok": true,
+      "totalMs": 1863,
+      "status": 200,
+      "bytes": 478,
+      "detail": "http=200 bytes=478",
+      "layer": "api"
+    },
+    {
+      "action": "fieldmgr GET work diaries",
+      "ok": true,
+      "totalMs": 1752,
+      "status": 200,
+      "bytes": 4517,
+      "detail": "http=200 bytes=4517",
+      "layer": "api",
+      "portal": "field"
+    },
+    {
+      "action": "PUT cells batch (1 cell)",
+      "ok": true,
+      "totalMs": 1668,
+      "status": 200,
+      "bytes": 35,
+      "detail": "http=200 bytes=35",
+      "layer": "api"
+    },
+    {
+      "action": "fieldmgr GET work orders",
+      "ok": true,
+      "totalMs": 1659,
+      "status": 200,
+      "bytes": 101,
+      "detail": "http=200 bytes=101",
+      "layer": "api",
+      "portal": "field"
+    },
+    {
+      "action": "fieldmgr GET ops delivery notes",
+      "ok": true,
+      "totalMs": 1460,
+      "status": 200,
+      "bytes": 383,
+      "detail": "http=200 bytes=383",
+      "layer": "api",
+      "portal": "field"
+    },
+    {
+      "action": "Login API (sysmgr → system)",
+      "ok": true,
+      "totalMs": 1428,
+      "status": 200,
+      "bytes": 188,
+      "detail": "http=200 bytes=188",
+      "layer": "api",
+      "portal": "system"
+    },
+    {
+      "action": "GET /api/documents?recent=5",
+      "ok": true,
+      "totalMs": 1409,
+      "status": 200,
+      "bytes": 4007,
+      "detail": "http=200 bytes=4007",
+      "layer": "api"
+    },
+    {
+      "action": "pm1 GET /api/approvals/pending",
+      "ok": true,
+      "totalMs": 1278,
+      "status": 200,
+      "bytes": 36,
+      "detail": "http=200 bytes=36",
+      "layer": "api",
+      "portal": "project"
+    },
+    {
+      "action": "GET measurement-sheets list",
+      "ok": true,
+      "totalMs": 1273,
+      "status": 200,
+      "bytes": 257,
+      "detail": "http=200 bytes=257",
+      "layer": "api"
+    },
+    {
+      "action": "GET BOQ by project",
+      "ok": true,
+      "totalMs": 1258,
+      "status": 200,
+      "bytes": 2540,
+      "detail": "http=200 bytes=2540",
+      "layer": "api"
+    },
+    {
+      "action": "Login API (pm1 → project)",
+      "ok": true,
+      "totalMs": 1258,
+      "status": 200,
+      "bytes": 193,
+      "detail": "http=200 bytes=193",
+      "layer": "api",
+      "portal": "project"
+    },
+    {
+      "action": "GET /api/notifications (or unread)",
+      "ok": true,
+      "totalMs": 1256,
+      "status": 200,
+      "bytes": 1415,
+      "detail": "http=200 bytes=1415",
+      "layer": "api"
+    },
+    {
+      "action": "PARALLEL Promise.all same set",
+      "ok": true,
+      "totalMs": 1247,
+      "status": 200,
+      "bytes": 0,
+      "detail": "parallel 4 calls",
+      "layer": "waterfall"
+    },
+    {
+      "action": "Login API (opsmgr → operations)",
+      "ok": true,
+      "totalMs": 1233,
+      "status": 200,
+      "bytes": 205,
+      "detail": "http=200 bytes=205",
+      "layer": "api",
+      "portal": "operations"
+    }
+  ]
+}

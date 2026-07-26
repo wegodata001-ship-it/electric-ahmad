@@ -1,0 +1,25 @@
+{
+  "measuredAt": "2026-07-26T12:58:58.471Z",
+  "phase": "P4.1",
+  "before": {
+    "httpAvg": 4066,
+    "queries": "~6 (auth+migrate+list+N×hasReports)"
+  },
+  "after": {
+    "httpAvg": 512,
+    "httpMin": 463,
+    "samples": [
+      563,
+      476,
+      463,
+      546
+    ],
+    "bytes": 779,
+    "itemCount": 3,
+    "ok": true,
+    "rttMin": 460,
+    "rttAvg": 639,
+    "queries": 1
+  },
+  "improvementPercent": 87
+}

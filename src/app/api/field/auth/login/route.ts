@@ -9,14 +9,35 @@ import {
 } from "@/lib/auth/field-cookie";
 import { AuditRepository } from "@/repositories/audit.repository";
 import { apiError, handleApiError } from "@/lib/api/response";
+import { parseJsonBody } from "@/lib/validation/parse-body";
+import { fieldLoginSchema } from "@/lib/validation/schemas";
+import {
+  enforceRateLimit,
+  getClientIp,
+  logFailedLogin,
+} from "@/lib/security/rate-limit";
+
+const LOGIN_BUCKET = "field-auth-login";
+const LOGIN_LIMIT = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
 export async function POST(request: NextRequest) {
+  const ip = getClientIp(request);
+
+  const limited = enforceRateLimit(
+    {
+      key: `${LOGIN_BUCKET}:${ip}`,
+      limit: LOGIN_LIMIT,
+      windowMs: LOGIN_WINDOW_MS,
+    },
+    "יותר מדי ניסיונות התחברות. נסו שוב בעוד מספר דקות."
+  );
+  if (limited) return limited;
+
   try {
-    const body = await request.json();
-    const username = String(body.username ?? "")
-      .trim()
-      .toLowerCase();
-    const password = String(body.password ?? "");
+    const body = await parseJsonBody(request, fieldLoginSchema);
+    const username = body.username.trim().toLowerCase();
+    const password = body.password;
 
     if (!username || !password) {
       return apiError("יש להזין שם משתמש וסיסמה");
@@ -33,18 +54,42 @@ export async function POST(request: NextRequest) {
       !isFieldManagerRole(user.role) ||
       !user.employee
     ) {
+      logFailedLogin({
+        bucket: LOGIN_BUCKET,
+        ip,
+        identifier: username,
+        reason: "unknown-or-non-field",
+      });
       return apiError("שם משתמש או סיסמה שגויים", 401);
     }
 
     if (user.employee.isDeleted) {
+      logFailedLogin({
+        bucket: LOGIN_BUCKET,
+        ip,
+        identifier: username,
+        reason: "account-deleted",
+      });
       return apiError("חשבון מנהל העבודה נמחק", 403);
     }
     if (user.employee.status !== "active") {
+      logFailedLogin({
+        bucket: LOGIN_BUCKET,
+        ip,
+        identifier: username,
+        reason: "inactive",
+      });
       return apiError("המשתמש אינו פעיל", 403);
     }
 
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
+      logFailedLogin({
+        bucket: LOGIN_BUCKET,
+        ip,
+        identifier: username,
+        reason: "bad-password",
+      });
       return apiError("שם משתמש או סיסמה שגויים", 401);
     }
 

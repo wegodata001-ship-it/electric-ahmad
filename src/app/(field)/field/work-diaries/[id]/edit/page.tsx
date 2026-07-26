@@ -1,10 +1,8 @@
-import { WorkDiaryBuildPage } from "@/features/work-diaries/components/work-diary-build-page";
+import { redirect } from "next/navigation";
 
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+type Props = { params: Promise<{ id: string }> };
+
+export default async function Page({ params }: Props) {
   const { id } = await params;
-  return <WorkDiaryBuildPage diaryId={id} />;
+  redirect(`/field/work-diaries/new?reviseId=${id}`);
 }

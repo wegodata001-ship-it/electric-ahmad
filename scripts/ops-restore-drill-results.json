@@ -1,0 +1,35 @@
+{
+  "measuredAt": "2026-07-26T14:03:52.655Z",
+  "type": "logical_schema_restore_drill",
+  "source": "live DATABASE_URL (Supabase pooler eu-north-1)",
+  "scratchSchema": "ops_restore_drill_20260726140336",
+  "durationSec": 17,
+  "result": "pass",
+  "sourceCounts": {
+    "User": 9,
+    "Project": 16,
+    "BoqItem": 138,
+    "WorkDiary": 9,
+    "OpsDeliveryNote": 1,
+    "DeliveryNote": 3,
+    "MeasurementSheet": 17,
+    "PartialInvoice": 8,
+    "Document": 24,
+    "WorkflowDocument": 8
+  },
+  "restoredCounts": {
+    "User": 9,
+    "Project": 16,
+    "BoqItem": 138,
+    "WorkDiary": 9,
+    "OpsDeliveryNote": 1,
+    "DeliveryNote": 3,
+    "MeasurementSheet": 17,
+    "PartialInvoice": 8,
+    "Document": 24,
+    "WorkflowDocument": 8
+  },
+  "sampleOk": true,
+  "errors": [],
+  "notes": "Logical copy of critical tables into scratch schema + count/id verification. Does not replace Supabase Dashboard PITR into a separate project — schedule that quarterly."
+}

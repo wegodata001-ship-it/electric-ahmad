@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { PartialInvoicesRepository } from "@/repositories/partial-invoices.repository";
 import {
@@ -7,10 +8,33 @@ import {
   parseSignQuery,
 } from "@/lib/documents/sign-tokens";
 import type { MeasurementAxisType, MeasurementSheetStatus } from "@prisma/client";
+import {
+  assertDocumentMutable,
+  MEASUREMENT_EDITABLE_STATUSES,
+} from "@/lib/workflow/document-guards";
 
 function num(v: unknown): number {
   return Number(v ?? 0);
 }
+
+function newEntityId() {
+  return randomUUID().replace(/-/g, "");
+}
+
+export type CellSaveOfficeResult =
+  | {
+      status: "ok";
+      saved: number;
+      cells: {
+        id: string;
+        rowId: string;
+        boqItemId: string;
+        quantity: number;
+      }[];
+    }
+  | { status: "not_found" }
+  | { status: "forbidden" }
+  | { status: "locked" };
 
 const sheetInclude = {
   rows: {
@@ -38,8 +62,10 @@ const sheetInclude = {
           description: true,
           unit: true,
           contractQuantity: true,
+          completedQuantity: true,
           unitPrice: true,
           invoicedQuantity: true,
+          remainingQuantity: true,
           deletedAt: true,
         },
       },
@@ -49,10 +75,13 @@ const sheetInclude = {
     select: {
       id: true,
       name: true,
+      contractor: true,
+      location: true,
       measurementAxisType: true,
       measurementAxisLabel: true,
     },
   },
+  createdBy: { select: { id: true, name: true } },
   approvals: {
     orderBy: { createdAt: "desc" as const },
     include: { approver: { select: { id: true, name: true, role: true } } },
@@ -91,7 +120,42 @@ function documentFolderForStatus(status: MeasurementSheetStatus): string {
   }
 }
 
+function asDate(v: unknown): Date | null {
+  if (v == null) return null;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
+  if (typeof v === "string" || typeof v === "number") {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+function iso(v: unknown): string | null {
+  const d = asDate(v);
+  return d ? d.toISOString() : null;
+}
+
+function parseJsonArray(v: unknown): any[] {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function mapSheet(row: any) {
+  const rows = parseJsonArray(row.rows);
+  const cells = parseJsonArray(row.cells);
+  const approvals = parseJsonArray(row.approvals);
+  const reviewNotes = parseJsonArray(row.reviewNotes);
+  const events = parseJsonArray(row.events);
+  const versions = parseJsonArray(row.versions);
+
   return {
     id: row.id,
     projectId: row.projectId,
@@ -100,21 +164,24 @@ function mapSheet(row: any) {
     status: row.status as MeasurementSheetStatus,
     notes: row.notes,
     currentVersion: row.currentVersion ?? 1,
-    submittedAt: row.submittedAt?.toISOString() ?? null,
-    approvedAt: row.approvedAt?.toISOString() ?? null,
-    returnedAt: row.returnedAt?.toISOString() ?? null,
+    submittedAt: iso(row.submittedAt),
+    approvedAt: iso(row.approvedAt),
+    returnedAt: iso(row.returnedAt),
     lastReturnComment: row.lastReturnComment ?? null,
     partialInvoiceId: row.partialInvoiceId,
     clientSignatureUrl: row.clientSignatureUrl ?? null,
     clientSignedName: row.clientSignedName ?? null,
-    clientSignedAt: row.clientSignedAt?.toISOString() ?? null,
+    clientSignedAt: iso(row.clientSignedAt),
     documentNumber: `MS-${row.sequenceNumber}`,
     createdById: row.createdById,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    createdAt: iso(row.createdAt) ?? new Date(0).toISOString(),
+    updatedAt: iso(row.updatedAt) ?? new Date(0).toISOString(),
     project: row.project,
+    createdBy: row.createdBy
+      ? { id: row.createdBy.id, name: row.createdBy.name }
+      : null,
     editable: isSheetEditable(row.status),
-    rows: (row.rows ?? [])
+    rows: rows
       .filter((r: any) => {
         if (r.projectRoom?.deletedAt) return false;
         if (r.projectRoom?.isHidden) return false;
@@ -135,10 +202,10 @@ function mapSheet(row: any) {
         code: r.projectRoom?.code ?? null,
         isHidden: r.projectRoom?.isHidden ?? false,
       })),
-    cells: (row.cells ?? [])
+    cells: cells
       .filter((c: any) => !c.boqItem?.deletedAt)
       .filter((c: any) => {
-        const rowMeta = (row.rows ?? []).find((r: any) => r.id === c.rowId);
+        const rowMeta = rows.find((r: any) => r.id === c.rowId);
         if (!rowMeta) return true;
         if (rowMeta.projectRoom?.deletedAt) return false;
         if (rowMeta.projectRoom?.isHidden) return false;
@@ -156,21 +223,31 @@ function mapSheet(row: any) {
               description: c.boqItem.description,
               unit: c.boqItem.unit,
               contractQuantity: num(c.boqItem.contractQuantity),
+              completedQuantity: num(c.boqItem.completedQuantity),
               unitPrice: num(c.boqItem.unitPrice),
               invoicedQuantity: num(c.boqItem.invoicedQuantity),
+              remainingQuantity: num(c.boqItem.remainingQuantity),
             }
           : null,
       })),
-    approvals: (row.approvals ?? []).map((a: any) => ({
+    approvals: approvals.map((a: any) => ({
       id: a.id,
       approverId: a.approverId,
       approverName: a.approver?.name,
       status: a.status,
       comment: a.comment,
-      sentAt: a.sentAt?.toISOString() ?? null,
-      decidedAt: a.decidedAt?.toISOString() ?? null,
+      sentAt: iso(a.sentAt),
+      decidedAt: iso(a.decidedAt),
     })),
-    reviewNotes: (row.reviewNotes ?? []).map((n: any) => ({
+    rejectionComment:
+      approvals
+        .filter((a: any) => a.status === "rejected" && a.comment)
+        .sort(
+          (a: any, b: any) =>
+            (asDate(b.decidedAt)?.getTime() ?? 0) -
+            (asDate(a.decidedAt)?.getTime() ?? 0)
+        )[0]?.comment ?? null,
+    reviewNotes: reviewNotes.map((n: any) => ({
       id: n.id,
       rowId: n.rowId,
       boqItemId: n.boqItemId,
@@ -178,24 +255,66 @@ function mapSheet(row: any) {
       version: n.version,
       authorId: n.authorId,
       authorName: n.author?.name,
-      createdAt: n.createdAt.toISOString(),
+      createdAt: iso(n.createdAt) ?? new Date(0).toISOString(),
     })),
-    events: (row.events ?? []).map((e: any) => ({
+    events: events.map((e: any) => ({
       id: e.id,
       type: e.type,
       message: e.message,
       actorName: e.actor?.name,
-      createdAt: e.createdAt.toISOString(),
+      createdAt: iso(e.createdAt) ?? new Date(0).toISOString(),
     })),
-    versions: (row.versions ?? []).map((v: any) => ({
+    versions: versions.map((v: any) => ({
       id: v.id,
       version: v.version,
       status: v.status,
       note: v.note,
-      createdAt: v.createdAt.toISOString(),
+      createdAt: iso(v.createdAt) ?? new Date(0).toISOString(),
     })),
   };
 }
+
+type SheetSqlRow = {
+  id: string;
+  projectId: string;
+  title: string;
+  sequenceNumber: number;
+  status: MeasurementSheetStatus;
+  notes: string | null;
+  currentVersion: number;
+  submittedAt: Date | null;
+  approvedAt: Date | null;
+  returnedAt: Date | null;
+  lastReturnComment: string | null;
+  partialInvoiceId: string | null;
+  clientSignatureUrl: string | null;
+  clientSignedName: string | null;
+  clientSignedAt: Date | null;
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+  project: {
+    id: string;
+    name: string;
+    contractor: string | null;
+    location: string | null;
+    measurementAxisType: MeasurementAxisType;
+    measurementAxisLabel: string | null;
+  };
+  createdBy: { id: string; name: string } | null;
+  rows: unknown;
+  cells: unknown;
+  approvals: unknown;
+  reviewNotes: unknown;
+  events: unknown;
+  versions: unknown;
+  authUserId: string | null;
+};
+
+export type MeasurementSheetGetResult =
+  | { status: "ok"; data: ReturnType<typeof mapSheet> }
+  | { status: "not_found" }
+  | { status: "forbidden" };
 
 export const AXIS_LABELS: Record<MeasurementAxisType, string> = {
   room: "חדר",
@@ -234,12 +353,537 @@ export class MeasurementSheetsRepository {
     }));
   }
 
+  /**
+   * Full sheet payload — one SQL round-trip (CTE + json_agg).
+   * No Prisma include fan-out. Same mapSheet response shape.
+   * Versions omit snapshotJson (not shown on open).
+   */
   static async getById(id: string) {
-    const row = await prisma.measurementSheet.findUnique({
-      where: { id },
-      include: sheetInclude,
-    });
-    return row ? mapSheet(row) : null;
+    const result = await this.fetchSheetById(id, null);
+    return result.status === "ok" ? result.data : null;
+  }
+
+  /**
+   * GET hot path: HMAC session user + office auth gate fused into sheet SQL.
+   * 1 DB RTT total (same pattern as Project Hub).
+   */
+  static async getByIdForOffice(
+    id: string,
+    officeUserId: string
+  ): Promise<MeasurementSheetGetResult> {
+    return this.fetchSheetById(id, officeUserId);
+  }
+
+  private static async fetchSheetById(
+    id: string,
+    officeUserId: string | null
+  ): Promise<MeasurementSheetGetResult> {
+    const rows = officeUserId
+      ? await prisma.$queryRaw<SheetSqlRow[]>`
+          WITH auth AS (
+            SELECT u.id AS user_id
+            FROM "User" u
+            LEFT JOIN "Employee" emp ON emp."userId" = u.id
+            WHERE u.id = ${officeUserId}
+              AND u."passwordHash" IS NOT NULL
+              AND u.role IN (
+                'PROJECT_MANAGER',
+                'OPERATIONS_MANAGER',
+                'ADMIN',
+                'SYSTEM_MANAGER',
+                'admin',
+                'מנהל מערכת'
+              )
+              AND (
+                emp.id IS NULL
+                OR (emp."isDeleted" = false AND emp.status = 'active')
+              )
+          ),
+          base AS (
+            SELECT
+              s.id,
+              s."projectId",
+              s.title,
+              s."sequenceNumber",
+              s.status,
+              s.notes,
+              s."currentVersion",
+              s."submittedAt",
+              s."approvedAt",
+              s."returnedAt",
+              s."lastReturnComment",
+              s."partialInvoiceId",
+              s."clientSignatureUrl",
+              s."clientSignedName",
+              s."clientSignedAt",
+              s."createdById",
+              s."createdAt",
+              s."updatedAt",
+              json_build_object(
+                'id', p.id,
+                'name', p.name,
+                'contractor', p.contractor,
+                'location', p.location,
+                'measurementAxisType', p."measurementAxisType",
+                'measurementAxisLabel', p."measurementAxisLabel"
+              ) AS project,
+              json_build_object(
+                'id', cu.id,
+                'name', cu.name
+              ) AS "createdBy",
+              (SELECT user_id FROM auth LIMIT 1) AS "authUserId"
+            FROM "MeasurementSheet" s
+            INNER JOIN "Project" p ON p.id = s."projectId"
+            INNER JOIN "User" cu ON cu.id = s."createdById"
+            WHERE s.id = ${id}
+          ),
+          rows_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', r.id,
+                  'name', r.name,
+                  'sortOrder', r."sortOrder",
+                  'notes', r.notes,
+                  'projectRoomId', r."projectRoomId",
+                  'projectRoom', CASE
+                    WHEN pr.id IS NULL THEN NULL
+                    ELSE json_build_object(
+                      'id', pr.id,
+                      'name', pr.name,
+                      'floor', pr.floor,
+                      'code', pr.code,
+                      'sortOrder', pr."sortOrder",
+                      'isHidden', pr."isHidden",
+                      'deletedAt', pr."deletedAt"
+                    )
+                  END
+                )
+                ORDER BY COALESCE(pr."sortOrder", r."sortOrder") ASC
+              ),
+              '[]'::json
+            ) AS rows
+            FROM "MeasurementSheetRow" r
+            LEFT JOIN "ProjectRoom" pr ON pr.id = r."projectRoomId"
+            WHERE r."sheetId" = ${id}
+          ),
+          cells_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', c.id,
+                  'rowId', c."rowId",
+                  'boqItemId', c."boqItemId",
+                  'quantity', c.quantity,
+                  'boqItem', CASE
+                    WHEN b.id IS NULL THEN NULL
+                    ELSE json_build_object(
+                      'id', b.id,
+                      'code', b.code,
+                      'description', b.description,
+                      'unit', b.unit,
+                      'contractQuantity', b."contractQuantity",
+                      'completedQuantity', b."completedQuantity",
+                      'unitPrice', b."unitPrice",
+                      'invoicedQuantity', b."invoicedQuantity",
+                      'remainingQuantity', b."remainingQuantity",
+                      'deletedAt', b."deletedAt"
+                    )
+                  END
+                )
+              ),
+              '[]'::json
+            ) AS cells
+            FROM "MeasurementCell" c
+            LEFT JOIN "BoqItem" b ON b.id = c."boqItemId"
+            WHERE c."sheetId" = ${id}
+          ),
+          approvals_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', a.id,
+                  'approverId', a."approverId",
+                  'status', a.status,
+                  'comment', a.comment,
+                  'sentAt', a."sentAt",
+                  'decidedAt', a."decidedAt",
+                  'approver', json_build_object(
+                    'id', u.id,
+                    'name', u.name,
+                    'role', u.role
+                  )
+                )
+                ORDER BY a."createdAt" DESC
+              ),
+              '[]'::json
+            ) AS approvals
+            FROM "MeasurementSheetApproval" a
+            INNER JOIN "User" u ON u.id = a."approverId"
+            WHERE a."sheetId" = ${id}
+          ),
+          notes_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', n.id,
+                  'rowId', n."rowId",
+                  'boqItemId', n."boqItemId",
+                  'comment', n.comment,
+                  'version', n.version,
+                  'authorId', n."authorId",
+                  'createdAt', n."createdAt",
+                  'author', json_build_object(
+                    'id', u.id,
+                    'name', u.name
+                  )
+                )
+                ORDER BY n."createdAt" DESC
+              ),
+              '[]'::json
+            ) AS "reviewNotes"
+            FROM "MeasurementSheetReviewNote" n
+            INNER JOIN "User" u ON u.id = n."authorId"
+            WHERE n."sheetId" = ${id}
+          ),
+          events_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', e.id,
+                  'type', e.type,
+                  'message', e.message,
+                  'createdAt', e."createdAt",
+                  'actor', json_build_object(
+                    'id', u.id,
+                    'name', u.name
+                  )
+                )
+                ORDER BY e."createdAt" DESC
+              ),
+              '[]'::json
+            ) AS events
+            FROM (
+              SELECT id, type, message, "createdAt", "actorId"
+              FROM "MeasurementSheetEvent"
+              WHERE "sheetId" = ${id}
+              ORDER BY "createdAt" DESC
+              LIMIT 40
+            ) e
+            INNER JOIN "User" u ON u.id = e."actorId"
+          ),
+          versions_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', v.id,
+                  'version', v.version,
+                  'status', v.status,
+                  'note', v.note,
+                  'createdAt', v."createdAt"
+                )
+                ORDER BY v.version DESC
+              ),
+              '[]'::json
+            ) AS versions
+            FROM (
+              SELECT id, version, status, note, "createdAt"
+              FROM "MeasurementSheetVersion"
+              WHERE "sheetId" = ${id}
+              ORDER BY version DESC
+              LIMIT 20
+            ) v
+          )
+          SELECT
+            b.id,
+            b."projectId",
+            b.title,
+            b."sequenceNumber",
+            b.status,
+            b.notes,
+            b."currentVersion",
+            b."submittedAt",
+            b."approvedAt",
+            b."returnedAt",
+            b."lastReturnComment",
+            b."partialInvoiceId",
+            b."clientSignatureUrl",
+            b."clientSignedName",
+            b."clientSignedAt",
+            b."createdById",
+            b."createdAt",
+            b."updatedAt",
+            b.project,
+            b."createdBy",
+            b."authUserId",
+            r.rows,
+            c.cells,
+            a.approvals,
+            n."reviewNotes",
+            e.events,
+            v.versions
+          FROM base b
+          CROSS JOIN rows_agg r
+          CROSS JOIN cells_agg c
+          CROSS JOIN approvals_agg a
+          CROSS JOIN notes_agg n
+          CROSS JOIN events_agg e
+          CROSS JOIN versions_agg v
+        `
+      : await prisma.$queryRaw<SheetSqlRow[]>`
+          WITH base AS (
+            SELECT
+              s.id,
+              s."projectId",
+              s.title,
+              s."sequenceNumber",
+              s.status,
+              s.notes,
+              s."currentVersion",
+              s."submittedAt",
+              s."approvedAt",
+              s."returnedAt",
+              s."lastReturnComment",
+              s."partialInvoiceId",
+              s."clientSignatureUrl",
+              s."clientSignedName",
+              s."clientSignedAt",
+              s."createdById",
+              s."createdAt",
+              s."updatedAt",
+              json_build_object(
+                'id', p.id,
+                'name', p.name,
+                'contractor', p.contractor,
+                'location', p.location,
+                'measurementAxisType', p."measurementAxisType",
+                'measurementAxisLabel', p."measurementAxisLabel"
+              ) AS project,
+              json_build_object(
+                'id', cu.id,
+                'name', cu.name
+              ) AS "createdBy",
+              NULL::text AS "authUserId"
+            FROM "MeasurementSheet" s
+            INNER JOIN "Project" p ON p.id = s."projectId"
+            INNER JOIN "User" cu ON cu.id = s."createdById"
+            WHERE s.id = ${id}
+          ),
+          rows_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', r.id,
+                  'name', r.name,
+                  'sortOrder', r."sortOrder",
+                  'notes', r.notes,
+                  'projectRoomId', r."projectRoomId",
+                  'projectRoom', CASE
+                    WHEN pr.id IS NULL THEN NULL
+                    ELSE json_build_object(
+                      'id', pr.id,
+                      'name', pr.name,
+                      'floor', pr.floor,
+                      'code', pr.code,
+                      'sortOrder', pr."sortOrder",
+                      'isHidden', pr."isHidden",
+                      'deletedAt', pr."deletedAt"
+                    )
+                  END
+                )
+                ORDER BY COALESCE(pr."sortOrder", r."sortOrder") ASC
+              ),
+              '[]'::json
+            ) AS rows
+            FROM "MeasurementSheetRow" r
+            LEFT JOIN "ProjectRoom" pr ON pr.id = r."projectRoomId"
+            WHERE r."sheetId" = ${id}
+          ),
+          cells_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', c.id,
+                  'rowId', c."rowId",
+                  'boqItemId', c."boqItemId",
+                  'quantity', c.quantity,
+                  'boqItem', CASE
+                    WHEN b.id IS NULL THEN NULL
+                    ELSE json_build_object(
+                      'id', b.id,
+                      'code', b.code,
+                      'description', b.description,
+                      'unit', b.unit,
+                      'contractQuantity', b."contractQuantity",
+                      'completedQuantity', b."completedQuantity",
+                      'unitPrice', b."unitPrice",
+                      'invoicedQuantity', b."invoicedQuantity",
+                      'remainingQuantity', b."remainingQuantity",
+                      'deletedAt', b."deletedAt"
+                    )
+                  END
+                )
+              ),
+              '[]'::json
+            ) AS cells
+            FROM "MeasurementCell" c
+            LEFT JOIN "BoqItem" b ON b.id = c."boqItemId"
+            WHERE c."sheetId" = ${id}
+          ),
+          approvals_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', a.id,
+                  'approverId', a."approverId",
+                  'status', a.status,
+                  'comment', a.comment,
+                  'sentAt', a."sentAt",
+                  'decidedAt', a."decidedAt",
+                  'approver', json_build_object(
+                    'id', u.id,
+                    'name', u.name,
+                    'role', u.role
+                  )
+                )
+                ORDER BY a."createdAt" DESC
+              ),
+              '[]'::json
+            ) AS approvals
+            FROM "MeasurementSheetApproval" a
+            INNER JOIN "User" u ON u.id = a."approverId"
+            WHERE a."sheetId" = ${id}
+          ),
+          notes_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', n.id,
+                  'rowId', n."rowId",
+                  'boqItemId', n."boqItemId",
+                  'comment', n.comment,
+                  'version', n.version,
+                  'authorId', n."authorId",
+                  'createdAt', n."createdAt",
+                  'author', json_build_object(
+                    'id', u.id,
+                    'name', u.name
+                  )
+                )
+                ORDER BY n."createdAt" DESC
+              ),
+              '[]'::json
+            ) AS "reviewNotes"
+            FROM "MeasurementSheetReviewNote" n
+            INNER JOIN "User" u ON u.id = n."authorId"
+            WHERE n."sheetId" = ${id}
+          ),
+          events_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', e.id,
+                  'type', e.type,
+                  'message', e.message,
+                  'createdAt', e."createdAt",
+                  'actor', json_build_object(
+                    'id', u.id,
+                    'name', u.name
+                  )
+                )
+                ORDER BY e."createdAt" DESC
+              ),
+              '[]'::json
+            ) AS events
+            FROM (
+              SELECT id, type, message, "createdAt", "actorId"
+              FROM "MeasurementSheetEvent"
+              WHERE "sheetId" = ${id}
+              ORDER BY "createdAt" DESC
+              LIMIT 40
+            ) e
+            INNER JOIN "User" u ON u.id = e."actorId"
+          ),
+          versions_agg AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', v.id,
+                  'version', v.version,
+                  'status', v.status,
+                  'note', v.note,
+                  'createdAt', v."createdAt"
+                )
+                ORDER BY v.version DESC
+              ),
+              '[]'::json
+            ) AS versions
+            FROM (
+              SELECT id, version, status, note, "createdAt"
+              FROM "MeasurementSheetVersion"
+              WHERE "sheetId" = ${id}
+              ORDER BY version DESC
+              LIMIT 20
+            ) v
+          )
+          SELECT
+            b.id,
+            b."projectId",
+            b.title,
+            b."sequenceNumber",
+            b.status,
+            b.notes,
+            b."currentVersion",
+            b."submittedAt",
+            b."approvedAt",
+            b."returnedAt",
+            b."lastReturnComment",
+            b."partialInvoiceId",
+            b."clientSignatureUrl",
+            b."clientSignedName",
+            b."clientSignedAt",
+            b."createdById",
+            b."createdAt",
+            b."updatedAt",
+            b.project,
+            b."createdBy",
+            b."authUserId",
+            r.rows,
+            c.cells,
+            a.approvals,
+            n."reviewNotes",
+            e.events,
+            v.versions
+          FROM base b
+          CROSS JOIN rows_agg r
+          CROSS JOIN cells_agg c
+          CROSS JOIN approvals_agg a
+          CROSS JOIN notes_agg n
+          CROSS JOIN events_agg e
+          CROSS JOIN versions_agg v
+        `;
+
+    const row = rows[0];
+    if (!row) return { status: "not_found" };
+    if (officeUserId && !row.authUserId) return { status: "forbidden" };
+
+    const project =
+      typeof row.project === "string"
+        ? JSON.parse(row.project)
+        : row.project;
+    const createdBy =
+      typeof row.createdBy === "string"
+        ? JSON.parse(row.createdBy)
+        : row.createdBy;
+
+    return {
+      status: "ok",
+      data: mapSheet({
+        ...row,
+        project,
+        createdBy,
+      }),
+    };
   }
 
   static async create(
@@ -370,16 +1014,24 @@ export class MeasurementSheetsRepository {
   ) {
     const existing = await prisma.measurementSheet.findUnique({ where: { id } });
     if (!existing) throw new Error("דף מדידה לא נמצא");
-    if (!isSheetEditable(existing.status)) {
-      throw new Error("לא ניתן לערוך דף מדידה במצב הנוכחי");
-    }
+
+    assertDocumentMutable(String(existing.status), {
+      allowStatuses: MEASUREMENT_EDITABLE_STATUSES,
+      entityLabel: "דף המדידה",
+    });
+
+    // `input.status` is intentionally IGNORED. Status transitions must go
+    // through submitForApproval / decideApproval / applyClientSignature so the
+    // workflow gates (approvers, signature, locking) cannot be bypassed via
+    // PATCH. Silently strip it here rather than 400 so existing clients that
+    // echo the current status back keep working.
+    void input.status;
 
     await prisma.measurementSheet.update({
       where: { id },
       data: {
         title: input.title?.trim(),
         notes: input.notes,
-        status: input.status,
         updatedById: userId,
       },
     });
@@ -568,144 +1220,477 @@ export class MeasurementSheetsRepository {
     return this.getById(sheetId);
   }
 
+  /**
+   * Single-cell save — one SQL round-trip (same engine as batch).
+   */
   static async setCellQuantity(
     sheetId: string,
-    input: { rowId: string; boqItemId: string; quantity: number; note?: string | null },
+    input: {
+      rowId: string;
+      boqItemId: string;
+      quantity: number;
+      note?: string | null;
+    },
     userId: string
   ) {
-    const sheet = await prisma.measurementSheet.findUnique({ where: { id: sheetId } });
-    if (!sheet) throw new Error("דף מדידה לא נמצא");
-    if (!isSheetEditable(sheet.status)) {
-      throw new Error("הדף נעול לעריכה");
-    }
-
-    const qty = Math.max(0, Number(input.quantity) || 0);
-
-    const cell = await prisma.$transaction(async (tx) => {
-      const existing = await tx.measurementCell.findUnique({
-        where: {
-          rowId_boqItemId: { rowId: input.rowId, boqItemId: input.boqItemId },
-        },
-      });
-
-      const oldQuantity = existing ? num(existing.quantity) : 0;
-      const updated = existing
-        ? await tx.measurementCell.update({
-            where: { id: existing.id },
-            data: { quantity: qty },
-          })
-        : await tx.measurementCell.create({
-            data: {
-              sheetId,
-              rowId: input.rowId,
-              boqItemId: input.boqItemId,
-              quantity: qty,
-            },
-          });
-
-      await tx.measurementEntry.create({
-        data: {
-          sheetId,
-          cellId: updated.id,
-          boqItemId: input.boqItemId,
+    const result = await this.saveCellsOneShot(
+      sheetId,
+      [
+        {
           rowId: input.rowId,
-          oldQuantity,
-          newQuantity: qty,
-          note: input.note ?? null,
-          actorId: userId,
+          boqItemId: input.boqItemId,
+          quantity: input.quantity,
         },
-      });
-
-      await tx.measurementSheet.update({
-        where: { id: sheetId },
-        data: {
-          updatedById: userId,
-          status: sheet.status === "revision" ? "revision" : "in_progress",
-        },
-      });
-
-      return updated;
-    });
-
-    return {
-      id: cell.id,
-      rowId: cell.rowId,
-      boqItemId: cell.boqItemId,
-      quantity: num(cell.quantity),
-    };
+      ],
+      userId,
+      { fuseAuth: false, note: input.note ?? null, skipUnchanged: false }
+    );
+    if (result.status === "not_found") throw new Error("דף מדידה לא נמצא");
+    if (result.status === "locked") throw new Error("הדף נעול לעריכה");
+    if (result.status === "forbidden") throw new Error("אין הרשאה");
+    const cell = result.cells[0];
+    if (!cell) {
+      return {
+        id: "",
+        rowId: input.rowId,
+        boqItemId: input.boqItemId,
+        quantity: Math.max(0, Number(input.quantity) || 0),
+      };
+    }
+    return cell;
   }
 
-  /** Batch save all dirty cells in one transaction */
+  /**
+   * Batch save dirty cells — one SQL round-trip.
+   * No full-grid prefetch. Returns { saved } only (API contract unchanged).
+   */
   static async setCellsBatch(
     sheetId: string,
     cells: { rowId: string; boqItemId: string; quantity: number }[],
     userId: string
   ) {
-    const sheet = await prisma.measurementSheet.findUnique({ where: { id: sheetId } });
-    if (!sheet) throw new Error("דף מדידה לא נמצא");
-    if (!isSheetEditable(sheet.status)) {
-      throw new Error("הדף נעול לעריכה");
-    }
-    if (!cells.length) return { saved: 0 };
-
-    await prisma.$transaction(async (tx) => {
-      for (const input of cells) {
-        const qty = Math.max(0, Number(input.quantity) || 0);
-        const existing = await tx.measurementCell.findUnique({
-          where: {
-            rowId_boqItemId: { rowId: input.rowId, boqItemId: input.boqItemId },
-          },
-        });
-        const oldQuantity = existing ? num(existing.quantity) : 0;
-        if (existing && oldQuantity === qty) continue;
-
-        const updated = existing
-          ? await tx.measurementCell.update({
-              where: { id: existing.id },
-              data: { quantity: qty },
-            })
-          : await tx.measurementCell.create({
-              data: {
-                sheetId,
-                rowId: input.rowId,
-                boqItemId: input.boqItemId,
-                quantity: qty,
-              },
-            });
-
-        await tx.measurementEntry.create({
-          data: {
-            sheetId,
-            cellId: updated.id,
-            boqItemId: input.boqItemId,
-            rowId: input.rowId,
-            oldQuantity,
-            newQuantity: qty,
-            note: null,
-            actorId: userId,
-          },
-        });
-      }
-
-      await tx.measurementSheet.update({
-        where: { id: sheetId },
-        data: {
-          updatedById: userId,
-          status: sheet.status === "revision" ? "revision" : "in_progress",
-        },
-      });
+    const result = await this.saveCellsOneShot(sheetId, cells, userId, {
+      fuseAuth: false,
+      skipUnchanged: true,
     });
-
-    return { saved: cells.length, sheet: await this.getById(sheetId) };
+    if (result.status === "not_found") throw new Error("דף מדידה לא נמצא");
+    if (result.status === "locked") throw new Error("הדף נעול לעריכה");
+    if (result.status === "forbidden") throw new Error("אין הרשאה");
+    return { saved: result.saved };
   }
 
   /**
-   * @deprecated Prefer submitForApproval — kept for backward compat (locks without approval)
+   * HTTP hot path: HMAC + office auth gate fused into cell-save SQL (1 RTT).
    */
-  static async completeSheet(sheetId: string, userId: string, printBaseUrl?: string) {
-    return this.submitForApproval(sheetId, [], userId, printBaseUrl, {
-      skipApprovers: true,
+  static async setCellsBatchForOffice(
+    sheetId: string,
+    cells: { rowId: string; boqItemId: string; quantity: number }[],
+    officeUserId: string
+  ): Promise<CellSaveOfficeResult> {
+    return this.saveCellsOneShot(sheetId, cells, officeUserId, {
+      fuseAuth: true,
+      skipUnchanged: true,
     });
+  }
+
+  static async setCellQuantityForOffice(
+    sheetId: string,
+    input: {
+      rowId: string;
+      boqItemId: string;
+      quantity: number;
+      note?: string | null;
+    },
+    officeUserId: string
+  ): Promise<
+    | {
+        status: "ok";
+        cell: {
+          id: string;
+          rowId: string;
+          boqItemId: string;
+          quantity: number;
+        };
+      }
+    | { status: "not_found" }
+    | { status: "forbidden" }
+    | { status: "locked" }
+  > {
+    const result = await this.saveCellsOneShot(
+      sheetId,
+      [
+        {
+          rowId: input.rowId,
+          boqItemId: input.boqItemId,
+          quantity: input.quantity,
+        },
+      ],
+      officeUserId,
+      { fuseAuth: true, note: input.note ?? null, skipUnchanged: false }
+    );
+    if (result.status !== "ok") return result;
+    const cell = result.cells[0] ?? {
+      id: "",
+      rowId: input.rowId,
+      boqItemId: input.boqItemId,
+      quantity: Math.max(0, Number(input.quantity) || 0),
+    };
+    return { status: "ok", cell };
+  }
+
+  /**
+   * Auth (optional) + editable gate + UPSERT cells + audit entries + sheet touch
+   * in a single PostgreSQL statement — 1 remote RTT.
+   */
+  private static async saveCellsOneShot(
+    sheetId: string,
+    cells: { rowId: string; boqItemId: string; quantity: number }[],
+    userId: string,
+    opts: { fuseAuth: boolean; note?: string | null; skipUnchanged: boolean }
+  ): Promise<CellSaveOfficeResult> {
+    const note = opts.note ?? null;
+    const skipUnchanged = opts.skipUnchanged;
+    const payload = cells.map((c) => ({
+      id: newEntityId(),
+      entryId: newEntityId(),
+      rowId: String(c.rowId),
+      boqItemId: String(c.boqItemId),
+      quantity: Math.max(0, Number(c.quantity) || 0),
+    }));
+    const cellsJson = JSON.stringify(payload);
+
+    type SaveRow = {
+      authUserId: string | null;
+      sheetId: string | null;
+      sheetStatus: string | null;
+      saved: number;
+      cells: unknown;
+    };
+
+    const rows = opts.fuseAuth
+      ? await prisma.$queryRaw<SaveRow[]>`
+          WITH auth AS (
+            SELECT u.id AS user_id
+            FROM "User" u
+            LEFT JOIN "Employee" emp ON emp."userId" = u.id
+            WHERE u.id = ${userId}
+              AND u."passwordHash" IS NOT NULL
+              AND u.role IN (
+                'PROJECT_MANAGER',
+                'OPERATIONS_MANAGER',
+                'ADMIN',
+                'SYSTEM_MANAGER',
+                'admin',
+                'מנהל מערכת'
+              )
+              AND (
+                emp.id IS NULL
+                OR (emp."isDeleted" = false AND emp.status = 'active')
+              )
+          ),
+          gate AS (
+            SELECT
+              (SELECT user_id FROM auth LIMIT 1) AS "authUserId",
+              s.id AS "sheetId",
+              s.status::text AS "sheetStatus"
+            FROM (SELECT 1) AS _
+            LEFT JOIN "MeasurementSheet" s ON s.id = ${sheetId}
+          ),
+          incoming AS (
+            SELECT *
+            FROM jsonb_to_recordset(CAST(${cellsJson} AS jsonb))
+              AS x(
+                id text,
+                "entryId" text,
+                "rowId" text,
+                "boqItemId" text,
+                quantity numeric
+              )
+          ),
+          prepared AS (
+            SELECT
+              i.id AS proposed_id,
+              i."entryId",
+              i."rowId",
+              i."boqItemId",
+              i.quantity AS new_qty,
+              c.id AS existing_id,
+              COALESCE(c.quantity, 0) AS old_qty
+            FROM incoming i
+            INNER JOIN gate g
+              ON g."authUserId" IS NOT NULL
+              AND g."sheetId" IS NOT NULL
+              AND g."sheetStatus" IN ('draft', 'in_progress', 'revision')
+            LEFT JOIN "MeasurementCell" c
+              ON c."rowId" = i."rowId"
+              AND c."boqItemId" = i."boqItemId"
+            WHERE (${skipUnchanged} = false)
+               OR c.id IS NULL
+               OR c.quantity IS DISTINCT FROM i.quantity
+          ),
+          upserted AS (
+            INSERT INTO "MeasurementCell" (
+              id, "sheetId", "rowId", "boqItemId", quantity, "createdAt", "updatedAt"
+            )
+            SELECT
+              COALESCE(p.existing_id, p.proposed_id),
+              ${sheetId},
+              p."rowId",
+              p."boqItemId",
+              p.new_qty,
+              NOW(),
+              NOW()
+            FROM prepared p
+            ON CONFLICT ("rowId", "boqItemId") DO UPDATE
+              SET quantity = EXCLUDED.quantity,
+                  "updatedAt" = NOW()
+            RETURNING id, "rowId", "boqItemId", quantity
+          ),
+          entries AS (
+            INSERT INTO "MeasurementEntry" (
+              id, "sheetId", "cellId", "boqItemId", "rowId",
+              "oldQuantity", "newQuantity", note, "actorId", "createdAt"
+            )
+            SELECT
+              p."entryId",
+              ${sheetId},
+              u.id,
+              u."boqItemId",
+              u."rowId",
+              p.old_qty,
+              u.quantity,
+              ${note},
+              g."authUserId",
+              NOW()
+            FROM upserted u
+            INNER JOIN prepared p
+              ON p."rowId" = u."rowId" AND p."boqItemId" = u."boqItemId"
+            CROSS JOIN gate g
+            RETURNING id
+          ),
+          sheet_touch AS (
+            UPDATE "MeasurementSheet" s
+            SET
+              "updatedById" = g."authUserId",
+              "updatedAt" = NOW(),
+              status = CASE
+                WHEN s.status = 'revision'::"MeasurementSheetStatus"
+                  THEN 'revision'::"MeasurementSheetStatus"
+                ELSE 'in_progress'::"MeasurementSheetStatus"
+              END
+            FROM gate g
+            WHERE s.id = ${sheetId}
+              AND g."authUserId" IS NOT NULL
+              AND g."sheetId" IS NOT NULL
+              AND g."sheetStatus" IN ('draft', 'in_progress', 'revision')
+              AND EXISTS (SELECT 1 FROM upserted)
+            RETURNING s.id
+          )
+          SELECT
+            g."authUserId",
+            g."sheetId",
+            g."sheetStatus",
+            (SELECT COUNT(*)::int FROM upserted) AS saved,
+            (
+              SELECT COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', u.id,
+                    'rowId', u."rowId",
+                    'boqItemId', u."boqItemId",
+                    'quantity', u.quantity
+                  )
+                ),
+                '[]'::json
+              )
+              FROM upserted u
+            ) AS cells
+          FROM gate g
+        `
+      : await prisma.$queryRaw<SaveRow[]>`
+          WITH gate AS (
+            SELECT
+              ${userId}::text AS "authUserId",
+              s.id AS "sheetId",
+              s.status::text AS "sheetStatus"
+            FROM (SELECT 1) AS _
+            LEFT JOIN "MeasurementSheet" s ON s.id = ${sheetId}
+          ),
+          incoming AS (
+            SELECT *
+            FROM jsonb_to_recordset(CAST(${cellsJson} AS jsonb))
+              AS x(
+                id text,
+                "entryId" text,
+                "rowId" text,
+                "boqItemId" text,
+                quantity numeric
+              )
+          ),
+          prepared AS (
+            SELECT
+              i.id AS proposed_id,
+              i."entryId",
+              i."rowId",
+              i."boqItemId",
+              i.quantity AS new_qty,
+              c.id AS existing_id,
+              COALESCE(c.quantity, 0) AS old_qty
+            FROM incoming i
+            INNER JOIN gate g
+              ON g."sheetId" IS NOT NULL
+              AND g."sheetStatus" IN ('draft', 'in_progress', 'revision')
+            LEFT JOIN "MeasurementCell" c
+              ON c."rowId" = i."rowId"
+              AND c."boqItemId" = i."boqItemId"
+            WHERE (${skipUnchanged} = false)
+               OR c.id IS NULL
+               OR c.quantity IS DISTINCT FROM i.quantity
+          ),
+          upserted AS (
+            INSERT INTO "MeasurementCell" (
+              id, "sheetId", "rowId", "boqItemId", quantity, "createdAt", "updatedAt"
+            )
+            SELECT
+              COALESCE(p.existing_id, p.proposed_id),
+              ${sheetId},
+              p."rowId",
+              p."boqItemId",
+              p.new_qty,
+              NOW(),
+              NOW()
+            FROM prepared p
+            ON CONFLICT ("rowId", "boqItemId") DO UPDATE
+              SET quantity = EXCLUDED.quantity,
+                  "updatedAt" = NOW()
+            RETURNING id, "rowId", "boqItemId", quantity
+          ),
+          entries AS (
+            INSERT INTO "MeasurementEntry" (
+              id, "sheetId", "cellId", "boqItemId", "rowId",
+              "oldQuantity", "newQuantity", note, "actorId", "createdAt"
+            )
+            SELECT
+              p."entryId",
+              ${sheetId},
+              u.id,
+              u."boqItemId",
+              u."rowId",
+              p.old_qty,
+              u.quantity,
+              ${note},
+              g."authUserId",
+              NOW()
+            FROM upserted u
+            INNER JOIN prepared p
+              ON p."rowId" = u."rowId" AND p."boqItemId" = u."boqItemId"
+            CROSS JOIN gate g
+            RETURNING id
+          ),
+          sheet_touch AS (
+            UPDATE "MeasurementSheet" s
+            SET
+              "updatedById" = g."authUserId",
+              "updatedAt" = NOW(),
+              status = CASE
+                WHEN s.status = 'revision'::"MeasurementSheetStatus"
+                  THEN 'revision'::"MeasurementSheetStatus"
+                ELSE 'in_progress'::"MeasurementSheetStatus"
+              END
+            FROM gate g
+            WHERE s.id = ${sheetId}
+              AND g."sheetId" IS NOT NULL
+              AND g."sheetStatus" IN ('draft', 'in_progress', 'revision')
+              AND EXISTS (SELECT 1 FROM upserted)
+            RETURNING s.id
+          )
+          SELECT
+            g."authUserId",
+            g."sheetId",
+            g."sheetStatus",
+            (SELECT COUNT(*)::int FROM upserted) AS saved,
+            (
+              SELECT COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', u.id,
+                    'rowId', u."rowId",
+                    'boqItemId', u."boqItemId",
+                    'quantity', u.quantity
+                  )
+                ),
+                '[]'::json
+              )
+              FROM upserted u
+            ) AS cells
+          FROM gate g
+        `;
+
+    const row = rows[0];
+    if (!row) return { status: "not_found" };
+    if (opts.fuseAuth && !row.authUserId) return { status: "forbidden" };
+    if (!row.sheetId) return { status: "not_found" };
+    if (
+      row.sheetStatus !== "draft" &&
+      row.sheetStatus !== "in_progress" &&
+      row.sheetStatus !== "revision"
+    ) {
+      return { status: "locked" };
+    }
+
+    let cellsOut: {
+      id: string;
+      rowId: string;
+      boqItemId: string;
+      quantity: number;
+    }[] = [];
+    const raw = row.cells;
+    if (Array.isArray(raw)) {
+      cellsOut = raw.map((c: any) => ({
+        id: String(c.id),
+        rowId: String(c.rowId),
+        boqItemId: String(c.boqItemId),
+        quantity: num(c.quantity),
+      }));
+    } else if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          cellsOut = parsed.map((c: any) => ({
+            id: String(c.id),
+            rowId: String(c.rowId),
+            boqItemId: String(c.boqItemId),
+            quantity: num(c.quantity),
+          }));
+        }
+      } catch {
+        cellsOut = [];
+      }
+    }
+
+    return {
+      status: "ok",
+      saved: Number(row.saved) || 0,
+      cells: cellsOut,
+    };
+  }
+
+  /**
+   * "Complete" is an alias for submitForApproval — approvers are REQUIRED.
+   * The historical `skipApprovers` fast-path used to jump straight to
+   * `approved` without any review; it has been removed so a sheet can never
+   * become approved without an actual approval decision.
+   */
+  static async completeSheet(
+    sheetId: string,
+    approverIds: string[],
+    userId: string,
+    printBaseUrl?: string
+  ) {
+    if (!approverIds?.length) {
+      throw new Error("יש לבחור מאשרים");
+    }
+    return this.submitForApproval(sheetId, approverIds, userId, printBaseUrl);
   }
 
   static async ensureDocument(
@@ -816,23 +1801,30 @@ export class MeasurementSheetsRepository {
   }
 
   /**
-   * שליחה לאישור מנהל תפעול — יוצר גרסה חדשה ומעדכן תיקיית מסמכים
+   * שליחה לאישור מנהל תפעול — יוצר גרסה חדשה ומעדכן תיקיית מסמכים.
+   *
+   * NOTE: approvers are ALWAYS required — the legacy `skipApprovers` short
+   * circuit that flipped the sheet straight to `approved` has been removed to
+   * guarantee that no sheet becomes approved without an explicit decision.
    */
   static async submitForApproval(
     sheetId: string,
     approverIds: string[],
     userId: string,
-    printBaseUrl?: string,
-    options?: { skipApprovers?: boolean }
+    printBaseUrl?: string
   ) {
     const sheet = await this.getById(sheetId);
     if (!sheet) throw new Error("דף מדידה לא נמצא");
     if (!isSheetEditable(sheet.status) && sheet.status !== "pending_approval") {
-      if (sheet.status === "approved" || sheet.status === "locked" || sheet.status === "invoiced") {
+      if (
+        sheet.status === "approved" ||
+        sheet.status === "locked" ||
+        sheet.status === "invoiced"
+      ) {
         throw new Error("הדוח כבר אושר או חויב");
       }
     }
-    if (!options?.skipApprovers && !approverIds.length) {
+    if (!approverIds.length) {
       throw new Error("יש לבחור לפחות מאשר אחד");
     }
 
@@ -854,25 +1846,21 @@ export class MeasurementSheetsRepository {
         data: { status: "cancelled" },
       });
 
-      if (!options?.skipApprovers) {
-        await tx.measurementSheetApproval.createMany({
-          data: approverIds.map((approverId) => ({
-            sheetId,
-            approverId,
-            status: "pending" as const,
-          })),
-        });
-      }
+      await tx.measurementSheetApproval.createMany({
+        data: approverIds.map((approverId) => ({
+          sheetId,
+          approverId,
+          status: "pending" as const,
+        })),
+      });
 
       await tx.measurementSheetVersion.create({
         data: {
           sheetId,
           version: versionRow,
-          status: options?.skipApprovers ? "approved" : "pending_approval",
+          status: "pending_approval",
           snapshotJson: snapshot,
-          note: options?.skipApprovers
-            ? `V${docVersion} אושר`
-            : `V${docVersion} נשלח לאישור`,
+          note: `V${docVersion} נשלח לאישור`,
           actorId: userId,
         },
       });
@@ -880,10 +1868,10 @@ export class MeasurementSheetsRepository {
       await tx.measurementSheet.update({
         where: { id: sheetId },
         data: {
-          status: options?.skipApprovers ? "approved" : "pending_approval",
+          status: "pending_approval",
           currentVersion: docVersion,
           submittedAt: new Date(),
-          approvedAt: options?.skipApprovers ? new Date() : null,
+          approvedAt: null,
           returnedAt: null,
           lastReturnComment: null,
           updatedById: userId,
@@ -891,36 +1879,30 @@ export class MeasurementSheetsRepository {
       });
     });
 
-    const status: MeasurementSheetStatus = options?.skipApprovers
-      ? "approved"
-      : "pending_approval";
+    const status: MeasurementSheetStatus = "pending_approval";
     const doc = await this.ensureDocument(sheetId, userId, status, printBaseUrl);
 
     await this.addEvent(
       sheetId,
-      options?.skipApprovers ? "approved" : "submitted",
-      options?.skipApprovers
-        ? `V${docVersion} אושר (ללא מחזור אישור)`
-        : `V${docVersion} נשלח לאישור`,
+      "submitted",
+      `V${docVersion} נשלח לאישור`,
       userId,
       { version: docVersion, approverIds }
     );
 
-    if (!options?.skipApprovers) {
-      await this.notify(
-        approverIds,
-        "דוח ביצוע ממתין לאישור",
-        `${sheet.title} (V${docVersion}) ממתין לאישורך`,
-        `/approvals`,
-        sheet.projectId
-      );
-    }
+    await this.notify(
+      approverIds,
+      "דוח ביצוע ממתין לאישור",
+      `${sheet.title} (V${docVersion}) ממתין לאישורך`,
+      `/approvals`,
+      sheet.projectId
+    );
 
     await prisma.activity.create({
       data: {
         projectId: sheet.projectId,
         type: "status_changed",
-        title: options?.skipApprovers ? "דוח ביצוע אושר" : "דוח ביצוע נשלח לאישור",
+        title: "דוח ביצוע נשלח לאישור",
         description: `${sheet.title} · V${docVersion}`,
         userId,
         metadata: JSON.stringify({ sheetId, version: docVersion, status }),
@@ -1104,7 +2086,7 @@ export class MeasurementSheetsRepository {
       version: r.sheet.currentVersion,
       status: r.sheet.status,
       sentAt: r.sentAt.toISOString(),
-      link: `/operations/approvals/sheets/${r.sheetId}`,
+      link: `/operations/approvals/review/measurement_sheet/${r.sheetId}`,
     }));
   }
 
@@ -1175,6 +2157,9 @@ export class MeasurementSheetsRepository {
   }
 
   static async getPublicForSign(sheetId: string, tokenParam: string) {
+    const { buildMeasurementPortal } = await import(
+      "@/lib/share/client-portal-payload"
+    );
     const parsed = parseSignQuery(tokenParam);
     if (!parsed) throw new Error("קישור לא תקין");
 
@@ -1189,7 +2174,6 @@ export class MeasurementSheetsRepository {
       },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.usedAt) throw new Error("הקישור כבר נוצל");
     if (token.expiresAt && token.expiresAt < new Date()) {
       throw new Error("הקישור פג תוקף");
     }
@@ -1198,10 +2182,33 @@ export class MeasurementSheetsRepository {
     }
 
     const mapped = mapSheet(token.sheet);
+    let sentBy: string | null = null;
+    if (token.createdById) {
+      const u = await prisma.user.findUnique({
+        where: { id: token.createdById },
+        select: { name: true },
+      });
+      sentBy = u?.name ?? null;
+    }
+
+    const { buildVerificationId } = await import(
+      "@/lib/share/archive-signed-document"
+    );
+    const docNumber = `MS-${String(mapped.sequenceNumber || 0).padStart(6, "0")}`;
+    const verificationId = buildVerificationId(docNumber, token.publicId);
+    const portal = await buildMeasurementPortal(mapped, {
+      createdAt: token.createdAt,
+      expiresAt: token.expiresAt,
+      sentBy,
+      alreadySigned: Boolean(token.usedAt || token.sheet.clientSignedAt),
+    });
+
     return {
       ...mapped,
       kind: "measurement_sheet" as const,
-      alreadySigned: Boolean(token.sheet.clientSignedAt),
+      portal,
+      alreadySigned: portal.alreadySigned,
+      verificationId,
     };
   }
 
@@ -1212,7 +2219,17 @@ export class MeasurementSheetsRepository {
     signerName: string;
     ip?: string | null;
     device?: string | null;
+    saveToDocuments?: boolean;
   }) {
+    const { assertValidSignatureDataUrl } = await import(
+      "@/lib/share/validate-signature"
+    );
+    const {
+      archiveClientSignedDocument,
+      buildVerificationId,
+    } = await import("@/lib/share/archive-signed-document");
+
+    const signatureDataUrl = assertValidSignatureDataUrl(opts.signatureDataUrl);
     const parsed = parseSignQuery(opts.tokenParam);
     if (!parsed) throw new Error("קישור לא תקין");
 
@@ -1232,17 +2249,35 @@ export class MeasurementSheetsRepository {
       throw new Error("קישור לא תקין");
     }
 
+    const sheetRow = await prisma.measurementSheet.findUnique({
+      where: { id: opts.sheetId },
+      select: {
+        id: true,
+        projectId: true,
+        title: true,
+        sequenceNumber: true,
+        createdById: true,
+        updatedById: true,
+      },
+    });
+    if (!sheetRow) throw new Error("דף מדידה לא נמצא");
+
+    const signedAt = new Date();
+    const docNumber = `MS-${String(sheetRow.sequenceNumber).padStart(6, "0")}`;
+    const verificationId = buildVerificationId(docNumber, token.publicId);
+    const signedViewPath = `/sign/measurement-sheet/${opts.sheetId}/signed?t=${encodeURIComponent(opts.tokenParam)}`;
+
     await prisma.$transaction(async (tx) => {
       await tx.measurementSheetSignToken.update({
         where: { id: token.id },
-        data: { usedAt: new Date() },
+        data: { usedAt: signedAt },
       });
       await tx.measurementSheet.update({
         where: { id: opts.sheetId },
         data: {
-          clientSignatureUrl: opts.signatureDataUrl,
+          clientSignatureUrl: signatureDataUrl,
           clientSignedName: opts.signerName,
-          clientSignedAt: new Date(),
+          clientSignedAt: signedAt,
           clientSignedIp: opts.ip ?? null,
           clientSignedDevice: opts.device?.slice(0, 255) ?? null,
           status: "locked",
@@ -1250,18 +2285,72 @@ export class MeasurementSheetsRepository {
       });
     });
 
-    const sheet = await prisma.measurementSheet.findUnique({
-      where: { id: opts.sheetId },
-      select: { createdById: true },
-    });
     await this.addEvent(
       opts.sheetId,
       "client_signed",
       `נחתם ע״י לקוח: ${opts.signerName}`,
-      token.createdById || sheet?.createdById || opts.sheetId
+      token.createdById || sheetRow.createdById
     );
 
-    return this.getById(opts.sheetId);
+    await this.ensureDocument(
+      opts.sheetId,
+      sheetRow.createdById,
+      "locked"
+    );
+
+    if (opts.saveToDocuments !== false) {
+      await archiveClientSignedDocument({
+        kind: "measurement_sheet",
+        projectId: sheetRow.projectId,
+        entityId: sheetRow.id,
+        documentNumber: docNumber,
+        title: sheetRow.title,
+        userId: sheetRow.createdById,
+        signedViewPath,
+        signerName: opts.signerName,
+        signedAt,
+        ip: opts.ip,
+        device: opts.device,
+        linkPublicId: token.publicId,
+        verificationId,
+      });
+    }
+
+    const approverIds = await prisma.measurementSheetApproval
+      .findMany({
+        where: { sheetId: opts.sheetId },
+        select: { approverId: true },
+      })
+      .then((rows) => rows.map((r) => r.approverId));
+
+    const notifyIds = [
+      ...new Set(
+        [sheetRow.createdById, sheetRow.updatedById, ...approverIds].filter(
+          Boolean
+        )
+      ),
+    ];
+    if (notifyIds.length) {
+      await prisma.notification.createMany({
+        data: notifyIds.map((userId) => ({
+          userId,
+          projectId: sheetRow.projectId,
+          type: "document" as const,
+          title: "הלקוח חתם על דף מדידה",
+          message: `${sheetRow.title || docNumber} נחתם ע״י ${opts.signerName}`,
+          link: signedViewPath,
+        })),
+      });
+    }
+
+    const mapped = await this.getById(opts.sheetId);
+    return {
+      ...mapped,
+      verificationId,
+      signedViewUrl: signedViewPath,
+      signedPdfUrl: signedViewPath,
+      alreadySigned: true,
+    };
   }
 
   static async listRevisionForCreator(userId: string) {
@@ -1515,60 +2604,534 @@ export class MeasurementSheetsRepository {
   }
 
   static async getProjectTree(projectId: string) {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: {
-        id: true,
-        name: true,
-        contractor: true,
-        location: true,
-        measurementAxisType: true,
-        measurementAxisLabel: true,
-      },
+    const result = await this.getProjectTreeForOffice(projectId, null);
+    if (result.status === "not_found") return null;
+    if (result.status === "forbidden") return null;
+    return result.data;
+  }
+
+  /**
+   * Invoice workspace tree — one SQL round-trip (auth optional + tree payload).
+   * Same response shape as legacy getProjectTree.
+   */
+  static async getProjectTreeForOffice(
+    projectId: string,
+    officeUserId: string | null
+  ): Promise<
+    | { status: "ok"; data: ReturnType<typeof MeasurementSheetsRepository.getProjectTreeMapped> }
+    | { status: "not_found" }
+    | { status: "forbidden" }
+  > {
+    type TreeRow = {
+      authUserId: string | null;
+      project: unknown;
+      boqCount: number;
+      sheets: unknown;
+      invoices: unknown;
+      documents: unknown;
+      subtotal: unknown;
+      billableLineCount: number;
+      openSheetCount: number;
+    };
+
+    const rows = officeUserId
+      ? await prisma.$queryRaw<TreeRow[]>`
+          WITH auth AS (
+            SELECT u.id AS user_id
+            FROM "User" u
+            LEFT JOIN "Employee" emp ON emp."userId" = u.id
+            WHERE u.id = ${officeUserId}
+              AND u."passwordHash" IS NOT NULL
+              AND u.role IN (
+                'PROJECT_MANAGER','OPERATIONS_MANAGER','ADMIN','SYSTEM_MANAGER','admin','מנהל מערכת'
+              )
+              AND (
+                emp.id IS NULL
+                OR (emp."isDeleted" = false AND emp.status = 'active')
+              )
+          ),
+          proj AS (
+            SELECT
+              p.id, p.name, p.contractor, p.location,
+              p."measurementAxisType", p."measurementAxisLabel",
+              (SELECT user_id FROM auth LIMIT 1) AS "authUserId"
+            FROM "Project" p
+            WHERE p.id = ${projectId}
+          ),
+          boq AS (
+            SELECT COUNT(*)::int AS cnt
+            FROM "BoqItem"
+            WHERE "projectId" = ${projectId} AND "deletedAt" IS NULL
+          ),
+          sheets AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', s.id,
+                  'title', s.title,
+                  'sequenceNumber', s."sequenceNumber",
+                  'status', s.status,
+                  'currentVersion', s."currentVersion",
+                  'partialInvoiceId', s."partialInvoiceId",
+                  'updatedAt', s."updatedAt",
+                  'rowCount', (SELECT COUNT(*)::int FROM "MeasurementSheetRow" r WHERE r."sheetId" = s.id),
+                  'cellCount', (SELECT COUNT(*)::int FROM "MeasurementCell" c WHERE c."sheetId" = s.id)
+                )
+                ORDER BY s."sequenceNumber" ASC
+              ),
+              '[]'::json
+            ) AS items
+            FROM "MeasurementSheet" s
+            WHERE s."projectId" = ${projectId}
+          ),
+          docs AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', d.id,
+                  'name', d.name,
+                  'folderPath', d."folderPath",
+                  'type', d.type,
+                  'url', d.url,
+                  'partialInvoiceId', d."partialInvoiceId",
+                  'createdAt', d."createdAt"
+                )
+                ORDER BY d."createdAt" DESC
+              ),
+              '[]'::json
+            ) AS items
+            FROM (
+              SELECT id, name, "folderPath", type, url, "partialInvoiceId", "createdAt"
+              FROM "Document"
+              WHERE "projectId" = ${projectId}
+              ORDER BY "createdAt" DESC
+              LIMIT 50
+            ) d
+          ),
+          inv AS (
+            SELECT COALESCE(
+              json_agg(inv_row ORDER BY seq DESC),
+              '[]'::json
+            ) AS items
+            FROM (
+              SELECT
+                i."sequenceNumber" AS seq,
+                json_build_object(
+                  'id', i.id,
+                  'projectId', i."projectId",
+                  'invoiceNumber', i."invoiceNumber",
+                  'sequenceNumber', i."sequenceNumber",
+                  'billingMonth', i."billingMonth",
+                  'billTo', i."billTo",
+                  'contractor', i.contractor,
+                  'amount', i.amount,
+                  'subtotal', i.subtotal,
+                  'vatPercent', i."vatPercent",
+                  'vatAmount', i."vatAmount",
+                  'totalWithVat', i."totalWithVat",
+                  'status', i.status,
+                  'date', i.date,
+                  'dueDate', i."dueDate",
+                  'notes', i.notes,
+                  'url', i.url,
+                  'createdAt', i."createdAt",
+                  'project', json_build_object(
+                    'name', p.name,
+                    'contractNumber', p."contractNumber",
+                    'location', p.location,
+                    'foreman', CASE
+                      WHEN f.id IS NULL THEN NULL
+                      ELSE json_build_object(
+                        'firstName', f."firstName",
+                        'lastName', f."lastName"
+                      )
+                    END
+                  ),
+                  'items', COALESCE((
+                    SELECT json_agg(
+                      json_build_object(
+                        'id', it.id,
+                        'boqItemId', it."boqItemId",
+                        'code', it.code,
+                        'description', it.description,
+                        'unit', it.unit,
+                        'contractQuantity', it."contractQuantity",
+                        'previousQuantity', it."previousQuantity",
+                        'quantity', it.quantity,
+                        'cumulativeQuantity', it."cumulativeQuantity",
+                        'quantityPercent', it."quantityPercent",
+                        'unitPrice', it."unitPrice",
+                        'total', it.total,
+                        'cumulativeAmount', it."cumulativeAmount",
+                        'financialPercent', it."financialPercent"
+                      )
+                      ORDER BY it.id
+                    )
+                    FROM "InvoiceItem" it
+                    WHERE it."invoiceId" = i.id
+                  ), '[]'::json)
+                ) AS inv_row
+              FROM "PartialInvoice" i
+              INNER JOIN "Project" p ON p.id = i."projectId"
+              LEFT JOIN "Employee" f ON f.id = p."foremanId"
+              WHERE i."projectId" = ${projectId}
+            ) x
+          ),
+          open_sheets AS (
+            SELECT s.id, s.title
+            FROM "MeasurementSheet" s
+            WHERE s."projectId" = ${projectId}
+              AND s.status IN ('approved', 'locked')
+              AND s."partialInvoiceId" IS NULL
+          ),
+          period AS (
+            SELECT c."boqItemId" AS id, SUM(c.quantity) AS qty
+            FROM "MeasurementCell" c
+            INNER JOIN open_sheets os ON os.id = c."sheetId"
+            GROUP BY c."boqItemId"
+          ),
+          billable AS (
+            SELECT
+              COUNT(*) FILTER (
+                WHERE GREATEST(
+                  0,
+                  LEAST(
+                    COALESCE(p.qty, 0),
+                    GREATEST(0, b."contractQuantity" - b."invoicedQuantity")
+                  )
+                ) > 0
+              )::int AS line_count,
+              COALESCE(
+                SUM(
+                  GREATEST(
+                    0,
+                    LEAST(
+                      COALESCE(p.qty, 0),
+                      GREATEST(0, b."contractQuantity" - b."invoicedQuantity")
+                    )
+                  ) * b."unitPrice"
+                ),
+                0
+              ) AS subtotal
+            FROM "BoqItem" b
+            LEFT JOIN period p ON p.id = b.id
+            WHERE b."projectId" = ${projectId} AND b."deletedAt" IS NULL
+          )
+          SELECT
+            pr."authUserId",
+            json_build_object(
+              'id', pr.id,
+              'name', pr.name,
+              'contractor', pr.contractor,
+              'location', pr.location,
+              'measurementAxisType', pr."measurementAxisType",
+              'measurementAxisLabel', pr."measurementAxisLabel"
+            ) AS project,
+            (SELECT cnt FROM boq) AS "boqCount",
+            (SELECT items FROM sheets) AS sheets,
+            (SELECT items FROM inv) AS invoices,
+            (SELECT items FROM docs) AS documents,
+            (SELECT subtotal FROM billable) AS subtotal,
+            (SELECT line_count FROM billable) AS "billableLineCount",
+            (SELECT COUNT(*)::int FROM open_sheets) AS "openSheetCount"
+          FROM proj pr
+        `
+      : await prisma.$queryRaw<TreeRow[]>`
+          WITH proj AS (
+            SELECT
+              p.id, p.name, p.contractor, p.location,
+              p."measurementAxisType", p."measurementAxisLabel",
+              NULL::text AS "authUserId"
+            FROM "Project" p
+            WHERE p.id = ${projectId}
+          ),
+          boq AS (
+            SELECT COUNT(*)::int AS cnt
+            FROM "BoqItem"
+            WHERE "projectId" = ${projectId} AND "deletedAt" IS NULL
+          ),
+          sheets AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', s.id,
+                  'title', s.title,
+                  'sequenceNumber', s."sequenceNumber",
+                  'status', s.status,
+                  'currentVersion', s."currentVersion",
+                  'partialInvoiceId', s."partialInvoiceId",
+                  'updatedAt', s."updatedAt",
+                  'rowCount', (SELECT COUNT(*)::int FROM "MeasurementSheetRow" r WHERE r."sheetId" = s.id),
+                  'cellCount', (SELECT COUNT(*)::int FROM "MeasurementCell" c WHERE c."sheetId" = s.id)
+                )
+                ORDER BY s."sequenceNumber" ASC
+              ),
+              '[]'::json
+            ) AS items
+            FROM "MeasurementSheet" s
+            WHERE s."projectId" = ${projectId}
+          ),
+          docs AS (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', d.id,
+                  'name', d.name,
+                  'folderPath', d."folderPath",
+                  'type', d.type,
+                  'url', d.url,
+                  'partialInvoiceId', d."partialInvoiceId",
+                  'createdAt', d."createdAt"
+                )
+                ORDER BY d."createdAt" DESC
+              ),
+              '[]'::json
+            ) AS items
+            FROM (
+              SELECT id, name, "folderPath", type, url, "partialInvoiceId", "createdAt"
+              FROM "Document"
+              WHERE "projectId" = ${projectId}
+              ORDER BY "createdAt" DESC
+              LIMIT 50
+            ) d
+          ),
+          inv AS (
+            SELECT COALESCE(
+              json_agg(inv_row ORDER BY seq DESC),
+              '[]'::json
+            ) AS items
+            FROM (
+              SELECT
+                i."sequenceNumber" AS seq,
+                json_build_object(
+                  'id', i.id,
+                  'projectId', i."projectId",
+                  'invoiceNumber', i."invoiceNumber",
+                  'sequenceNumber', i."sequenceNumber",
+                  'billingMonth', i."billingMonth",
+                  'billTo', i."billTo",
+                  'contractor', i.contractor,
+                  'amount', i.amount,
+                  'subtotal', i.subtotal,
+                  'vatPercent', i."vatPercent",
+                  'vatAmount', i."vatAmount",
+                  'totalWithVat', i."totalWithVat",
+                  'status', i.status,
+                  'date', i.date,
+                  'dueDate', i."dueDate",
+                  'notes', i.notes,
+                  'url', i.url,
+                  'createdAt', i."createdAt",
+                  'project', json_build_object(
+                    'name', p.name,
+                    'contractNumber', p."contractNumber",
+                    'location', p.location,
+                    'foreman', CASE
+                      WHEN f.id IS NULL THEN NULL
+                      ELSE json_build_object(
+                        'firstName', f."firstName",
+                        'lastName', f."lastName"
+                      )
+                    END
+                  ),
+                  'items', COALESCE((
+                    SELECT json_agg(
+                      json_build_object(
+                        'id', it.id,
+                        'boqItemId', it."boqItemId",
+                        'code', it.code,
+                        'description', it.description,
+                        'unit', it.unit,
+                        'contractQuantity', it."contractQuantity",
+                        'previousQuantity', it."previousQuantity",
+                        'quantity', it.quantity,
+                        'cumulativeQuantity', it."cumulativeQuantity",
+                        'quantityPercent', it."quantityPercent",
+                        'unitPrice', it."unitPrice",
+                        'total', it.total,
+                        'cumulativeAmount', it."cumulativeAmount",
+                        'financialPercent', it."financialPercent"
+                      )
+                      ORDER BY it.id
+                    )
+                    FROM "InvoiceItem" it
+                    WHERE it."invoiceId" = i.id
+                  ), '[]'::json)
+                ) AS inv_row
+              FROM "PartialInvoice" i
+              INNER JOIN "Project" p ON p.id = i."projectId"
+              LEFT JOIN "Employee" f ON f.id = p."foremanId"
+              WHERE i."projectId" = ${projectId}
+            ) x
+          ),
+          open_sheets AS (
+            SELECT s.id, s.title
+            FROM "MeasurementSheet" s
+            WHERE s."projectId" = ${projectId}
+              AND s.status IN ('approved', 'locked')
+              AND s."partialInvoiceId" IS NULL
+          ),
+          period AS (
+            SELECT c."boqItemId" AS id, SUM(c.quantity) AS qty
+            FROM "MeasurementCell" c
+            INNER JOIN open_sheets os ON os.id = c."sheetId"
+            GROUP BY c."boqItemId"
+          ),
+          billable AS (
+            SELECT
+              COUNT(*) FILTER (
+                WHERE GREATEST(
+                  0,
+                  LEAST(
+                    COALESCE(p.qty, 0),
+                    GREATEST(0, b."contractQuantity" - b."invoicedQuantity")
+                  )
+                ) > 0
+              )::int AS line_count,
+              COALESCE(
+                SUM(
+                  GREATEST(
+                    0,
+                    LEAST(
+                      COALESCE(p.qty, 0),
+                      GREATEST(0, b."contractQuantity" - b."invoicedQuantity")
+                    )
+                  ) * b."unitPrice"
+                ),
+                0
+              ) AS subtotal
+            FROM "BoqItem" b
+            LEFT JOIN period p ON p.id = b.id
+            WHERE b."projectId" = ${projectId} AND b."deletedAt" IS NULL
+          )
+          SELECT
+            pr."authUserId",
+            json_build_object(
+              'id', pr.id,
+              'name', pr.name,
+              'contractor', pr.contractor,
+              'location', pr.location,
+              'measurementAxisType', pr."measurementAxisType",
+              'measurementAxisLabel', pr."measurementAxisLabel"
+            ) AS project,
+            (SELECT cnt FROM boq) AS "boqCount",
+            (SELECT items FROM sheets) AS sheets,
+            (SELECT items FROM inv) AS invoices,
+            (SELECT items FROM docs) AS documents,
+            (SELECT subtotal FROM billable) AS subtotal,
+            (SELECT line_count FROM billable) AS "billableLineCount",
+            (SELECT COUNT(*)::int FROM open_sheets) AS "openSheetCount"
+          FROM proj pr
+        `;
+
+    const row = rows[0];
+    if (!row?.project) return { status: "not_found" };
+    if (officeUserId && !row.authUserId) return { status: "forbidden" };
+
+    const data = this.getProjectTreeMapped(row);
+    return { status: "ok", data };
+  }
+
+  private static getProjectTreeMapped(row: {
+    project: unknown;
+    boqCount: number;
+    sheets: unknown;
+    invoices: unknown;
+    documents: unknown;
+    subtotal: unknown;
+    billableLineCount: number;
+    openSheetCount: number;
+  }) {
+    const project =
+      typeof row.project === "string" ? JSON.parse(row.project) : row.project;
+    const sheets = parseJsonArray(row.sheets).map((s: any) => ({
+      id: s.id,
+      title: s.title,
+      sequenceNumber: s.sequenceNumber,
+      status: s.status,
+      currentVersion: s.currentVersion,
+      partialInvoiceId: s.partialInvoiceId,
+      updatedAt: iso(s.updatedAt) ?? new Date(0).toISOString(),
+      rowCount: num(s.rowCount),
+      cellCount: num(s.cellCount),
+    }));
+    const documents = parseJsonArray(row.documents).map((d: any) => ({
+      id: d.id,
+      name: d.name,
+      folderPath: d.folderPath,
+      type: d.type,
+      url: d.url,
+      partialInvoiceId: d.partialInvoiceId,
+      createdAt: iso(d.createdAt) ?? new Date(0).toISOString(),
+    }));
+    const invoices = parseJsonArray(row.invoices).map((inv: any) => {
+      const foreman = inv.project?.foreman;
+      return {
+        id: inv.id,
+        projectId: inv.projectId,
+        projectName: inv.project?.name,
+        projectContractNumber: inv.project?.contractNumber,
+        projectLocation: inv.project?.location,
+        projectForemanName: foreman
+          ? `${foreman.firstName ?? ""} ${foreman.lastName ?? ""}`.trim()
+          : undefined,
+        invoiceNumber: inv.invoiceNumber,
+        sequenceNumber: inv.sequenceNumber ?? 0,
+        billingMonth: inv.billingMonth ?? "",
+        billTo: inv.billTo ?? undefined,
+        contractor: inv.contractor ?? undefined,
+        amount: num(inv.amount),
+        subtotal: inv.subtotal != null ? num(inv.subtotal) : null,
+        vatPercent: inv.vatPercent != null ? num(inv.vatPercent) : null,
+        vatAmount: inv.vatAmount != null ? num(inv.vatAmount) : null,
+        totalWithVat: inv.totalWithVat != null ? num(inv.totalWithVat) : null,
+        status: inv.status,
+        date: iso(inv.date) ?? new Date(0).toISOString(),
+        dueDate: iso(inv.dueDate) ?? new Date(0).toISOString(),
+        includedItems: parseJsonArray(inv.items).map((item: any) => ({
+          id: item.id,
+          boqItemId: item.boqItemId,
+          code: item.code,
+          description: item.description,
+          unit: item.unit ?? "יח'",
+          contractQuantity: num(item.contractQuantity ?? 0),
+          previousQuantity: num(item.previousQuantity ?? 0),
+          quantity: num(item.quantity),
+          cumulativeQuantity: num(item.cumulativeQuantity ?? item.quantity),
+          quantityPercent: item.quantityPercent ?? 0,
+          unitPrice: num(item.unitPrice),
+          total: num(item.total),
+          cumulativeAmount: num(item.cumulativeAmount ?? item.total),
+          financialPercent: item.financialPercent ?? 0,
+        })),
+        notes: inv.notes ?? undefined,
+        url: inv.url ?? undefined,
+        createdAt: iso(inv.createdAt) ?? new Date(0).toISOString(),
+      };
     });
-    if (!project) return null;
 
-    const [boqCount, sheets, invoices, documents] = await Promise.all([
-      prisma.boqItem.count({ where: { projectId, deletedAt: null } }),
-      this.listByProject(projectId),
-      PartialInvoicesRepository.findByProject(projectId),
-      prisma.document.findMany({
-        where: { projectId },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        select: {
-          id: true,
-          name: true,
-          folderPath: true,
-          type: true,
-          url: true,
-          partialInvoiceId: true,
-          createdAt: true,
-        },
-      }),
-    ]);
-
-    const summary = await this.getProjectSummary(projectId);
-
+    const axisType = project.measurementAxisType as MeasurementAxisType;
     return {
       project: {
-        ...project,
+        id: project.id,
+        name: project.name,
+        contractor: project.contractor,
+        location: project.location,
+        measurementAxisType: project.measurementAxisType,
+        measurementAxisLabel: project.measurementAxisLabel,
         axisLabel:
           project.measurementAxisLabel ||
-          AXIS_LABELS[project.measurementAxisType] ||
+          AXIS_LABELS[axisType] ||
           "יחידה",
       },
-      boqCount,
+      boqCount: num(row.boqCount),
       sheets,
       invoices,
-      documents: documents.map((d) => ({
-        ...d,
-        createdAt: d.createdAt.toISOString(),
-      })),
+      documents,
       summary: {
-        subtotal: summary.subtotal,
-        billableLineCount: summary.billableLines.length,
-        openSheetCount: summary.sheetIds.length,
+        subtotal: num(row.subtotal),
+        billableLineCount: num(row.billableLineCount),
+        openSheetCount: num(row.openSheetCount),
       },
     };
   }

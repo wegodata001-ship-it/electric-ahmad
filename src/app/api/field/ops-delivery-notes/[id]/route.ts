@@ -42,6 +42,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     });
     return apiSuccess(note);
   } catch (error) {
+    if (error instanceof Error) return apiError(error.message, 400);
     return handleApiError(error);
   }
 }
@@ -56,6 +57,7 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
     await OpsDeliveryNotesRepository.softDelete(id, session.userId);
     return apiSuccess({ ok: true });
   } catch (error) {
+    if (error instanceof Error) return apiError(error.message, 400);
     return handleApiError(error);
   }
 }

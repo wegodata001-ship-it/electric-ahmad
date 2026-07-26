@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PortalId } from "@/lib/portals/config";
 import { canAccessPortal, portalHomeOrLogin } from "@/lib/portals/access";
+import {
+  clearClientMeCache,
+  fetchClientMe,
+} from "@/lib/auth/client-me";
 
 export function usePortalSession(portalId: PortalId) {
   const router = useRouter();
@@ -13,8 +17,7 @@ export function usePortalSession(portalId: PortalId) {
 
   useEffect(() => {
     const meUrl = portalId === "field" ? "/api/field/auth/me" : "/api/auth/me";
-    fetch(meUrl)
-      .then((r) => r.json())
+    fetchClientMe(meUrl)
       .then((json) => {
         if (!json.success) {
           router.replace("/login");
@@ -39,6 +42,7 @@ export function usePortalSession(portalId: PortalId) {
       } else {
         await fetch("/api/auth/logout", { method: "POST" });
       }
+      clearClientMeCache();
       router.replace("/login");
       router.refresh();
     } finally {

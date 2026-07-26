@@ -31,7 +31,7 @@ export async function PATCH(request: NextRequest) {
     if (body.all) {
       await NotificationsRepository.markAllAsRead(userId);
     } else if (body.id) {
-      await NotificationsRepository.markAsRead(body.id);
+      await NotificationsRepository.markAsRead(String(body.id), userId);
     }
 
     return apiSuccess({ ok: true });

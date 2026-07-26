@@ -1,0 +1,97 @@
+{
+  "measuredAt": "2026-07-26T14:07:11.927Z",
+  "base": "http://localhost:3010",
+  "projectId": "cms034ch70002kz04wu99jp4h",
+  "note": "App-level HTTP metrics only. CPU/Memory/DB connections require host metrics (Vercel/Supabase dashboards) — see report notes.",
+  "levels": [
+    {
+      "vus": 10,
+      "durationMs": 20000,
+      "wallMs": 22234,
+      "requests": 184,
+      "errors": 0,
+      "errorRate": 0,
+      "avgMs": 1151,
+      "p50": 873,
+      "p95": 2265,
+      "p99": 3362,
+      "minMs": 493,
+      "maxMs": 3438,
+      "rps": 8.28
+    },
+    {
+      "vus": 25,
+      "durationMs": 20000,
+      "wallMs": 22149,
+      "requests": 396,
+      "errors": 0,
+      "errorRate": 0,
+      "avgMs": 1311,
+      "p50": 1003,
+      "p95": 2481,
+      "p99": 3037,
+      "minMs": 473,
+      "maxMs": 3422,
+      "rps": 17.88
+    },
+    {
+      "vus": 50,
+      "durationMs": 20000,
+      "wallMs": 22904,
+      "requests": 486,
+      "errors": 0,
+      "errorRate": 0,
+      "avgMs": 2199,
+      "p50": 1662,
+      "p95": 3993,
+      "p99": 4280,
+      "minMs": 894,
+      "maxMs": 4550,
+      "rps": 21.22
+    },
+    {
+      "vus": 100,
+      "durationMs": 20000,
+      "wallMs": 24998,
+      "requests": 535,
+      "errors": 0,
+      "errorRate": 0,
+      "avgMs": 4195,
+      "p50": 3383,
+      "p95": 7339,
+      "p99": 7732,
+      "minMs": 1339,
+      "maxMs": 7984,
+      "rps": 21.4
+    },
+    {
+      "vus": 200,
+      "durationMs": 20000,
+      "wallMs": 30079,
+      "requests": 560,
+      "errors": 0,
+      "errorRate": 0,
+      "avgMs": 8856,
+      "p50": 7348,
+      "p95": 15135,
+      "p99": 16358,
+      "minMs": 2758,
+      "maxMs": 17307,
+      "rps": 18.62
+    }
+  ],
+  "bottlenecks": [
+    {
+      "vus": 50,
+      "reason": "p95 3993ms"
+    },
+    {
+      "vus": 100,
+      "reason": "p95 7339ms"
+    },
+    {
+      "vus": 200,
+      "reason": "p95 15135ms"
+    }
+  ]
+}

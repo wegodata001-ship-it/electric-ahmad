@@ -1,10 +1,10 @@
-import { ProjectDocumentsHubPage } from "@/features/projects/components/project-documents-hub-page";
+import { DocumentsHubV2Page } from "@/features/documents/components/documents-hub-v2-page";
 
-interface PageProps {
+export default async function ProjectDocumentsPage({
+  params,
+}: {
   params: Promise<{ id: string }>;
-}
-
-export default async function Page({ params }: PageProps) {
+}) {
   const { id } = await params;
-  return <ProjectDocumentsHubPage projectId={id} />;
+  return <DocumentsHubV2Page projectId={id} />;
 }

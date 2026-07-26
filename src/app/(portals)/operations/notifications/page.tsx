@@ -1,5 +1,5 @@
-import { NotificationCenterPage } from "@/features/platform/components";
+import { OpsNotifications } from "@/apps/operations/ops-notifications";
 
 export default function Page() {
-  return <NotificationCenterPage />;
+  return <OpsNotifications />;
 }

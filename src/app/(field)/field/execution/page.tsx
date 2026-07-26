@@ -1,5 +1,5 @@
-import { FieldExecutionPage } from "@/features/platform/components/field-execution-page";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <FieldExecutionPage />;
+  redirect("/field");
 }

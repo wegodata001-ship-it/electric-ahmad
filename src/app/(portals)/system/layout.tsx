@@ -1,9 +1,10 @@
-import { SystemAppShell } from "@/apps/system/system-app-shell";
+import { PortalShell } from "@/components/portal";
 
+/** System Manager — full ERP control center (original light shell + nav) */
 export default function SystemPortalLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <SystemAppShell>{children}</SystemAppShell>;
+  return <PortalShell portalId="system">{children}</PortalShell>;
 }

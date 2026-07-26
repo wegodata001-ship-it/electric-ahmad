@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CheckCircle2,
+  FileSpreadsheet,
+  FileText,
   GripVertical,
   Maximize2,
   Minimize2,
@@ -23,10 +25,16 @@ import { formatNumber } from "@/utils/format";
 import { invoicesWorkspaceService } from "@/features/partial-invoices/services/invoices-workspace.service";
 import { invoiceService } from "@/features/partial-invoices/services/invoice.service";
 import { SendInvoiceApprovalModal } from "@/features/partial-invoices/components/send-invoice-approval-modal";
+import { RevisionFeedbackBanner } from "@/features/approvals/components/revision-feedback-banner";
 import { approvalsService } from "@/features/work-diaries/services/work-diaries.service";
 import { boqService } from "@/features/boq/services/boq.service";
 import { ProjectRoomsToolbar } from "@/features/projects/components/project-rooms-toolbar";
+import {
+  buildMeasurementSheetExcel,
+  downloadBlob,
+} from "@/lib/measurement/export-excel";
 import type { BoqItem } from "@/types";
+import { cn } from "@/lib/utils";
 
 type DraftMap = Record<string, string>;
 
@@ -76,6 +84,10 @@ export function ProjectPerformancePage({
   const [opsDeciding, setOpsDeciding] = useState(false);
   const [ensuringGrid, setEnsuringGrid] = useState(false);
   const [gridEnsuredFor, setGridEnsuredFor] = useState<string | null>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [versionPreview, setVersionPreview] = useState<any | null>(null);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveAllRef = useRef<() => Promise<boolean>>(async () => false);
 
   const locked = sheet ? sheet.editable === false : false;
   const isRevision = sheet?.status === "revision";
@@ -104,18 +116,6 @@ export function ProjectPerformancePage({
     invoiced: { label: "הופק לחשבון", className: "bg-violet-50 text-violet-800" },
   };
 
-  async function loadSheets() {
-    const r = await invoicesWorkspaceService.listSheets(projectId);
-    setSheets(r.items);
-    const fromUrl = searchParams.get("sheetId");
-    if (fromUrl && r.items.some((s: any) => s.id === fromUrl)) {
-      setSheetId(fromUrl);
-    } else if (!sheetId && r.items[0]) {
-      setSheetId(r.items[0].id);
-    }
-    return r.items;
-  }
-
   function applySheet(s: any) {
     setSheet(s);
     const next: DraftMap = {};
@@ -126,24 +126,101 @@ export function ProjectPerformancePage({
     setSaved(next);
   }
 
+  /** BOQ columns from sheet cells — avoids duplicate /api/boq when grid already has items. */
+  function boqFromSheetCells(s: any): BoqItem[] {
+    const map = new Map<string, BoqItem>();
+    for (const c of s?.cells ?? []) {
+      if (c?.boqItem?.id) map.set(c.boqItem.id, c.boqItem as BoqItem);
+    }
+    return [...map.values()];
+  }
+
+  async function resolveBoqForSheet(s: any): Promise<BoqItem[]> {
+    const fromCells = boqFromSheetCells(s);
+    if (fromCells.length) return fromCells;
+    return boqService.getByProject(projectId);
+  }
+
+  const suppressSheetFetch = useRef(false);
+
+  /** Bootstrap: listSheets + sheet (when id known). BOQ only if cells lack items. */
   useEffect(() => {
-    Promise.all([loadSheets(), boqService.getByProject(projectId)])
-      .then(([, items]) => setBoq(items))
-      .catch((e) => toast.error(e.message))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    setLoading(true);
+    setSheet(null);
+    setSheetId(null);
+    suppressSheetFetch.current = true;
+    (async () => {
+      try {
+        const urlSheetId = searchParams.get("sheetId");
+        const [sheetsRes, earlySheet] = await Promise.all([
+          invoicesWorkspaceService.listSheets(projectId),
+          urlSheetId
+            ? invoicesWorkspaceService.getSheet(urlSheetId).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        setSheets(sheetsRes.items);
+        const fromUrl =
+          urlSheetId &&
+          sheetsRes.items.some((s: { id: string }) => s.id === urlSheetId)
+            ? urlSheetId
+            : null;
+        const id = fromUrl || sheetsRes.items[0]?.id || null;
+        if (earlySheet && (earlySheet as { id?: string }).id === id) {
+          applySheet(earlySheet);
+          setSheetId(id);
+          const items = await resolveBoqForSheet(earlySheet);
+          if (!cancelled) setBoq(items);
+        } else if (id) {
+          const s = await invoicesWorkspaceService.getSheet(id);
+          if (cancelled) return;
+          applySheet(s);
+          setSheetId(id);
+          const items = await resolveBoqForSheet(s);
+          if (!cancelled) setBoq(items);
+        } else {
+          setSheet(null);
+          setSheetId(null);
+          setBoq([]);
+        }
+      } catch (e: any) {
+        if (!cancelled) toast.error(e.message);
+      } finally {
+        suppressSheetFetch.current = false;
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  /** User switched sheet in the UI — reload only when id differs from loaded sheet. */
   useEffect(() => {
+    if (suppressSheetFetch.current) return;
     if (!sheetId) {
       setSheet(null);
       return;
     }
+    if (sheet?.id === sheetId) return;
+    let cancelled = false;
     invoicesWorkspaceService
       .getSheet(sheetId)
-      .then(applySheet)
-      .catch((e) => toast.error(e.message));
-  }, [sheetId, toast]);
+      .then(async (s) => {
+        if (cancelled) return;
+        applySheet(s);
+        const items = await resolveBoqForSheet(s);
+        if (!cancelled) setBoq(items);
+      })
+      .catch((e) => {
+        if (!cancelled) toast.error(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sheetId, sheet?.id, toast]);
 
   /** If sheet has rooms but no BOQ columns — build the fillable grid automatically. */
   useEffect(() => {
@@ -156,11 +233,12 @@ export function ProjectPerformancePage({
       return;
     }
     setEnsuringGrid(true);
-    invoicesWorkspaceService
-      .ensureGrid(sheetId, true)
-      .then(async (s) => {
+    Promise.all([
+      invoicesWorkspaceService.ensureGrid(sheetId, true),
+      boqService.getByProject(projectId),
+    ])
+      .then(([s, items]) => {
         applySheet(s);
-        const items = await boqService.getByProject(projectId);
         setBoq(items);
         setGridEnsuredFor(sheetId);
         toast.success("טבלת המדידה מוכנה להזנה");
@@ -197,9 +275,12 @@ export function ProjectPerformancePage({
     if (!sheetId || locked) return;
     setEnsuringGrid(true);
     try {
-      const s = await invoicesWorkspaceService.ensureGrid(sheetId, true);
+      const [s, items] = await Promise.all([
+        invoicesWorkspaceService.ensureGrid(sheetId, true),
+        boqService.getByProject(projectId),
+      ]);
       applySheet(s);
-      setBoq(await boqService.getByProject(projectId));
+      setBoq(items);
       setGridEnsuredFor(sheetId);
       toast.success("טבלת המדידה מוכנה להזנה");
     } catch (e: any) {
@@ -235,7 +316,15 @@ export function ProjectPerformancePage({
     }, 0);
   }
 
-  async function saveAll(): Promise<boolean> {
+  /** יתרה = מאושר − חויב − בוצע בדף זה */
+  function sectionRemaining(item: any) {
+    const contract = Number(item.contractQuantity) || 0;
+    const invoiced = Number(item.invoicedQuantity) || 0;
+    const done = sectionTotal(item.id);
+    return Math.max(0, contract - invoiced - done);
+  }
+
+  async function saveAll(opts?: { silent?: boolean }): Promise<boolean> {
     if (!sheetId || locked) return false;
     const cells: { rowId: string; boqItemId: string; quantity: number }[] = [];
     const keys = new Set([...Object.keys(draft), ...Object.keys(saved)]);
@@ -248,22 +337,20 @@ export function ProjectPerformancePage({
       cells.push({ rowId, boqItemId, quantity });
     }
     if (!cells.length) {
-      toast.success("אין שינויים לשמירה");
+      if (!opts?.silent) toast.success("אין שינויים לשמירה");
       return true;
     }
     setSaving(true);
     try {
-      const result = await invoicesWorkspaceService.saveCells(sheetId, cells);
-      if (result.sheet) applySheet(result.sheet);
-      else {
-        const next = { ...draft };
-        for (const c of cells) {
-          next[cellKey(c.rowId, c.boqItemId)] = String(c.quantity);
-        }
-        setDraft(next);
-        setSaved(next);
+      await invoicesWorkspaceService.saveCells(sheetId, cells);
+      // Fast path: keep local draft as source of truth (no full sheet reload)
+      const next = { ...draft };
+      for (const c of cells) {
+        next[cellKey(c.rowId, c.boqItemId)] = String(c.quantity);
       }
-      toast.success("הנתונים נשמרו");
+      setDraft(next);
+      setSaved({ ...next });
+      if (!opts?.silent) toast.success("נשמר");
       return true;
     } catch (e: any) {
       toast.error(e.message);
@@ -271,6 +358,81 @@ export function ProjectPerformancePage({
     } finally {
       setSaving(false);
     }
+  }
+
+  saveAllRef.current = () => saveAll({ silent: true });
+
+  /** Autosave dirty cells in the background (debounced) */
+  useEffect(() => {
+    if (locked || !dirty || !sheetId) return;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      void saveAllRef.current();
+    }, 2500);
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
+  }, [draft, dirty, locked, sheetId]);
+
+  async function exportExcel() {
+    if (!sheet || !sections.length) {
+      toast.error("אין נתונים לייצוא");
+      return;
+    }
+    setExportingExcel(true);
+    try {
+      const columns = sections.map((item: any) => {
+        const done = sectionTotal(item.id);
+        const remaining = sectionRemaining(item);
+        return {
+          id: item.id,
+          code: String(item.code ?? ""),
+          description: String(item.description ?? ""),
+          unit: item.unit,
+          contractQuantity: Number(item.contractQuantity) || 0,
+          invoicedQuantity: Number(item.invoicedQuantity) || 0,
+          doneQuantity: done,
+          remainingQuantity: remaining,
+        };
+      });
+      const rows = rooms.map((room: any) => {
+        const quantities: Record<string, number> = {};
+        for (const item of sections) {
+          quantities[item.id] =
+            Number(draft[cellKey(room.id, item.id)]) || 0;
+        }
+        return {
+          name: room.name,
+          floor: room.floor,
+          quantities,
+          roomTotal: roomTotal(room.id),
+        };
+      });
+      const blob = await buildMeasurementSheetExcel({
+        title: sheet.title || `דף מדידה MS-${sheet.sequenceNumber}`,
+        projectName: sheet.project?.name,
+        clientName: sheet.project?.contractor,
+        address: sheet.project?.location,
+        version: sheet.currentVersion,
+        statusLabel: STATUS_UI[sheet.status]?.label || sheet.status,
+        columns,
+        rows,
+      });
+      const safeName = (sheet.title || `MS-${sheet.sequenceNumber}`)
+        .replace(/[\\/:*?"<>|]/g, "-")
+        .slice(0, 80);
+      downloadBlob(blob, `${safeName}-V${sheet.currentVersion || 1}.xlsx`);
+      toast.success("הקובץ הורד");
+    } catch (e: any) {
+      toast.error(e?.message || "שגיאה בייצוא Excel");
+    } finally {
+      setExportingExcel(false);
+    }
+  }
+
+  function openPdf() {
+    if (!sheetId) return;
+    window.open(`/print/measurement-sheets/${sheetId}`, "_blank");
   }
 
   async function refreshSheetLocal() {
@@ -336,8 +498,16 @@ export function ProjectPerformancePage({
     setSubmitApproverOpen(true);
     setSelectedApproverIds([]);
     try {
-      setApprovers(
-        await invoiceService.listApprovers({ includeFieldManagers: true })
+      const list = await invoiceService.listApprovers({
+        includeFieldManagers: true,
+      });
+      setApprovers(list);
+      // Default: Operations Manager (so opsmgr can actually approve)
+      const opsIds = list
+        .filter((a: any) => a.role === "OPERATIONS_MANAGER")
+        .map((a: any) => a.id);
+      setSelectedApproverIds(
+        opsIds.length ? opsIds : list[0]?.id ? [list[0].id] : []
       );
     } catch (e: any) {
       toast.error(e.message);
@@ -511,7 +681,7 @@ export function ProjectPerformancePage({
         <div className="ms-auto flex flex-wrap gap-2">
           {dirty && !locked && (
             <span className="self-center text-xs font-medium text-amber-700">
-              יש שינויים שלא נשמרו
+              {saving ? "שומר ברקע…" : "יש שינויים — יישמר אוטומטית"}
             </span>
           )}
           <Button
@@ -530,6 +700,24 @@ export function ProjectPerformancePage({
                 מסך מלא
               </>
             )}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!sheetId}
+            onClick={() => openPdf()}
+          >
+            <FileText className="h-4 w-4" />
+            יצוא PDF
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!sheetId || exportingExcel || !sections.length}
+            onClick={() => void exportExcel()}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {exportingExcel ? "מייצא…" : "יצוא Excel"}
           </Button>
           {sheet && (
             <span
@@ -606,13 +794,16 @@ export function ProjectPerformancePage({
       )}
 
       {isRevision && (
-        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
-          <p className="font-bold">דורש תיקון</p>
-          {sheet?.lastReturnComment && (
-            <p className="mt-1 whitespace-pre-wrap">{sheet.lastReturnComment}</p>
-          )}
+        <div className="space-y-2">
+          <RevisionFeedbackBanner
+            comment={
+              sheet?.lastReturnComment ||
+              sheet?.rejectionComment ||
+              "הוחזר לתיקון"
+            }
+          />
           {!!activeReviewNotes.length && (
-            <ul className="mt-2 list-disc space-y-1 pr-5 text-xs">
+            <ul className="list-disc space-y-1 rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-2 pr-8 text-xs text-orange-900">
               {activeReviewNotes.map((n: any) => (
                 <li key={n.id}>
                   {n.comment}
@@ -621,9 +812,41 @@ export function ProjectPerformancePage({
               ))}
             </ul>
           )}
-          <p className="mt-2 text-xs text-orange-700">
+          <p className="text-xs text-orange-700">
             תקנו את המבוקש ולחצו שוב «שלח לאישור»
           </p>
+        </div>
+      )}
+
+      {sheet && !fullscreen && (
+        <div className="grid gap-2 rounded-2xl border border-gray-200 bg-white p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <InfoMeta label="פרויקט" value={sheet.project?.name} />
+          <InfoMeta label="לקוח" value={sheet.project?.contractor} />
+          <InfoMeta label="כתובת" value={sheet.project?.location} />
+          <InfoMeta
+            label="יוצר"
+            value={sheet.createdBy?.name || sheet.createdByName}
+          />
+          <InfoMeta
+            label="תאריך"
+            value={
+              sheet.createdAt
+                ? new Date(sheet.createdAt).toLocaleDateString("he-IL")
+                : null
+            }
+          />
+          <InfoMeta
+            label="סטטוס"
+            value={STATUS_UI[sheet.status]?.label || sheet.status}
+          />
+          <InfoMeta
+            label="גרסה"
+            value={sheet.currentVersion ? `V${sheet.currentVersion}` : "V1"}
+          />
+          <InfoMeta
+            label="מספר"
+            value={sheet.documentNumber || `MS-${sheet.sequenceNumber}`}
+          />
         </div>
       )}
 
@@ -632,16 +855,28 @@ export function ProjectPerformancePage({
           <summary className="cursor-pointer font-semibold text-gray-700">
             היסטוריית גרסאות ({sheet.versions.length})
           </summary>
-          <ul className="mt-2 space-y-1 border-t border-gray-100 pt-2 text-xs text-gray-600">
+          <ul className="mt-2 space-y-2 border-t border-gray-100 pt-2">
             {[...sheet.versions]
               .sort((a: any, b: any) => b.version - a.version)
               .map((v: any) => (
-                <li key={v.id}>
-                  V{v.version}
-                  {v.note ? ` — ${v.note}` : ""}
-                  {v.createdAt
-                    ? ` · ${new Date(v.createdAt).toLocaleString("he-IL")}`
-                    : ""}
+                <li
+                  key={v.id}
+                  className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-600"
+                >
+                  <span>
+                    <span className="font-bold text-gray-900">V{v.version}</span>
+                    {v.note ? ` — ${v.note}` : ""}
+                    {v.createdAt
+                      ? ` · ${new Date(v.createdAt).toLocaleString("he-IL")}`
+                      : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="font-bold text-primary-700"
+                    onClick={() => setVersionPreview(v)}
+                  >
+                    פתח גרסה
+                  </button>
                 </li>
               ))}
           </ul>
@@ -668,40 +903,107 @@ export function ProjectPerformancePage({
         </div>
       )}
 
-      {sheet && !!sections.length && (
+      {sheet && !!sections.length && !rooms.length && (
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center">
+          <p className="text-4xl" aria-hidden>
+            📐
+          </p>
+          <p className="mt-3 text-lg font-bold text-gray-900">
+            דף המדידה עדיין ריק
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            הוסיפו חדרים והתחילו להזין כמויות
+          </p>
+          {!locked && (
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <ProjectRoomsToolbar
+                projectId={projectId}
+                disabled={!sheetId}
+                onChanged={onRoomsChanged}
+              />
+              <Button onClick={() => void ensureFillableGrid()}>
+                <Plus className="h-4 w-4" />
+                התחל להזין מדידות
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {sheet && !!sections.length && !!rooms.length && (
         <div
           className={
             fullscreen
               ? "min-h-0 flex-1 overflow-auto rounded-xl border border-gray-200 bg-white"
               : "max-h-[70vh] overflow-auto rounded-2xl border border-gray-200 bg-white"
           }
+          style={{ contentVisibility: "auto" }}
         >
           <table className="min-w-full border-collapse text-sm">
             <thead className="sticky top-0 z-20 bg-gray-50">
               <tr>
-                <th className="sticky right-0 z-30 border-b border-l border-gray-200 bg-gray-50 px-3 py-3 text-right font-semibold text-gray-700 whitespace-nowrap min-w-[140px]">
+                <th
+                  rowSpan={2}
+                  className="sticky right-0 z-30 border-b border-l border-gray-200 bg-gray-50 px-3 py-3 text-right font-semibold text-gray-700 whitespace-nowrap min-w-[150px]"
+                >
                   חדר / יחידה
                 </th>
                 {sections.map((item: any) => (
                   <th
                     key={item.id}
-                    className="border-b border-gray-200 px-2 py-2 text-center font-semibold text-gray-600 min-w-[100px] max-w-[140px] align-bottom"
+                    className="border-b border-gray-200 px-2 py-2 text-center font-semibold text-gray-700 min-w-[120px] max-w-[160px] align-bottom"
                   >
-                    <p className="font-mono text-[10px] text-gray-400">
+                    <p className="font-mono text-xs font-bold text-gray-500">
                       {item.code}
                     </p>
-                    <p className="line-clamp-2 text-xs leading-tight">
+                    <p className="mt-0.5 line-clamp-2 text-xs leading-tight text-gray-800">
                       {item.description}
-                    </p>
-                    <p className="mt-0.5 text-[10px] font-normal text-gray-400">
-                      {formatNumber(Number(item.contractQuantity) || 0)}{" "}
-                      {item.unit}
                     </p>
                   </th>
                 ))}
-                <th className="border-b border-gray-200 bg-primary-50 px-3 py-3 text-center font-semibold text-gray-700 whitespace-nowrap">
+                <th
+                  rowSpan={2}
+                  className="border-b border-gray-200 bg-primary-50 px-3 py-3 text-center font-semibold text-gray-700 whitespace-nowrap"
+                >
                   סה״כ חדר
                 </th>
+              </tr>
+              <tr>
+                {sections.map((item: any) => {
+                  const done = sectionTotal(item.id);
+                  const remain = sectionRemaining(item);
+                  const contract = Number(item.contractQuantity) || 0;
+                  return (
+                    <th
+                      key={`meta-${item.id}`}
+                      className="border-b border-gray-200 bg-gray-50/80 px-1 py-1.5 text-center align-top"
+                    >
+                      <div className="space-y-0.5 text-[10px] leading-tight">
+                        <p className="text-gray-500">
+                          מאושר{" "}
+                          <span className="font-bold text-gray-800">
+                            {formatNumber(contract)}
+                          </span>
+                          {item.unit ? ` ${item.unit}` : ""}
+                        </p>
+                        <p className="text-gray-500">
+                          בוצע{" "}
+                          <span className="font-bold text-primary-700">
+                            {formatNumber(done)}
+                          </span>
+                        </p>
+                        <p
+                          className={cn(
+                            "font-bold",
+                            remain > 0 ? "text-red-600" : "text-emerald-600"
+                          )}
+                        >
+                          יתרה {formatNumber(remain)}
+                        </p>
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -723,7 +1025,28 @@ export function ProjectPerformancePage({
                       {!locked && room.projectRoomId && (
                         <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-gray-300" />
                       )}
-                      {room.name}
+                      {!locked && room.projectRoomId ? (
+                        <input
+                          className="min-w-[7rem] rounded-lg border border-transparent bg-transparent px-1 py-0.5 font-semibold text-gray-900 hover:border-gray-200 focus:border-primary-400 focus:outline-none"
+                          defaultValue={room.name}
+                          onBlur={(e) => {
+                            const name = e.target.value.trim();
+                            if (!name || name === room.name) return;
+                            void invoicesWorkspaceService
+                              .updateRoom(projectId, room.projectRoomId, {
+                                name,
+                              })
+                              .then(() => onRoomsChanged())
+                              .catch((err: any) =>
+                                toast.error(
+                                  err?.message || "לא ניתן לעדכן שם חדר"
+                                )
+                              );
+                          }}
+                        />
+                      ) : (
+                        room.name
+                      )}
                       {room.floor ? (
                         <span className="text-[10px] font-normal text-gray-400">
                           · קומה {room.floor}
@@ -768,22 +1091,48 @@ export function ProjectPerformancePage({
             <tfoot className="sticky bottom-0 bg-gray-50">
               <tr>
                 <td className="sticky right-0 z-10 border-t border-l border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-gray-700">
-                  סה״כ סעיף
+                  סה״כ שבוצע
                 </td>
                 {sections.map((item: any) => {
                   const total = sectionTotal(item.id);
-                  const contract = Number(item.contractQuantity) || 0;
-                  const remain = Math.max(0, contract - total);
                   return (
                     <td
-                      key={item.id}
+                      key={`tot-${item.id}`}
                       className="border-t border-gray-200 px-1 py-2 text-center"
                     >
                       <p className="font-bold text-primary-700">
                         {formatNumber(total)}
                       </p>
-                      <p className="text-[10px] text-gray-400">
-                        יתרה {formatNumber(remain)}
+                    </td>
+                  );
+                })}
+                <td className="border-t border-gray-200 bg-primary-50 px-3 py-2 text-center font-bold text-primary-700">
+                  {formatNumber(
+                    rooms.reduce(
+                      (s: number, u: any) => s + roomTotal(u.id),
+                      0
+                    )
+                  )}
+                </td>
+              </tr>
+              <tr>
+                <td className="sticky right-0 z-10 border-t border-l border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-gray-700">
+                  יתרה
+                </td>
+                {sections.map((item: any) => {
+                  const remain = sectionRemaining(item);
+                  return (
+                    <td
+                      key={`rem-${item.id}`}
+                      className="border-t border-gray-200 px-1 py-2 text-center"
+                    >
+                      <p
+                        className={cn(
+                          "text-sm font-bold",
+                          remain > 0 ? "text-red-600" : "text-emerald-600"
+                        )}
+                      >
+                        {formatNumber(remain)}
                       </p>
                     </td>
                   );
@@ -829,11 +1178,23 @@ export function ProjectPerformancePage({
       )}
 
       {!sheets.length ? (
-        <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center">
-          <p className="mb-4 text-gray-600">עדיין אין דף מדידה לפרויקט</p>
-          <Button onClick={() => void createSheet()} disabled={creating}>
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center">
+          <p className="text-4xl" aria-hidden>
+            📐
+          </p>
+          <p className="mt-3 text-lg font-bold text-gray-900">
+            דף המדידה עדיין ריק
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            צרו דף מדידה והתחילו להזין כמויות לפי חדרים וסעיפים
+          </p>
+          <Button
+            className="mt-5"
+            onClick={() => void createSheet()}
+            disabled={creating}
+          >
             <Plus className="h-4 w-4" />
-            {creating ? "יוצר…" : "צור דף מדידה ראשון"}
+            {creating ? "יוצר…" : "התחל להזין מדידות"}
           </Button>
         </div>
       ) : fullscreen ? (
@@ -1096,6 +1457,66 @@ export function ProjectPerformancePage({
         loadingLabel="שומר…"
         variant="primary"
       />
+
+      <Modal
+        open={!!versionPreview}
+        onClose={() => setVersionPreview(null)}
+        title={
+          versionPreview
+            ? `גרסה V${versionPreview.version}`
+            : "גרסה"
+        }
+      >
+        {versionPreview && (
+          <div className="space-y-3 text-sm">
+            <p className="text-gray-600">
+              {versionPreview.note || "ללא הערה"}
+            </p>
+            <p className="text-xs text-gray-400">
+              {versionPreview.createdAt
+                ? new Date(versionPreview.createdAt).toLocaleString("he-IL")
+                : ""}
+              {versionPreview.status
+                ? ` · ${STATUS_UI[versionPreview.status]?.label || versionPreview.status}`
+                : ""}
+            </p>
+            <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              הצפייה בגרסה קודמת פותחת את דף ההדפסה של המסמך הנוכחי. עריכת
+              גרסאות קודמות אינה זמינה — ניתן לייצא PDF מהמצב הנוכחי.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  openPdf();
+                  setVersionPreview(null);
+                }}
+              >
+                <FileText className="h-4 w-4" />
+                פתח PDF
+              </Button>
+              <Button variant="outline" onClick={() => setVersionPreview(null)}>
+                סגור
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
+  );
+}
+
+function InfoMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | null;
+}) {
+  return (
+    <p>
+      <span className="text-gray-400">{label}: </span>
+      <span className="font-semibold text-gray-900">{value || "—"}</span>
+    </p>
   );
 }

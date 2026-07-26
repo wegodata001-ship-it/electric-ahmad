@@ -1,5 +1,5 @@
-import { OpsWorkers } from "@/apps/operations/ops-workers";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <OpsWorkers />;
+  redirect("/operations");
 }

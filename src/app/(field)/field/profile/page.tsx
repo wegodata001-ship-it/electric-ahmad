@@ -1,5 +1,5 @@
-import { FieldProfilePage } from "@/features/field/components/field-profile-page";
+import { FieldProfile } from "@/apps/field/field-profile";
 
 export default function Page() {
-  return <FieldProfilePage />;
+  return <FieldProfile />;
 }

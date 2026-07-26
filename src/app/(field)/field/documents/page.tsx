@@ -1,5 +1,5 @@
-import { FieldDocumentsPage } from "@/features/platform/components/field-documents-page";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <FieldDocumentsPage />;
+  redirect("/field");
 }

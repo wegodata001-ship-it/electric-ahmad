@@ -1,32 +1,54 @@
 import { NextRequest } from "next/server";
-import { requireOfficeUser } from "@/lib/auth/office-session";
+import {
+  OfficeAuthError,
+  readOfficeSessionPayload,
+} from "@/lib/auth/office-session";
 import { MeasurementSheetsRepository } from "@/repositories/measurement-sheets.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+/**
+ * Auth: HMAC cookie (0 DB) + office gate fused into cell-save SQL (1 RTT).
+ * Response shapes unchanged: { saved } | { id, rowId, boqItemId, quantity }.
+ */
 export async function PUT(req: NextRequest, ctx: Ctx) {
   try {
-    const session = await requireOfficeUser();
+    const payload = await readOfficeSessionPayload();
+    if (!payload) {
+      throw new OfficeAuthError("נדרשת התחברות למערכת", 401);
+    }
+
     const { id } = await ctx.params;
     const body = await req.json();
 
     // Batch save: { cells: [{ rowId, boqItemId, quantity }, ...] }
     if (Array.isArray(body.cells)) {
-      const result = await MeasurementSheetsRepository.setCellsBatch(
+      const result = await MeasurementSheetsRepository.setCellsBatchForOffice(
         id,
-        body.cells.map((c: { rowId: string; boqItemId: string; quantity: number }) => ({
-          rowId: String(c.rowId),
-          boqItemId: String(c.boqItemId),
-          quantity: Number(c.quantity),
-        })),
-        session.userId
+        body.cells.map(
+          (c: { rowId: string; boqItemId: string; quantity: number }) => ({
+            rowId: String(c.rowId),
+            boqItemId: String(c.boqItemId),
+            quantity: Number(c.quantity),
+          })
+        ),
+        payload.userId
       );
-      return apiSuccess(result);
+      if (result.status === "forbidden") {
+        throw new OfficeAuthError("אין הרשאת מנהל פרויקט", 403);
+      }
+      if (result.status === "not_found") {
+        return apiError("דף מדידה לא נמצא", 404);
+      }
+      if (result.status === "locked") {
+        return apiError("הדף נעול לעריכה", 400);
+      }
+      return apiSuccess({ saved: result.saved });
     }
 
     if (!body.rowId || !body.boqItemId) return apiError("חסרים פרטי תא");
-    const cell = await MeasurementSheetsRepository.setCellQuantity(
+    const result = await MeasurementSheetsRepository.setCellQuantityForOffice(
       id,
       {
         rowId: String(body.rowId),
@@ -34,10 +56,22 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         quantity: Number(body.quantity),
         note: body.note,
       },
-      session.userId
+      payload.userId
     );
-    return apiSuccess(cell);
+    if (result.status === "forbidden") {
+      throw new OfficeAuthError("אין הרשאת מנהל פרויקט", 403);
+    }
+    if (result.status === "not_found") {
+      return apiError("דף מדידה לא נמצא", 404);
+    }
+    if (result.status === "locked") {
+      return apiError("הדף נעול לעריכה", 400);
+    }
+    return apiSuccess(result.cell);
   } catch (error) {
+    if (error instanceof OfficeAuthError) {
+      return apiError(error.message, error.status);
+    }
     return handleApiError(error);
   }
 }

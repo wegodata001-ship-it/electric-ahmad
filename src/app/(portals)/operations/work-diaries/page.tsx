@@ -1,5 +1,5 @@
-import { DocumentsArchivePage } from "@/features/work-diaries/components/documents-archive-page";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <DocumentsArchivePage />;
+  redirect("/operations/approvals");
 }

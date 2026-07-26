@@ -231,8 +231,16 @@ export class NotificationsRepository {
     }));
   }
 
-  static async markAsRead(id: string) {
-    await prisma.notification.update({ where: { id }, data: { read: true } });
+  /**
+   * Mark a single notification as read for the specified user.
+   * Scoped by (id, userId) so callers cannot flip notifications belonging
+   * to other users.
+   */
+  static async markAsRead(id: string, userId: string) {
+    await prisma.notification.updateMany({
+      where: { id, userId },
+      data: { read: true },
+    });
   }
 
   static async markAllAsRead(userId: string) {

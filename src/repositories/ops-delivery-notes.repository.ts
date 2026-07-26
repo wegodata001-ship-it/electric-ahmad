@@ -10,6 +10,10 @@ import {
   buildSignUrl,
   parseSignQuery,
 } from "@/lib/documents/sign-tokens";
+import {
+  assertCanSoftDelete,
+  OPS_DN_EDITABLE_STATUSES,
+} from "@/lib/workflow/document-guards";
 
 export type OpsDnItemInput = {
   description: string;
@@ -74,6 +78,7 @@ function mapNote(row: any) {
     clientSignatureUrl: row.clientSignatureUrl,
     clientSignedName: row.clientSignedName,
     clientSignedAt: row.clientSignedAt?.toISOString() ?? null,
+    signedPdfUrl: row.signedPdfUrl ?? null,
     lockedAt: row.lockedAt?.toISOString() ?? null,
     whatsappSentAt: row.whatsappSentAt?.toISOString() ?? null,
     currentVersion: row.currentVersion,
@@ -104,6 +109,13 @@ function mapNote(row: any) {
       decidedAt: a.decidedAt?.toISOString() ?? null,
       approver: a.approver,
     })),
+    rejectionComment:
+      (row.approvals ?? [])
+        .filter((a: any) => a.status === "rejected" && a.comment)
+        .sort(
+          (a: any, b: any) =>
+            (b.decidedAt?.getTime?.() ?? 0) - (a.decidedAt?.getTime?.() ?? 0)
+        )[0]?.comment ?? null,
     events: (row.events ?? []).map((e: any) => ({
       id: e.id,
       action: e.action,
@@ -160,6 +172,7 @@ export const OpsDeliveryNotesRepository = {
     projectId?: string;
     status?: OpsDeliveryNoteStatus;
     take?: number;
+    skip?: number;
   }) {
     const where: any = { deletedAt: null };
     if (filters.foremanId) where.foremanId = filters.foremanId;
@@ -174,6 +187,7 @@ export const OpsDeliveryNotesRepository = {
       },
       orderBy: { createdAt: "desc" },
       take: filters.take ?? 50,
+      skip: filters.skip ?? 0,
     });
 
     return rows.map((row) => ({
@@ -279,6 +293,14 @@ export const OpsDeliveryNotesRepository = {
       where: { id, deletedAt: null },
     });
     if (!existing) throw new Error("תעודת משלוח לא נמצאה");
+
+    // Once the DN has been signed/approved/locked it must remain in history:
+    // deleting it would break signature verification and audit continuity.
+    assertCanSoftDelete(String(existing.status), existing.lockedAt, {
+      entityLabel: "תעודת משלוח",
+      editableStatuses: OPS_DN_EDITABLE_STATUSES,
+    });
+
     await prisma.opsDeliveryNote.update({
       where: { id },
       data: { deletedAt: new Date(), updatedById: actorId },
@@ -444,6 +466,9 @@ export const OpsDeliveryNotesRepository = {
   },
 
   async getPublicForSign(documentNumber: string, tokenParam: string) {
+    const { buildDeliveryPortal } = await import(
+      "@/lib/share/client-portal-payload"
+    );
     const parsed = parseSignQuery(tokenParam);
     if (!parsed) throw new Error("קישור לא תקין");
 
@@ -456,11 +481,46 @@ export const OpsDeliveryNotesRepository = {
       include: { opsDeliveryNote: { include: includeDetail } },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.usedAt) throw new Error("הקישור כבר נוצל");
-    if (token.expiresAt && token.expiresAt < new Date()) throw new Error("הקישור פג תוקף");
-    if (token.tokenHash !== hashSignToken(parsed.raw)) throw new Error("קישור לא תקין");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("הקישור פג תוקף");
+    }
+    if (token.tokenHash !== hashSignToken(parsed.raw)) {
+      throw new Error("קישור לא תקין");
+    }
 
-    return mapNote(token.opsDeliveryNote);
+    const mapped = mapNote(token.opsDeliveryNote);
+    let sentBy: string | null = null;
+    if (token.createdById) {
+      const u = await prisma.user.findUnique({
+        where: { id: token.createdById },
+        select: { name: true },
+      });
+      sentBy = u?.name ?? null;
+    }
+
+    const { buildVerificationId } = await import(
+      "@/lib/share/archive-signed-document"
+    );
+    const verificationId = buildVerificationId(
+      mapped.documentNumber,
+      token.publicId
+    );
+    const portal = await buildDeliveryPortal(mapped, {
+      createdAt: token.createdAt,
+      expiresAt: token.expiresAt,
+      sentBy,
+      alreadySigned: Boolean(token.usedAt || token.opsDeliveryNote.clientSignedAt),
+    });
+
+    return {
+      ...mapped,
+      portal: {
+        ...portal,
+        signedPdfUrl: mapped.signedPdfUrl || portal.signedPdfUrl,
+      },
+      alreadySigned: portal.alreadySigned,
+      verificationId,
+    };
   },
 
   async applyClientSignature(opts: {
@@ -470,7 +530,17 @@ export const OpsDeliveryNotesRepository = {
     signerName: string;
     ip?: string | null;
     device?: string | null;
+    saveToDocuments?: boolean;
   }) {
+    const { assertValidSignatureDataUrl } = await import(
+      "@/lib/share/validate-signature"
+    );
+    const {
+      archiveClientSignedDocument,
+      buildVerificationId,
+    } = await import("@/lib/share/archive-signed-document");
+
+    const signatureDataUrl = assertValidSignatureDataUrl(opts.signatureDataUrl);
     const parsed = parseSignQuery(opts.tokenParam);
     if (!parsed) throw new Error("קישור לא תקין");
 
@@ -484,39 +554,77 @@ export const OpsDeliveryNotesRepository = {
       include: { opsDeliveryNote: true },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.expiresAt && token.expiresAt < new Date()) throw new Error("הקישור פג תוקף");
-    if (token.tokenHash !== hashSignToken(parsed.raw)) throw new Error("קישור לא תקין");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("הקישור פג תוקף");
+    }
+    if (token.tokenHash !== hashSignToken(parsed.raw)) {
+      throw new Error("קישור לא תקין");
+    }
 
     const note = token.opsDeliveryNote;
+    const signedAt = new Date();
+    const verificationId = buildVerificationId(
+      note.documentNumber,
+      token.publicId
+    );
+    const signedViewPath = `/sign/delivery-note/${encodeURIComponent(note.documentNumber)}/signed?t=${encodeURIComponent(opts.tokenParam)}`;
+
     await prisma.$transaction(async (tx) => {
       await tx.opsDeliveryNoteSignToken.update({
         where: { id: token.id },
-        data: { usedAt: new Date() },
+        data: { usedAt: signedAt },
       });
       await tx.opsDeliveryNote.update({
         where: { id: note.id },
         data: {
-          clientSignatureUrl: opts.signatureDataUrl,
+          clientSignatureUrl: signatureDataUrl,
           clientSignedName: opts.signerName,
-          clientSignedAt: new Date(),
+          clientSignedAt: signedAt,
           clientSignedIp: opts.ip ?? null,
           clientSignedDevice: opts.device ?? null,
           clientSignedVersion: note.currentVersion,
           status: "signed",
-          lockedAt: new Date(),
+          lockedAt: signedAt,
+          signedPdfUrl: signedViewPath,
         },
       });
     });
 
     await addEvent(note.id, "client_signed", `נחתם ע״י ${opts.signerName}`);
+
+    if (note.projectId && opts.saveToDocuments !== false) {
+      await archiveClientSignedDocument({
+        kind: "delivery_note",
+        projectId: note.projectId,
+        entityId: note.id,
+        documentNumber: note.documentNumber,
+        userId: note.createdById,
+        signedViewPath,
+        signerName: opts.signerName,
+        signedAt,
+        ip: opts.ip,
+        device: opts.device,
+        linkPublicId: token.publicId,
+        verificationId,
+      });
+    }
+
     await notifyUsers(
-      [note.createdById],
+      [note.createdById, note.updatedById],
       "הלקוח חתם על תעודת משלוח",
-      `${note.documentNumber} נחתמה`,
-      `/field/delivery-notes/${note.id}`,
+      `${note.documentNumber} נחתמה ע״י ${opts.signerName}`,
+      signedViewPath,
       note.projectId
     );
-    return this.getById(note.id);
+
+    const mapped = await this.getById(note.id);
+    return {
+      ...mapped,
+      verificationId,
+      signedViewUrl: signedViewPath,
+      signedPdfUrl: signedViewPath,
+      alreadySigned: true,
+    };
   },
 
   async listPendingApprovals(approverId: string) {

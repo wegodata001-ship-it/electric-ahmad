@@ -1,5 +1,5 @@
-import { FieldCrewPage } from "@/features/field/components/field-crew-page";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <FieldCrewPage />;
+  redirect("/field");
 }

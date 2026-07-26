@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server";
 import { PartialInvoicesRepository } from "@/repositories/partial-invoices.repository";
 import { ProjectsRepository } from "@/repositories/projects.repository";
+import { requireOfficeAuth } from "@/lib/auth/assert-office";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { formatBillingMonth } from "@/utils/invoice-calc";
 
 export async function GET(request: NextRequest) {
   try {
+    await requireOfficeAuth();
     const projectId = request.nextUrl.searchParams.get("projectId");
     if (!projectId) return apiError("מזהה פרויקט חובה");
 

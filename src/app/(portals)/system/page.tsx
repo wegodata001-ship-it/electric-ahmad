@@ -1,5 +1,5 @@
-import { SystemHome } from "@/apps/system/system-home";
+import { SystemPortalDashboard } from "@/features/platform/components";
 
 export default function Page() {
-  return <SystemHome />;
+  return <SystemPortalDashboard />;
 }

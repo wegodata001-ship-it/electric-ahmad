@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
 import { ForemenRepository } from "@/repositories/foremen.repository";
-import { getAuthContext } from "@/lib/auth/session";
+import {
+  requireOfficeAuth,
+  requirePermission,
+} from "@/lib/auth/assert-office";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function GET(
@@ -8,6 +11,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await requireOfficeAuth();
     const { id } = await params;
     const detail = await ForemenRepository.getDetail(id);
     if (!detail) return apiError("מנהל עבודה לא נמצא", 404);
@@ -22,7 +26,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await getAuthContext();
+    const { userId } = await requirePermission("manage_employees");
     const { id } = await params;
     const body = await request.json();
 
@@ -58,7 +62,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await getAuthContext();
+    const { userId } = await requirePermission("manage_employees");
     const { id } = await params;
     const detail = await ForemenRepository.softDelete(id, userId);
     return apiSuccess(detail);

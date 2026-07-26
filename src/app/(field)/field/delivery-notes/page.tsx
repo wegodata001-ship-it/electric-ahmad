@@ -1,5 +1,5 @@
-import { FieldDeliveryNotesListPage } from "@/features/work-diaries/components/field-delivery-notes-pages";
+import { FieldDnList } from "@/apps/field/field-dn-list";
 
 export default function Page() {
-  return <FieldDeliveryNotesListPage />;
+  return <FieldDnList />;
 }

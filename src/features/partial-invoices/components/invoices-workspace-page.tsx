@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useToast } from "@/components/ui";
 import { invoicesWorkspaceService } from "../services/invoices-workspace.service";
 import {
@@ -11,7 +11,7 @@ import {
 import { ProjectBoqPanel } from "@/features/projects/components/panels/project-boq-panel";
 import { ProjectInvoicesPage } from "@/features/projects/components/project-invoices-page";
 import { ProjectPerformancePage } from "@/features/projects/components/project-performance-page";
-import { ProjectDocumentsHubPage } from "@/features/projects/components/project-documents-hub-page";
+import { DocumentsHubV2Page } from "@/features/documents/components/documents-hub-v2-page";
 import { ProjectDeliveryNotesPanel } from "@/features/projects/components/panels/project-delivery-notes-panel";
 import { ProjectWorkDiariesPanel } from "@/features/projects/components/panels/project-work-diaries-panel";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
  */
 export function InvoicesWorkspacePage() {
   const toast = useToast();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const projectFromQuery = searchParams.get("projectId");
   const moduleFromQuery = searchParams.get("module") as ProjectModuleId | null;
@@ -30,6 +31,15 @@ export function InvoicesWorkspacePage() {
       ? ("documents" as ProjectModuleId)
       : moduleFromQuery;
 
+  /** Keep URL under the current portal route when embedded */
+  const basePath = pathname.startsWith("/system/accounts")
+    ? "/system/accounts"
+    : pathname.startsWith("/project/accounts")
+      ? "/project/accounts"
+      : pathname === "/project" || pathname.startsWith("/project?")
+        ? "/project"
+        : "/invoices";
+
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(projectFromQuery);
   const [tree, setTree] = useState<any>(null);
@@ -37,35 +47,63 @@ export function InvoicesWorkspacePage() {
     safeModule
   );
   const [loading, setLoading] = useState(true);
+  /** Avoid refetching tree when bootstrap already loaded it for this id. */
+  const treeLoadedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    invoicesWorkspaceService
-      .listProjects()
-      .then((r) => {
+    let cancelled = false;
+    const initialId = projectFromQuery;
+    setLoading(true);
+    Promise.all([
+      invoicesWorkspaceService.listProjects(),
+      initialId
+        ? invoicesWorkspaceService.getTree(initialId).catch(() => null)
+        : Promise.resolve(null),
+    ])
+      .then(([r, treeData]) => {
+        if (cancelled) return;
         setProjects(r.projects);
-        if (!selectedId && r.projects[0]) setSelectedId(r.projects[0].id);
+        const id =
+          initialId && r.projects.some((p: { id: string }) => p.id === initialId)
+            ? initialId
+            : r.projects[0]?.id ?? null;
+        if (id) setSelectedId(id);
+        if (treeData && id === initialId) {
+          setTree(treeData);
+          treeLoadedFor.current = id;
+        }
       })
-      .catch((e) => toast.error(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!cancelled) toast.error(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!selectedId) return;
-    setTree(null);
-    setActiveModule((prev) => {
-      // Keep module from URL only on first paint for this project
+    setActiveModule(() => {
       if (projectFromQuery === selectedId && safeModule) return safeModule;
       return null;
     });
     const qs = new URLSearchParams({ projectId: selectedId });
-    window.history.replaceState(null, "", `/invoices?${qs.toString()}`);
+    window.history.replaceState(null, "", `${basePath}?${qs.toString()}`);
+    if (treeLoadedFor.current === selectedId) return;
+    setTree(null);
     invoicesWorkspaceService
       .getTree(selectedId)
-      .then(setTree)
+      .then((t) => {
+        setTree(t);
+        treeLoadedFor.current = selectedId;
+      })
       .catch((e) => toast.error(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId]);
+  }, [selectedId, basePath]);
 
   function selectModule(id: ProjectModuleId) {
     setActiveModule(id);
@@ -73,7 +111,7 @@ export function InvoicesWorkspacePage() {
       window.history.replaceState(
         null,
         "",
-        `/invoices?projectId=${selectedId}&module=${id}`
+        `${basePath}?projectId=${selectedId}&module=${id}`
       );
     }
     // Soft scroll content into view on mobile
@@ -169,7 +207,7 @@ export function InvoicesWorkspacePage() {
                   <ProjectInvoicesPage projectId={tree.project.id} embedded />
                 )}
                 {activeModule === "documents" && (
-                  <ProjectDocumentsHubPage
+                  <DocumentsHubV2Page
                     projectId={tree.project.id}
                     embedded
                   />

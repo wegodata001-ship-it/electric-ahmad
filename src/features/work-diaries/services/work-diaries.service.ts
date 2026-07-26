@@ -90,9 +90,33 @@ export const approvalsService = {
     documentId: string;
     decision: "approved" | "rejected";
     comment?: string;
-    reviewNotes?: { rowId?: string | null; boqItemId?: string | null; comment: string }[];
+    reviewNotes?: {
+      rowId?: string | null;
+      boqItemId?: string | null;
+      comment: string;
+    }[];
+    rejectReasonId?: string;
+    rejectAttachments?: string[];
+    approveOptions?: {
+      saveToDocuments?: boolean;
+      notifyCreator?: boolean;
+      sendToClient?: boolean;
+    };
   }) {
     return apiClient.post("/api/approvals/pending", body);
+  },
+
+  review(kind: string, documentId: string) {
+    return apiClient.get<{
+      kind: string;
+      document: any;
+      related: { documents: any[]; photos: any[] };
+      timeline: any[];
+      conversation: any[];
+      workflowDocumentId: string | null;
+    }>(
+      `/api/approvals/review?kind=${encodeURIComponent(kind)}&documentId=${encodeURIComponent(documentId)}`
+    );
   },
 
   sendWorkDiaryToClient(id: string, phone?: string) {

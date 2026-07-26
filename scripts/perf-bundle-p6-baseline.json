@@ -1,0 +1,33 @@
+{
+  "measuredAt": "2026-07-26T13:10:00.000Z",
+  "method": "node_modules on-disk size + static import graph (pre-change baseline)",
+  "note": "No code changes applied before this measurement. Production chunk sizes require next build ANALYZE.",
+  "packagesOnDiskKB": {
+    "exceljs": 21314,
+    "recharts": 7159,
+    "framer-motion": 4675,
+    "lucide-react": 30082
+  },
+  "staticImportSites": {
+    "exceljs": ["src/lib/measurement/export-excel.ts"],
+    "recharts": ["src/features/dashboard/components/dashboard-page.tsx"],
+    "framer-motion": [
+      "src/components/layout/header.tsx",
+      "src/components/layout/sidebar.tsx",
+      "src/components/ui/modal.tsx",
+      "src/components/ui/drawer.tsx",
+      "src/components/ui/toast.tsx",
+      "src/components/ui/confirmation-dialog.tsx",
+      "src/features/dashboard/components/dashboard-page.tsx",
+      "src/features/projects/components/projects-page.tsx",
+      "src/features/projects/components/project-tree-hub-page.tsx",
+      "src/features/projects/components/project-modules-nav-tree.tsx",
+      "src/features/gallery/components/gallery-page.tsx"
+    ]
+  },
+  "plan": {
+    "exceljs": "dynamic import() inside buildMeasurementSheetExcel — load only on export click",
+    "recharts": "next/dynamic chart panel on dashboard route — exclude from non-dashboard layouts",
+    "framer-motion": "keep in shared UI (modal/toast/layout); lazy page-level motion where isolated; no layout rewrite"
+  }
+}

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { ReportsRepository } from "@/repositories/reports.repository";
+import { requireOfficeAuth } from "@/lib/auth/assert-office";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
 
 /**
@@ -7,6 +8,7 @@ import { apiSuccess, handleApiError } from "@/lib/api/response";
  */
 export async function GET(request: NextRequest) {
   try {
+    await requireOfficeAuth();
     const { searchParams } = request.nextUrl;
     const projectId = searchParams.get("projectId");
     const employeeId = searchParams.get("employeeId");

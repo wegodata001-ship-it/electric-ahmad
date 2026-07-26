@@ -1,11 +1,15 @@
 import { NextRequest } from "next/server";
 import { ForemenRepository } from "@/repositories/foremen.repository";
 import { createFieldManagerAccount } from "@/lib/auth/create-field-manager";
-import { getAuthContext } from "@/lib/auth/session";
+import {
+  requireOfficeAuth,
+  requirePermission,
+} from "@/lib/auth/assert-office";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function GET() {
   try {
+    await requireOfficeAuth();
     const list = await ForemenRepository.listSummaries();
     return apiSuccess(list);
   } catch (error) {
@@ -16,7 +20,7 @@ export async function GET() {
 /** Create field manager Employee + FIELD_MANAGER system user. */
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await getAuthContext();
+    const { userId } = await requirePermission("manage_employees");
     const body = await request.json();
 
     if (

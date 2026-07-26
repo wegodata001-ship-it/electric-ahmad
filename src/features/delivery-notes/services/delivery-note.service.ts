@@ -4,6 +4,49 @@ import type {
   DeliveryNoteVersion,
 } from "@/types";
 import { apiClient } from "@/lib/api/client";
+import type { ListPageInfo } from "@/lib/api/list-query";
+
+export type DeliveryNoteListItem = Pick<
+  DeliveryNote,
+  | "id"
+  | "noteNumber"
+  | "sequenceNumber"
+  | "status"
+  | "date"
+  | "client"
+  | "clientId"
+  | "projectId"
+  | "projectName"
+  | "orderNumber"
+  | "contactName"
+  | "phone"
+  | "phoneSecondary"
+  | "city"
+  | "receiverSigned"
+  | "receiverSignatureUrl"
+  | "currentVersion"
+  | "createdAt"
+  | "updatedAt"
+> & {
+  items: { quantity: number }[];
+};
+
+export type DeliveryNoteListPage = {
+  items: DeliveryNoteListItem[];
+  total: number;
+  pageInfo: ListPageInfo;
+};
+
+export type DeliveryNoteListPageParams = {
+  projectId?: string;
+  q?: string;
+  status?: string;
+  take?: number;
+  skip?: number;
+  page?: number;
+  sort?: "date" | "updatedAt" | "createdAt" | "noteNumber";
+  dir?: "asc" | "desc";
+};
 
 export type CreateDeliveryNotePayload = {
   noteNumber?: string;
@@ -54,6 +97,25 @@ export const deliveryNoteService = {
   async getByProject(projectId: string): Promise<DeliveryNote[]> {
     return apiClient.get<DeliveryNote[]>(
       `/api/delivery-notes?projectId=${projectId}`
+    );
+  },
+
+  /** Paged list (P5). Server returns { items, total, pageInfo }. */
+  async listPage(
+    params: DeliveryNoteListPageParams = {}
+  ): Promise<DeliveryNoteListPage> {
+    const sp = new URLSearchParams();
+    if (params.projectId) sp.set("projectId", params.projectId);
+    if (params.q) sp.set("q", params.q);
+    if (params.status && params.status !== "all") sp.set("status", params.status);
+    if (params.take != null) sp.set("take", String(params.take));
+    if (params.skip != null) sp.set("skip", String(params.skip));
+    if (params.page != null) sp.set("page", String(params.page));
+    if (params.sort) sp.set("sort", params.sort);
+    if (params.dir) sp.set("dir", params.dir);
+    const qs = sp.toString();
+    return apiClient.get<DeliveryNoteListPage>(
+      `/api/delivery-notes${qs ? `?${qs}` : ""}`
     );
   },
 

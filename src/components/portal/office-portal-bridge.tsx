@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PortalId } from "@/lib/portals/config";
-import { portalIdForRole } from "@/lib/portals/config";
-import { SystemAppShell } from "@/apps/system/system-app-shell";
+import { PortalShell } from "@/components/portal/portal-shell";
 import { ProjectAppShell } from "@/apps/project/project-app-shell";
 import { OpsAppShell } from "@/apps/operations/ops-app-shell";
+import type { PortalId } from "@/lib/portals/config";
+import { portalIdForRole } from "@/lib/portals/config";
+import { fetchClientMe } from "@/lib/auth/client-me";
 
 /**
- * Wraps legacy (main) office routes with the role's new portal app shell
- * so deep links (/projects/…, /boq, …) stay in the portal chrome.
+ * Wraps legacy (main) office routes with the role's portal chrome.
+ * Project / Operations use mobile daily-work shells — not ERP chrome.
  */
 export function OfficePortalBridge({
   children,
@@ -19,8 +20,7 @@ export function OfficePortalBridge({
   const [portalId, setPortalId] = useState<PortalId | null>(null);
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
+    fetchClientMe("/api/auth/me")
       .then((json) => {
         if (!json.success) {
           setPortalId("project");
@@ -40,11 +40,13 @@ export function OfficePortalBridge({
     );
   }
 
-  if (portalId === "system") {
-    return <SystemAppShell>{children}</SystemAppShell>;
+  if (portalId === "project") {
+    return <ProjectAppShell>{children}</ProjectAppShell>;
   }
+
   if (portalId === "operations") {
     return <OpsAppShell>{children}</OpsAppShell>;
   }
-  return <ProjectAppShell>{children}</ProjectAppShell>;
+
+  return <PortalShell portalId={portalId}>{children}</PortalShell>;
 }

@@ -1,12 +1,41 @@
 import { NextRequest } from "next/server";
 import { BOQRepository } from "@/repositories/boq.repository";
 import { requireOfficeUser } from "@/lib/auth/office-session";
-import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { apiSuccess, handleApiError } from "@/lib/api/response";
+import { parseListQuery } from "@/lib/api/list-query";
+import type { BoqItemKind, BoqItemStatus } from "@prisma/client";
+import { parseJsonBody } from "@/lib/validation/parse-body";
+import { boqCreateSchema } from "@/lib/validation/schemas";
 
 export async function GET(request: NextRequest) {
   try {
     await requireOfficeUser();
-    const projectId = request.nextUrl.searchParams.get("projectId") ?? undefined;
+    const sp = request.nextUrl.searchParams;
+    const projectId = sp.get("projectId") ?? undefined;
+    const itemKind = sp.get("itemKind");
+    const status = sp.get("status");
+    const parsed = parseListQuery(sp, { defaultTake: 50, maxTake: 200 });
+
+    const usePaged =
+      parsed.paginated ||
+      Boolean(parsed.q) ||
+      Boolean(itemKind && itemKind !== "all") ||
+      Boolean(status && status !== "all");
+
+    if (usePaged) {
+      const result = await BOQRepository.listPage({
+        projectId,
+        q: parsed.q,
+        itemKind: itemKind as BoqItemKind | "all" | null,
+        status: status as BoqItemStatus | "all" | null,
+        sort: parsed.sort,
+        dir: parsed.dir,
+        take: parsed.take,
+        skip: parsed.skip,
+      });
+      return apiSuccess(result);
+    }
+
     const data = projectId
       ? await BOQRepository.findByProject(projectId)
       : await BOQRepository.findAll();
@@ -19,32 +48,22 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = await requireOfficeUser();
-    const body = await request.json();
-
-    if (!body.projectId) return apiError("יש לבחור פרויקט");
-    if (!body.description?.trim()) return apiError("יש להזין תיאור");
-
-    const contractQuantity = Number(body.contractQuantity);
-    const unitPrice = Number(body.unitPrice);
-    if (Number.isNaN(contractQuantity) || contractQuantity < 0) {
-      return apiError("כמות לא תקינה");
-    }
-    if (Number.isNaN(unitPrice) || unitPrice < 0) {
-      return apiError("מחיר יחידה לא תקין");
-    }
+    const body = await parseJsonBody(request, boqCreateSchema);
 
     const item = await BOQRepository.create(
       {
-        projectId: String(body.projectId),
+        projectId: body.projectId,
         code: body.code,
-        description: String(body.description),
+        description: body.description,
         unit: body.unit,
-        contractQuantity,
-        unitPrice,
+        contractQuantity: body.contractQuantity,
+        unitPrice: body.unitPrice,
         category: body.category,
         notes: body.notes,
-        itemKind: body.itemKind === "regular" ? "regular" : "exceptional",
-        status: body.status || "active",
+        itemKind: (body.itemKind === "regular"
+          ? "regular"
+          : "exceptional") as BoqItemKind,
+        status: (body.status || "active") as BoqItemStatus,
       },
       session.userId
     );

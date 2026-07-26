@@ -74,6 +74,9 @@ const MEASUREMENT_TRANSITIONS: WorkflowDefinition["transitions"] = [
     to: "revision",
     requiresComment: true,
   },
+  { from: "approved", action: "send_to_client", to: "sent_to_client" },
+  { from: "sent_to_client", action: "client_signed", to: "client_signed" },
+  { from: "client_signed", action: "lock", to: "locked" },
   { from: "approved", action: "lock", to: "locked" },
   { from: "draft", action: "cancel", to: "cancelled" },
 ];

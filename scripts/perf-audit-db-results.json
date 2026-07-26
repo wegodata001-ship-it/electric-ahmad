@@ -1,0 +1,101 @@
+{
+  "measuredAt": "2026-07-26T11:34:29.234Z",
+  "results": [
+    {
+      "name": "count projects",
+      "ms": 460,
+      "ok": true,
+      "count": 16
+    },
+    {
+      "name": "count measurementCells (all)",
+      "ms": 458,
+      "ok": true,
+      "count": 711
+    },
+    {
+      "name": "count documents",
+      "ms": 465,
+      "ok": true,
+      "count": 24
+    },
+    {
+      "name": "count workflowApprovals pending",
+      "ms": 457,
+      "ok": true,
+      "count": 1
+    },
+    {
+      "name": "project findUnique light",
+      "ms": 478,
+      "ok": true,
+      "keys": 4
+    },
+    {
+      "name": "boq items by project",
+      "ms": 463,
+      "ok": true,
+      "count": 5
+    },
+    {
+      "name": "documents by project",
+      "ms": 522,
+      "ok": true,
+      "count": 1
+    },
+    {
+      "name": "hub fan-out parallel (5 lists take 300)",
+      "ms": 1464,
+      "ok": true,
+      "count": 5
+    },
+    {
+      "name": "sheet cells count",
+      "ms": 431,
+      "ok": true,
+      "count": 15
+    },
+    {
+      "name": "sheet rows count",
+      "ms": 453,
+      "ok": true,
+      "count": 3
+    },
+    {
+      "name": "getById-like heavy include",
+      "ms": 2223,
+      "ok": true,
+      "keys": 29
+    },
+    {
+      "name": "cells only (ids+qty)",
+      "ms": 444,
+      "ok": true,
+      "count": 15
+    },
+    {
+      "name": "single cell update",
+      "ms": 869,
+      "ok": true,
+      "count": 1
+    },
+    {
+      "name": "serial 10 cell updates in TX",
+      "ms": 2463,
+      "ok": true,
+      "count": 10
+    },
+    {
+      "name": "pending approvals listPending shape",
+      "ms": 1118,
+      "ok": true,
+      "count": 1
+    },
+    {
+      "name": "all projects for KPI-style sum",
+      "ms": 425,
+      "ok": true,
+      "count": 16
+    }
+  ]
+}

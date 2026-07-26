@@ -1,0 +1,80 @@
+{
+  "measuredAt": "2026-07-26T12:00:03.205Z",
+  "projectId": "cms034ch70002kz04wu99jp4h",
+  "before": {
+    "httpWarmMs": 2302,
+    "repoQueries": 14,
+    "authQueries": 1,
+    "totalDbRoundTrips": 15,
+    "repoWallMs": 1632,
+    "select1Ms": 434
+  },
+  "after": {
+    "httpSamples": [
+      {
+        "ms": 1234,
+        "status": 200,
+        "bytes": 875,
+        "ok": true,
+        "boq": 5,
+        "sheets": 1,
+        "invoices": 0,
+        "items": 0
+      },
+      {
+        "ms": 1264,
+        "status": 200,
+        "bytes": 875,
+        "ok": true,
+        "boq": 5,
+        "sheets": 1,
+        "invoices": 0,
+        "items": 0
+      },
+      {
+        "ms": 1264,
+        "status": 200,
+        "bytes": 875,
+        "ok": true,
+        "boq": 5,
+        "sheets": 1,
+        "invoices": 0,
+        "items": 0
+      }
+    ],
+    "httpWarmMs": 1264,
+    "httpMinMs": 1234,
+    "httpAvgMs": 1254,
+    "repoSamples": [
+      {
+        "ms": 1148,
+        "rows": 1
+      },
+      {
+        "ms": 495,
+        "rows": 1
+      },
+      {
+        "ms": 451,
+        "rows": 1
+      }
+    ],
+    "repoMinMs": 451,
+    "repoAvgMs": 698,
+    "repoQueries": 1,
+    "authQueries": 1,
+    "totalDbRoundTrips": 2,
+    "select1Samples": [
+      426,
+      428,
+      443
+    ],
+    "select1AvgMs": 432
+  },
+  "improvement": {
+    "httpPct": 45,
+    "repoPct": 57,
+    "roundTripsBefore": 15,
+    "roundTripsAfter": 2
+  }
+}

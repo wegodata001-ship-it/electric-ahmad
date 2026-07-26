@@ -1,10 +1,12 @@
 import { NextRequest } from "next/server";
 import { PartialInvoicesRepository } from "@/repositories/partial-invoices.repository";
 import { getAuthContext } from "@/lib/auth/session";
+import { requireOfficeAuth } from "@/lib/auth/assert-office";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function GET(request: NextRequest) {
   try {
+    await requireOfficeAuth();
     const projectId = request.nextUrl.searchParams.get("projectId");
     if (projectId) {
       return apiSuccess(

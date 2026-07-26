@@ -211,8 +211,16 @@ export class WorkOrdersRepository {
   }
 
   /** Operations queue — all work orders (office) */
-  static async listAll(opts?: { status?: WorkOrderStatus; take?: number; date?: Date }) {
-    const take = Math.min(opts?.take ?? 80, 100);
+  static async listAll(opts?: {
+    status?: WorkOrderStatus;
+    take?: number;
+    skip?: number;
+    date?: Date;
+    projectId?: string;
+    foremanId?: string;
+  }) {
+    const take = Math.min(opts?.take ?? 80, 200);
+    const skip = Math.max(0, opts?.skip ?? 0);
     const dayStart = opts?.date ? new Date(opts.date) : undefined;
     if (dayStart) dayStart.setHours(0, 0, 0, 0);
     const dayEnd = dayStart
@@ -222,6 +230,8 @@ export class WorkOrdersRepository {
     const rows = await prisma.workOrder.findMany({
       where: {
         ...(opts?.status ? { status: opts.status } : {}),
+        ...(opts?.projectId ? { projectId: opts.projectId } : {}),
+        ...(opts?.foremanId ? { foremanId: opts.foremanId } : {}),
         ...(dayStart && dayEnd
           ? { date: { gte: dayStart, lt: dayEnd } }
           : {}),
@@ -243,10 +253,35 @@ export class WorkOrdersRepository {
       },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       take,
+      skip,
     });
     return rows.map((r) =>
       mapOrder({ ...r, workers: [], vehicles: [], media: [] })
     );
+  }
+
+  /** Counts by status for project / portal dashboards */
+  static async getStatusCounts(opts?: { projectId?: string; foremanId?: string }) {
+    const where = {
+      ...(opts?.projectId ? { projectId: opts.projectId } : {}),
+      ...(opts?.foremanId ? { foremanId: opts.foremanId } : {}),
+    };
+    const [draft, assigned, inProgress, completed, cancelled] =
+      await Promise.all([
+        prisma.workOrder.count({ where: { ...where, status: "draft" } }),
+        prisma.workOrder.count({ where: { ...where, status: "assigned" } }),
+        prisma.workOrder.count({ where: { ...where, status: "in_progress" } }),
+        prisma.workOrder.count({ where: { ...where, status: "completed" } }),
+        prisma.workOrder.count({ where: { ...where, status: "cancelled" } }),
+      ]);
+    return {
+      draft,
+      planned: assigned,
+      inProgress,
+      done: completed,
+      closed: cancelled,
+      open: draft + assigned,
+    };
   }
 
   static async getOpsQueueCounts() {

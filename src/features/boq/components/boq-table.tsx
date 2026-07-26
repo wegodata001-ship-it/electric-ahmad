@@ -39,30 +39,58 @@ interface BoqTableProps {
   items: BoqItem[];
   showProject?: boolean;
   onItemsChanged?: () => void;
+  /**
+   * Server-driven pagination + filtering. When provided, table skips its own
+   * client pagination/kind filter and drives everything from the parent.
+   */
+  serverMode?: {
+    globalFilter: string;
+    kindFilter: "all" | "regular" | "exceptional";
+    currentPage: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+    loading?: boolean;
+    onGlobalFilterChange: (v: string) => void;
+    onKindFilterChange: (v: "all" | "regular" | "exceptional") => void;
+    onPageChange: (page: number) => void;
+  };
 }
 
-export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
+export function BoqTable({ items, onItemsChanged, serverMode }: BoqTableProps) {
   const toast = useToast();
   const [sorting, setSorting] = useState<SortingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>({});
-  const [globalFilter, setGlobalFilter] = useState("");
-  const [kindFilter, setKindFilter] = useState<"all" | "regular" | "exceptional">("all");
+  const [localGlobalFilter, setLocalGlobalFilter] = useState("");
+  const [localKindFilter, setLocalKindFilter] = useState<
+    "all" | "regular" | "exceptional"
+  >("all");
   const [rows, setRows] = useState(items);
   const [editItem, setEditItem] = useState<BoqItem | null>(null);
   const [historyItemId, setHistoryItemId] = useState<string | null>(null);
+
+  const globalFilter = serverMode ? serverMode.globalFilter : localGlobalFilter;
+  const kindFilter = serverMode ? serverMode.kindFilter : localKindFilter;
+  const setGlobalFilter = serverMode
+    ? serverMode.onGlobalFilterChange
+    : setLocalGlobalFilter;
+  const setKindFilter = serverMode
+    ? serverMode.onKindFilterChange
+    : setLocalKindFilter;
 
   useEffect(() => {
     setRows(items);
   }, [items]);
 
   const visibleRows = useMemo(() => {
+    if (serverMode) return rows;
     if (kindFilter === "all") return rows;
     return rows.filter((r) =>
       kindFilter === "exceptional"
         ? r.itemKind === "exceptional"
         : r.itemKind !== "exceptional"
     );
-  }, [rows, kindFilter]);
+  }, [rows, kindFilter, serverMode]);
 
   const columns = useMemo<ColumnDef<BoqItem>[]>(
     () => [
@@ -240,16 +268,31 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
   const table = useReactTable({
     data: visibleRows,
     columns,
-    state: { sorting, expanded, globalFilter },
+    state: {
+      sorting,
+      expanded,
+      globalFilter,
+      ...(serverMode
+        ? {
+            pagination: {
+              pageIndex: Math.max(0, serverMode.currentPage - 1),
+              pageSize: serverMode.pageSize,
+            },
+          }
+        : {}),
+    },
     onSortingChange: setSorting,
     onExpandedChange: setExpanded,
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    getFilteredRowModel: serverMode ? undefined : getFilteredRowModel(),
+    getPaginationRowModel: serverMode ? undefined : getPaginationRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     getRowCanExpand: () => true,
+    manualPagination: Boolean(serverMode),
+    manualFiltering: Boolean(serverMode),
+    pageCount: serverMode ? serverMode.totalPages : undefined,
     initialState: { pagination: { pageSize: 15 } },
   });
 
@@ -422,12 +465,30 @@ export function BoqTable({ items, onItemsChanged }: BoqTableProps) {
         </table>
       </div>
 
-      <div className="p-3 sm:p-4 border-t border-gray-100">
-        <Pagination
-          currentPage={table.getState().pagination.pageIndex + 1}
-          totalPages={table.getPageCount()}
-          onPageChange={(page) => table.setPageIndex(page - 1)}
-        />
+      <div className="p-3 sm:p-4 border-t border-gray-100 flex items-center justify-between gap-2">
+        {serverMode ? (
+          <>
+            <p className="text-xs text-gray-500">
+              {serverMode.loading
+                ? "טוען…"
+                : `${serverMode.totalItems.toLocaleString()} סעיפים`}
+            </p>
+            <Pagination
+              currentPage={serverMode.currentPage}
+              totalPages={serverMode.totalPages}
+              onPageChange={serverMode.onPageChange}
+            />
+          </>
+        ) : (
+          <>
+            <span />
+            <Pagination
+              currentPage={table.getState().pagination.pageIndex + 1}
+              totalPages={table.getPageCount()}
+              onPageChange={(page) => table.setPageIndex(page - 1)}
+            />
+          </>
+        )}
       </div>
 
       <BoqItemFormModal

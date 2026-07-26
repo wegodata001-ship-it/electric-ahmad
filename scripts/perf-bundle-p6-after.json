@@ -1,0 +1,15 @@
+{
+  "measuredAt": "2026-07-26T13:25:00.000Z",
+  "changesAppliedAfterBaseline": [
+    "exceljs: static import removed; dynamic import() inside buildMeasurementSheetExcel",
+    "recharts: extracted to dashboard-charts.tsx; loaded via next/dynamic (ssr:false) from dashboard-page",
+    "framer-motion: left in shared layout/UI (header/sidebar/modal/toast) — cannot route-split without redesign; page charts no longer pull recharts into shared graph",
+    "analyzer: npm run analyze → scripts/analyze-bundle.mjs + @next/bundle-analyzer (ANALYZE=true)"
+  ],
+  "expectedClientImpact": {
+    "exceljs": "Deferred until measurement Excel export click; not in initial route JS for most navigations",
+    "recharts": "Loaded only when DashboardCharts mounts on dashboard route",
+    "framer-motion": "Still in common layout chunk; further reduction needs replacing layout animations"
+  },
+  "verify": "Run npm run analyze and compare exceljs/recharts chunk presence on non-dashboard routes"
+}

@@ -8,6 +8,8 @@ import { OpsDeliveryNotesRepository } from "@/repositories/ops-delivery-notes.re
 import { MeasurementSheetsRepository } from "@/repositories/measurement-sheets.repository";
 import { WorkflowTransitionError } from "@/lib/workflow/status-engine";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { parseJsonBody } from "@/lib/validation/parse-body";
+import { approvalsDecisionSchema } from "@/lib/validation/schemas";
 
 async function resolveApproverSession(): Promise<{
   userId: string;
@@ -58,16 +60,29 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const session = await resolveApproverSession();
-    const body = await req.json();
-    const kind = body.kind as string;
-    const documentId = String(body.documentId ?? "");
-    const decision = body.decision as "approved" | "rejected";
-    const comment = body.comment as string | undefined;
-    const reviewNotes = Array.isArray(body.reviewNotes)
-      ? body.reviewNotes
-      : undefined;
+    const body = await parseJsonBody(req, approvalsDecisionSchema);
+    const kind = body.kind as string | undefined;
+    const documentId = body.documentId;
+    const decision = body.decision;
+    let comment = body.comment;
+    const reviewNotes = body.reviewNotes;
+    const rejectReasonId = body.rejectReasonId;
+    const rejectAttachments = body.rejectAttachments ?? [];
+    const approveOptions = body.approveOptions ?? {};
 
-    if (!documentId || !decision) return apiError("חסרים פרטים");
+    if (decision === "rejected" && rejectReasonId) {
+      const { formatRejectComment } = await import(
+        "@/lib/approvals/reject-reasons"
+      );
+      if (!comment?.trim()) {
+        return apiError("חובה לרשום הערות להחזרה לתיקון");
+      }
+      comment = formatRejectComment({
+        reasonId: rejectReasonId,
+        notes: comment,
+        attachmentUrls: rejectAttachments,
+      });
+    }
 
     if (session.isField || isFieldManagerRole(session.role)) {
       if (kind !== "measurement_sheet") {
@@ -88,28 +103,24 @@ export async function POST(req: NextRequest) {
       return apiError("אין הרשאת אישור", 403);
     }
 
+    let result: any;
+
     if (kind === "work_diary") {
-      const diary = await WorkDiariesRepository.decideApproval(
+      result = await WorkDiariesRepository.decideApproval(
         documentId,
         session.userId,
         decision,
         comment
       );
-      return apiSuccess(diary);
-    }
-
-    if (kind === "delivery_note") {
-      const note = await OpsDeliveryNotesRepository.decideApproval(
+    } else if (kind === "delivery_note") {
+      result = await OpsDeliveryNotesRepository.decideApproval(
         documentId,
         session.userId,
         decision,
         comment
       );
-      return apiSuccess(note);
-    }
-
-    if (kind === "measurement_sheet") {
-      const sheet = await MeasurementSheetsRepository.decideApproval(
+    } else if (kind === "measurement_sheet") {
+      result = await MeasurementSheetsRepository.decideApproval(
         documentId,
         session.userId,
         decision,
@@ -117,10 +128,62 @@ export async function POST(req: NextRequest) {
         reviewNotes,
         req.nextUrl.origin
       );
-      return apiSuccess(sheet);
+    } else {
+      return apiError("סוג מסמך לא תקין");
     }
 
-    return apiError("סוג מסמך לא תקין");
+    // Post-approve options (best-effort)
+    if (decision === "approved" && result?.approvalComplete !== false) {
+      if (approveOptions.saveToDocuments !== false) {
+        try {
+          const { DocumentsHubRepository } = await import(
+            "@/repositories/documents-hub.repository"
+          );
+          await DocumentsHubRepository.ensureInArchive({
+            kind: kind!,
+            entityId: documentId,
+            userId: session.userId,
+            baseUrl: req.nextUrl.origin,
+          });
+          result.savedToDocuments = true;
+        } catch {
+          /* optional — יומן כבר מסונכרן לעיתים */
+        }
+      }
+      if (approveOptions.sendToClient && kind === "measurement_sheet") {
+        try {
+          await MeasurementSheetsRepository.createClientSignLink(
+            documentId,
+            session.userId,
+            req.nextUrl.origin
+          );
+          result.clientLinkCreated = true;
+        } catch {
+          /* optional */
+        }
+      }
+      if (
+        approveOptions.sendToClient &&
+        kind === "work_diary" &&
+        result?.status === "approved"
+      ) {
+        try {
+          await WorkDiariesRepository.createClientSignLink(
+            documentId,
+            session.userId,
+            req.nextUrl.origin
+          );
+          result.clientLinkCreated = true;
+        } catch {
+          /* optional */
+        }
+      }
+    }
+
+    return apiSuccess({
+      ...result,
+      approveOptionsApplied: approveOptions,
+    });
   } catch (error) {
     if (error instanceof WorkflowTransitionError) {
       return apiError(error.message, 400);

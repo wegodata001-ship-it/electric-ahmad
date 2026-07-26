@@ -2,18 +2,25 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  Bell,
+  CheckSquare,
+  ClipboardList,
+  Clock,
+  Home,
+  User,
+} from "lucide-react";
 import { usePortalSession } from "@/apps/shared/use-portal-session";
 import { cn } from "@/lib/utils";
 
-const NAV = [
-  { href: "/operations", label: "בית", exact: true },
-  { href: "/operations/work-orders/new", label: "סידור חדש" },
-  { href: "/operations/approvals", label: "אישורים" },
-  { href: "/operations/reports", label: "דוחות" },
-  { href: "/operations/work-diaries", label: "יומנים" },
-  { href: "/operations/delivery-notes", label: "תעודות" },
-  { href: "/operations/workers", label: "עובדים" },
-];
+const TABS = [
+  { href: "/operations", label: "בית", icon: Home, exact: true },
+  { href: "/operations/attendance", label: "נוכחות", icon: Clock },
+  { href: "/operations/work-orders", label: "סידורים", icon: ClipboardList },
+  { href: "/operations/approvals", label: "אישורים", icon: CheckSquare },
+  { href: "/operations/notifications", label: "התראות", icon: Bell },
+  { href: "/operations/profile", label: "פרופיל", icon: User },
+] as const;
 
 export function OpsAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -21,7 +28,7 @@ export function OpsAppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#fff7ed] text-amber-900">
+      <div className="flex min-h-dvh items-center justify-center bg-[#fff7ed] text-amber-900">
         טוען…
       </div>
     );
@@ -29,52 +36,53 @@ export function OpsAppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div
-      className="min-h-screen bg-[#fff7ed] text-stone-900"
+      className="flex min-h-dvh flex-col bg-[#fff7ed] text-stone-900"
       dir="rtl"
       data-app="operations"
     >
-      <header className="border-b border-amber-200/80 bg-[#fffbeb]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-amber-700">
-              Operations
-            </p>
-            <h1 className="text-lg font-black text-stone-900">מרכז עבודה</h1>
-            <p className="text-xs text-stone-500">{userName}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={loggingOut}
-            className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-bold"
-          >
-            יציאה
-          </button>
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-amber-200/80 bg-[#fffbeb]/95 px-4 backdrop-blur">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold text-amber-800">תפעול יומי</p>
+          <p className="truncate text-sm font-black">{userName || "מנהל תפעול"}</p>
         </div>
-        <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-3 pb-3">
-          {NAV.map((item) => {
-            const exact = "exact" in item && item.exact;
+        <button
+          type="button"
+          onClick={() => void logout()}
+          disabled={loggingOut}
+          className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-bold"
+        >
+          יציאה
+        </button>
+      </header>
+
+      <main className="mx-auto w-full max-w-lg flex-1 px-3 pb-28 pt-4">
+        {children}
+      </main>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-amber-200/80 bg-white/98 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+        <div className="mx-auto flex max-w-lg items-stretch justify-between px-0.5">
+          {TABS.map((tab) => {
+            const exact = "exact" in tab && tab.exact;
             const active = exact
-              ? pathname === item.href
-              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              ? pathname === tab.href
+              : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+            const Icon = tab.icon;
             return (
               <Link
-                key={item.href}
-                href={item.href}
+                key={tab.href}
+                href={tab.href}
                 className={cn(
-                  "shrink-0 rounded-full px-3 py-2 text-sm font-bold",
-                  active
-                    ? "bg-amber-700 text-white"
-                    : "bg-white text-stone-600 ring-1 ring-amber-200"
+                  "flex min-h-[4.25rem] flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-bold leading-tight",
+                  active ? "text-amber-800" : "text-stone-400"
                 )}
               >
-                {item.label}
+                <Icon className="h-5 w-5" />
+                {tab.label}
               </Link>
             );
           })}
-        </nav>
-      </header>
-      <main className="mx-auto max-w-5xl px-4 py-5">{children}</main>
+        </div>
+      </nav>
     </div>
   );
 }

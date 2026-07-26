@@ -6,7 +6,18 @@ import {
   roleGradeLabel,
 } from "@/lib/auth/document-permissions";
 import { isFieldManagerRole, isOfficeRole } from "@/lib/auth/roles";
-import type { DeliveryNoteStatus } from "@prisma/client";
+import type { DeliveryNoteStatus, Prisma } from "@prisma/client";
+import {
+  buildPageInfo,
+  encodeTimeIdCursor,
+  type ListPageInfo,
+  type ListSortDir,
+} from "@/lib/api/list-query";
+import {
+  assertCanSoftDelete,
+  LEGACY_DN_EDITABLE_STATUSES,
+  LEGACY_DN_LOCKED_STATUSES,
+} from "@/lib/workflow/document-guards";
 
 function mapNote(row: {
   id: string;
@@ -307,6 +318,30 @@ export type CreateDeliveryNoteInput = {
   }[];
 };
 
+/** Slim list-row shape (server pagination). Matches enough of `DeliveryNote` for card lists. */
+export type DeliveryNoteListItem = {
+  id: string;
+  noteNumber: string;
+  sequenceNumber: number;
+  status: DeliveryNoteStatus;
+  date: string;
+  client: string;
+  clientId: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  orderNumber: string | null;
+  contactName: string | null;
+  phone: string | null;
+  phoneSecondary: string | null;
+  city: string | null;
+  receiverSigned: boolean;
+  receiverSignatureUrl: string | null;
+  currentVersion: number;
+  items: { quantity: number }[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export class DeliveryNotesRepository {
   static async nextSequence(): Promise<number> {
     const latest = await prisma.deliveryNote.findFirst({
@@ -339,6 +374,141 @@ export class DeliveryNotesRepository {
       orderBy: { date: "desc" },
     });
     return rows.map(mapNote);
+  }
+
+  /**
+   * Server-paginated list for card/table UIs.
+   * Slim shape — includes project name + `items:[{quantity}]` so existing
+   * `.items.length` and `.items.reduce(...quantity)` cards keep working.
+   * No attachments loaded.
+   */
+  static async listPage(opts: {
+    projectId?: string;
+    q?: string | null;
+    status?: string | null;
+    take: number;
+    skip: number;
+    sort?: string | null;
+    dir?: ListSortDir;
+  }): Promise<{
+    items: DeliveryNoteListItem[];
+    total: number;
+    pageInfo: ListPageInfo;
+  }> {
+    const take = Math.max(1, Math.min(opts.take, 200));
+    const skip = Math.max(0, opts.skip);
+    const dir: ListSortDir = opts.dir === "asc" ? "asc" : "desc";
+
+    const where: Prisma.DeliveryNoteWhereInput = {};
+    if (opts.projectId) where.projectId = opts.projectId;
+    if (opts.status && opts.status !== "all") {
+      where.status = opts.status as DeliveryNoteStatus;
+    }
+    const q = opts.q?.trim();
+    if (q) {
+      where.OR = [
+        { noteNumber: { contains: q, mode: "insensitive" } },
+        { client: { contains: q, mode: "insensitive" } },
+        { contactName: { contains: q, mode: "insensitive" } },
+        { orderNumber: { contains: q, mode: "insensitive" } },
+        { city: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
+    const orderBy: Prisma.DeliveryNoteOrderByWithRelationInput[] = (() => {
+      const s = opts.sort ?? "date";
+      switch (s) {
+        case "updatedAt":
+          return [{ updatedAt: dir }, { id: dir }];
+        case "createdAt":
+          return [{ createdAt: dir }, { id: dir }];
+        case "noteNumber":
+          return [{ sequenceNumber: dir }, { id: dir }];
+        case "date":
+        default:
+          return [{ date: dir }, { id: dir }];
+      }
+    })();
+
+    const [rows, total] = await Promise.all([
+      prisma.deliveryNote.findMany({
+        where,
+        select: {
+          id: true,
+          noteNumber: true,
+          sequenceNumber: true,
+          status: true,
+          date: true,
+          client: true,
+          clientId: true,
+          projectId: true,
+          orderNumber: true,
+          contactName: true,
+          phone: true,
+          phoneSecondary: true,
+          city: true,
+          receiverSigned: true,
+          receiverSignatureUrl: true,
+          currentVersion: true,
+          createdAt: true,
+          updatedAt: true,
+          project: { select: { name: true } },
+          items: { select: { quantity: true } },
+        },
+        orderBy,
+        take,
+        skip,
+      }),
+      prisma.deliveryNote.count({ where }),
+    ]);
+
+    const items: DeliveryNoteListItem[] = rows.map((row) => ({
+      id: row.id,
+      noteNumber: row.noteNumber,
+      sequenceNumber: row.sequenceNumber,
+      status: row.status,
+      date: row.date.toISOString(),
+      client: row.client,
+      clientId: row.clientId,
+      projectId: row.projectId,
+      projectName: row.project?.name ?? null,
+      orderNumber: row.orderNumber,
+      contactName: row.contactName,
+      phone: row.phone,
+      phoneSecondary: row.phoneSecondary,
+      city: row.city,
+      receiverSigned: row.receiverSigned,
+      receiverSignatureUrl: row.receiverSignatureUrl,
+      currentVersion: row.currentVersion ?? 1,
+      items: row.items.map((i) => ({ quantity: Number(i.quantity) })),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    }));
+
+    const last = rows[rows.length - 1];
+    const nextCursor = last
+      ? encodeTimeIdCursor(
+          opts.sort === "updatedAt"
+            ? last.updatedAt
+            : opts.sort === "createdAt"
+              ? last.createdAt
+              : last.date,
+          last.id
+        )
+      : null;
+
+    const page = take > 0 ? Math.floor(skip / take) + 1 : 1;
+    const pageInfo = buildPageInfo({
+      take,
+      skip,
+      page,
+      fetchedCount: rows.length,
+      returnedCount: rows.length,
+      total,
+      nextCursor,
+    });
+
+    return { items, total, pageInfo };
   }
 
   static async create(input: CreateDeliveryNoteInput, userId: string) {
@@ -469,12 +639,7 @@ export class DeliveryNotesRepository {
       include: noteInclude,
     });
     if (!existing) throw new Error("תעודת משלוח לא נמצאה");
-    if (
-      existing.status === "locked" ||
-      existing.status === "sent" ||
-      existing.status === "delivered" ||
-      existing.status === "cancelled"
-    ) {
+    if (LEGACY_DN_LOCKED_STATUSES.includes(existing.status)) {
       throw new Error("תעודת המשלוח נעולה לעריכה");
     }
     if (!input.client?.trim()) throw new Error("לקוח חובה");
@@ -494,12 +659,17 @@ export class DeliveryNotesRepository {
       where: { deliveryNoteId: id },
     });
 
+    // `input.status` is intentionally IGNORED — status transitions must go
+    // through the dedicated complete / send / receive endpoints so the
+    // workflow lock cannot be bypassed via a PATCH.
+    void input.status;
+
     const updated = await prisma.deliveryNote.update({
       where: { id },
       data: {
         // noteNumber / sequenceNumber intentionally unchanged
         date: input.date ? new Date(input.date) : existing.date,
-        status: input.status ?? existing.status,
+        status: existing.status,
         client: input.client.trim(),
         clientId: input.clientId || null,
         projectId: input.projectId || null,
@@ -663,6 +833,11 @@ export class DeliveryNotesRepository {
   static async delete(id: string, userId: string) {
     const existing = await prisma.deliveryNote.findUnique({ where: { id } });
     if (!existing) throw new Error("תעודת משלוח לא נמצאה");
+
+    assertCanSoftDelete(String(existing.status), null, {
+      entityLabel: "תעודת משלוח",
+      editableStatuses: LEGACY_DN_EDITABLE_STATUSES,
+    });
 
     await prisma.deliveryNote.delete({ where: { id } });
 

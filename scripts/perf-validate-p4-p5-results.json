@@ -1,0 +1,126 @@
+{
+  "measuredAt": "2026-07-26T13:15:42.824Z",
+  "base": "http://localhost:3000",
+  "projectId": "cms034ch70002kz04wu99jp4h",
+  "rows": [
+    {
+      "path": "/api/projects/cms034ch70002kz04wu99jp4h/rooms",
+      "status": 200,
+      "avg": 490,
+      "min": 485,
+      "bytes": 779,
+      "itemLen": 3,
+      "pageInfo": null,
+      "ok": true,
+      "before": 4066,
+      "improvementPct": 88,
+      "key": "rooms"
+    },
+    {
+      "path": "/api/documents/hub?take=50",
+      "status": 200,
+      "avg": 744,
+      "min": 512,
+      "bytes": 31137,
+      "itemLen": 49,
+      "pageInfo": {
+        "take": 50,
+        "skip": 0,
+        "page": 1,
+        "hasMore": false,
+        "nextCursor": null,
+        "total": 49
+      },
+      "ok": true,
+      "before": 2075,
+      "improvementPct": 64,
+      "key": "documentsHub"
+    },
+    {
+      "path": "/api/documents-archive",
+      "status": 200,
+      "avg": 470,
+      "min": 465,
+      "bytes": 5105,
+      "itemLen": 10,
+      "pageInfo": null,
+      "ok": true,
+      "before": 2758,
+      "improvementPct": 83,
+      "key": "documentsArchive"
+    },
+    {
+      "path": "/api/invoices/workspace?projectId=cms034ch70002kz04wu99jp4h",
+      "status": 200,
+      "avg": 485,
+      "min": 473,
+      "bytes": 1014,
+      "itemLen": null,
+      "pageInfo": null,
+      "ok": true,
+      "before": 2664,
+      "improvementPct": 82,
+      "key": "invoiceWorkspace"
+    },
+    {
+      "path": "/api/delivery-notes?take=40",
+      "status": 200,
+      "avg": 863,
+      "min": 840,
+      "bytes": 1701,
+      "itemLen": 3,
+      "pageInfo": {
+        "take": 40,
+        "skip": 0,
+        "page": 1,
+        "hasMore": false,
+        "nextCursor": null,
+        "total": 3
+      },
+      "ok": true,
+      "before": 1177,
+      "improvementPct": 27,
+      "key": "deliveryNotesPaged"
+    },
+    {
+      "path": "/api/boq?take=50",
+      "status": 200,
+      "avg": 1125,
+      "min": 1091,
+      "bytes": 26314,
+      "itemLen": 50,
+      "pageInfo": {
+        "take": 50,
+        "skip": 0,
+        "page": 1,
+        "hasMore": true,
+        "nextCursor": null,
+        "total": 138
+      },
+      "ok": true,
+      "before": null,
+      "improvementPct": null,
+      "key": "boqPaged"
+    },
+    {
+      "path": "/api/work-diaries?take=80",
+      "status": 200,
+      "avg": 1650,
+      "min": 1630,
+      "bytes": 4605,
+      "itemLen": 9,
+      "pageInfo": {
+        "take": 80,
+        "skip": 0,
+        "page": 1,
+        "hasMore": false,
+        "nextCursor": null,
+        "total": null
+      },
+      "ok": true,
+      "before": null,
+      "improvementPct": null,
+      "key": "workDiaries"
+    }
+  ]
+}

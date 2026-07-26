@@ -1,0 +1,100 @@
+{
+  "measuredAt": "2026-07-26T14:02:52.098Z",
+  "serviceRoleExposedToClient": false,
+  "probe": {
+    "uploaded": true,
+    "signedUrlOk": true,
+    "anonPublicBlocked": true,
+    "serviceRoleClientOnly": true
+  },
+  "buckets": [
+    {
+      "bucket": "projects",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    },
+    {
+      "bucket": "contracts",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    },
+    {
+      "bucket": "boq",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    },
+    {
+      "bucket": "partial-invoices",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    },
+    {
+      "bucket": "documents",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    },
+    {
+      "bucket": "images",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    },
+    {
+      "bucket": "videos",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    },
+    {
+      "bucket": "reports",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    },
+    {
+      "bucket": "excel",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    },
+    {
+      "bucket": "pdf",
+      "visibility": "PRIVATE",
+      "signedUrlEnabled": true,
+      "publicAccessBlocked": null,
+      "status": "OK",
+      "detail": "private"
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "ok": 10,
+    "fail": 0,
+    "allPrivate": true,
+    "signedUrlWorks": true,
+    "publicUrlBlocked": true
+  }
+}

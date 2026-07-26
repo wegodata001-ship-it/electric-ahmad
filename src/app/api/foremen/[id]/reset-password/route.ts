@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { ForemenRepository } from "@/repositories/foremen.repository";
-import { getAuthContext } from "@/lib/auth/session";
+import { requireSystemAdmin } from "@/lib/auth/assert-office";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function POST(
@@ -8,13 +8,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await getAuthContext();
+    const admin = await requireSystemAdmin();
     const { id } = await params;
     const body = await request.json();
     const result = await ForemenRepository.resetPassword(
       id,
       body.password ?? body.newPassword ?? "",
-      userId
+      admin.userId
     );
     return apiSuccess(result);
   } catch (error) {

@@ -66,6 +66,25 @@ export function ProjectRoomsToolbar({ projectId, disabled, onChanged }: Props) {
     setOpen(true);
   }
 
+  /** Excel-style: add room immediately, no modal */
+  async function quickAddRoom() {
+    if (disabled || saving) return;
+    setSaving(true);
+    try {
+      const n = rooms.length || (await invoicesWorkspaceService.listRooms(projectId)).items?.length || 0;
+      await invoicesWorkspaceService.createRoom(projectId, {
+        name: `חדר ${n + 1}`,
+      });
+      toast.success("חדר נוסף — ניתן לשנות את השם בניהול חדרים");
+      await onChanged();
+      if (manageOpen) await refreshRooms();
+    } catch (e: any) {
+      toast.error(e?.message || "לא ניתן להוסיף חדר");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function openEdit(room: ProjectRoomDto) {
     setEditRoom(room);
     setForm({
@@ -159,9 +178,21 @@ export function ProjectRoomsToolbar({ projectId, disabled, onChanged }: Props) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={openCreate} disabled={disabled}>
+        <Button
+          size="sm"
+          onClick={() => void quickAddRoom()}
+          disabled={disabled || saving}
+        >
           <Plus className="h-4 w-4" />
-          הוסף חדר
+          {saving ? "מוסיף…" : "+ הוסף חדר"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={openCreate}
+          disabled={disabled}
+        >
+          חדר מפורט
         </Button>
         <Button
           size="sm"

@@ -1,0 +1,9 @@
+{
+  "measuredAt": "2026-07-26T14:04:07.831Z",
+  "dsnConfigured": false,
+  "release": "ops-sprint2-local",
+  "environment": "development",
+  "eventSent": false,
+  "eventId": null,
+  "error": "SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN not set — cannot send test event. Configure in production host ENV."
+}

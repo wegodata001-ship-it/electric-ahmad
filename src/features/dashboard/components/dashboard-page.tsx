@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import {
   Building2,
@@ -11,28 +12,32 @@ import {
   ClipboardList,
   ArrowUpRight,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardContent, Progress } from "@/components/ui";
+import { Card, CardHeader, CardTitle } from "@/components/ui";
 import { dashboardService, projectService } from "@/services";
 import { activityService } from "@/features/activity/services/activity.service";
 import type { DashboardKPIs, Project, Activity } from "@/types";
 import { formatCurrency, formatPercent, formatRelative } from "@/utils/format";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  Legend,
-} from "recharts";
 import Link from "next/link";
 import Image from "next/image";
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS } from "@/constants";
 import { Badge, CircularProgress } from "@/components/ui";
 import { quickNavigation } from "@/config/navigation";
+
+const DashboardCharts = dynamic(
+  () =>
+    import("@/features/dashboard/components/dashboard-charts").then(
+      (m) => m.DashboardCharts
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="h-[280px] animate-pulse rounded-xl bg-gray-100" />
+        <div className="h-[280px] animate-pulse rounded-xl bg-gray-100" />
+      </div>
+    ),
+  }
+);
 
 const kpiIcons = {
   activeProjects: Building2,
@@ -145,49 +150,7 @@ export function DashboardPage() {
         <KPICard label="דיווחים מהיום" value={kpis.todayReports} icon={kpiIcons.todayReports} delay={0.3} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card padding="md" className="sm:p-6">
-          <CardHeader>
-            <CardTitle>שווי ביצוע לפי פרויקט</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[220px] sm:h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis type="number" tickFormatter={(v) => `₪${(v / 1000).toFixed(0)}K`} fontSize={12} />
-                  <YAxis type="category" dataKey="name" width={100} fontSize={11} />
-                  <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-                  <Bar dataKey="completed" name="שבוצע" fill="#2563eb" radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="remaining" name="נותר" fill="#e2e8f0" radius={[0, 4, 4, 0]} />
-                  <Legend />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card padding="md" className="sm:p-6">
-          <CardHeader>
-            <CardTitle>התקדמות חודשית</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[220px] sm:h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={progressData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="month" fontSize={12} />
-                  <YAxis fontSize={12} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="planned" name="מתוכנן" stroke="#94a3b8" strokeDasharray="5 5" dot={false} />
-                  <Line type="monotone" dataKey="actual" name="בפועל" stroke="#2563eb" strokeWidth={2} dot={{ r: 4 }} />
-                  <Legend />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <DashboardCharts chartData={chartData} progressData={progressData} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">

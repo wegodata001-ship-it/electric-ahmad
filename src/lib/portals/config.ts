@@ -16,6 +16,8 @@ import {
   Share2,
   Bell,
   Link2,
+  Clock,
+  User,
 } from "lucide-react";
 
 export type PortalId = "system" | "project" | "operations" | "field";
@@ -55,7 +57,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     shortName: "מערכת",
     headerTitle: "ניהול מערכת",
     home: "/system",
-    description: "חברות · משתמשים · תשתית",
+    description: "חברות · משתמשים · חשבונות · תשתית",
     accent: "#0f172a",
     theme: {
       accent: "#0f172a",
@@ -68,6 +70,12 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     nav: [
       { label: "לוח בקרה", href: "/system", icon: LayoutDashboard, mode: "live" },
       { label: "פרויקטים", href: "/system/companies", icon: Building2, mode: "live" },
+      {
+        label: "חשבונות / עץ פרויקט",
+        href: "/system/accounts",
+        icon: Wallet,
+        mode: "live",
+      },
       { label: "משתמשים", href: "/system/users", icon: Users, mode: "live" },
       { label: "Workflow", href: "/system/workflow", icon: GitBranch, mode: "live" },
       { label: "מסמכים", href: "/system/documents", icon: FolderOpen, mode: "live" },
@@ -81,9 +89,9 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     id: "project",
     name: "Project Portal",
     shortName: "פרויקט",
-    headerTitle: "ניהול פרויקט",
+    headerTitle: "אישורים ומסמכים",
     home: "/project",
-    description: "פרויקטים · כתב כמויות · חשבונות",
+    description: "אישור · החזרה · שיתוף · חתימות",
     accent: "#1d4ed8",
     theme: {
       accent: "#1d4ed8",
@@ -94,25 +102,21 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       badge: "PRJ",
     },
     nav: [
-      { label: "לוח בקרה", href: "/project", icon: LayoutDashboard, mode: "live" },
-      { label: "פרויקטים", href: "/project/projects", icon: Building2, mode: "live" },
-      { label: "כתב כמויות", href: "/project/boq", icon: ClipboardList, mode: "live" },
-      { label: "חשבונות", href: "/project/accounts", icon: Wallet, mode: "live" },
-      { label: "תעודות משלוח", href: "/project/delivery-notes", icon: Truck, mode: "live" },
-      { label: "מסמכים", href: "/project/documents", icon: FileText, mode: "live" },
+      { label: "בית", href: "/project", icon: LayoutDashboard, mode: "live" },
       { label: "אישורים", href: "/project/approvals", icon: CheckSquare, mode: "live" },
-      { label: "התראות", href: "/project/notifications", icon: Bell, mode: "live" },
-      { label: "שיחות", href: "/project/conversation", icon: MessageSquare, mode: "live" },
+      { label: "מסמכים", href: "/project/documents", icon: FileText, mode: "live" },
       { label: "Share Links", href: "/project/share-links", icon: Link2, mode: "live" },
+      { label: "חתימות", href: "/project/signatures", icon: CheckSquare, mode: "live" },
+      { label: "התראות", href: "/project/notifications", icon: Bell, mode: "live" },
     ],
   },
   operations: {
     id: "operations",
     name: "Operations Portal",
     shortName: "תפעול",
-    headerTitle: "ניהול אישורים",
+    headerTitle: "עבודה יומית",
     home: "/operations",
-    description: "תור עבודה · סידורים · אישורים",
+    description: "נוכחות · סידורים · אישורים",
     accent: "#b45309",
     theme: {
       accent: "#b45309",
@@ -123,13 +127,22 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       badge: "OPS",
     },
     nav: [
-      { label: "תור עבודה", href: "/operations", icon: ClipboardList, mode: "live" },
-      { label: "סידור חדש", href: "/operations/work-orders/new", icon: ClipboardList, mode: "live" },
-      { label: "מרכז אישורים", href: "/operations/approvals", icon: CheckSquare, mode: "live" },
-      { label: "דוחות", href: "/operations/reports", icon: FileText, mode: "live" },
-      { label: "יומנים", href: "/operations/work-diaries", icon: BookOpen, mode: "live" },
-      { label: "תעודות", href: "/operations/delivery-notes", icon: Truck, mode: "live" },
-      { label: "עובדים", href: "/operations/workers", icon: Users, mode: "live" },
+      { label: "בית", href: "/operations", icon: LayoutDashboard, mode: "live" },
+      { label: "נוכחות", href: "/operations/attendance", icon: Clock, mode: "live" },
+      {
+        label: "סידורי עבודה",
+        href: "/operations/work-orders",
+        icon: ClipboardList,
+        mode: "live",
+      },
+      {
+        label: "אישורים",
+        href: "/operations/approvals",
+        icon: CheckSquare,
+        mode: "live",
+      },
+      { label: "התראות", href: "/operations/notifications", icon: Bell, mode: "live" },
+      { label: "פרופיל", href: "/operations/profile", icon: User, mode: "live" },
     ],
   },
   field: {
@@ -150,16 +163,34 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     },
     nav: [
       { label: "בית", href: "/field", icon: LayoutDashboard, mode: "live" },
-      { label: "סידורי עבודה", href: "/field/work-orders", icon: ClipboardList, mode: "live" },
-      { label: "יומן עבודה", href: "/field/work-diaries", icon: BookOpen, mode: "live" },
-      { label: "תעודות משלוח", href: "/field/delivery-notes", icon: Truck, mode: "live" },
-      { label: "אישורים", href: "/field/approvals", icon: CheckSquare, mode: "live" },
-      { label: "פרופיל", href: "/field/profile", icon: Users, mode: "live" },
+      {
+        label: "סידורי עבודה",
+        href: "/field/work-orders",
+        icon: ClipboardList,
+        mode: "live",
+      },
+      {
+        label: "יומן עבודה",
+        href: "/field/work-diaries",
+        icon: BookOpen,
+        mode: "live",
+      },
+      {
+        label: "תעודות משלוח",
+        href: "/field/delivery-notes",
+        icon: Truck,
+        mode: "live",
+      },
+      {
+        label: "אישורים",
+        href: "/field/approvals",
+        icon: CheckSquare,
+        mode: "live",
+      },
     ],
   },
 };
 
-/** Future portals — add PortalDefinition + routes without new engines */
 export const FUTURE_PORTAL_IDS = [
   "finance",
   "customer",
@@ -207,7 +238,6 @@ export function isPortalPath(pathname: string): boolean {
   );
 }
 
-/** Legacy P1 mock widgets — superseded by live portal dashboards in Sprint 1 */
 export const PORTAL_DASHBOARD_MOCKS: Record<
   PortalId,
   Array<{

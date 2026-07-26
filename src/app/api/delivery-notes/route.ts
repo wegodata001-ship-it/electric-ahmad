@@ -1,11 +1,35 @@
 import { NextRequest } from "next/server";
 import { DeliveryNotesRepository } from "@/repositories/delivery-notes.repository";
 import { getAuthContext } from "@/lib/auth/session";
+import { requireOfficeAuth } from "@/lib/auth/assert-office";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { parseListQuery } from "@/lib/api/list-query";
 
 export async function GET(request: NextRequest) {
   try {
-    const projectId = request.nextUrl.searchParams.get("projectId");
+    await requireOfficeAuth();
+    const sp = request.nextUrl.searchParams;
+    const projectId = sp.get("projectId") || undefined;
+    const status = sp.get("status");
+    const parsed = parseListQuery(sp, { defaultTake: 40, maxTake: 200 });
+
+    // Use paged shape when the client asked for pagination or applied filters
+    // beyond bare `projectId`. Otherwise keep the legacy array response for BC.
+    const usePaged = parsed.paginated || Boolean(parsed.q) || Boolean(status);
+
+    if (usePaged) {
+      const result = await DeliveryNotesRepository.listPage({
+        projectId,
+        q: parsed.q,
+        status,
+        take: parsed.take,
+        skip: parsed.skip,
+        sort: parsed.sort,
+        dir: parsed.dir,
+      });
+      return apiSuccess(result);
+    }
+
     if (projectId) {
       return apiSuccess(await DeliveryNotesRepository.findByProject(projectId));
     }

@@ -1,24 +1,50 @@
 import { NextRequest } from "next/server";
 import { requireOfficeUser } from "@/lib/auth/office-session";
-import { canApproveDocuments } from "@/lib/auth/document-permissions";
+import {
+  canApproveDocuments,
+  hasDocumentPermission,
+} from "@/lib/auth/document-permissions";
 import { WorkOrdersRepository } from "@/repositories/work-orders.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { buildPageInfo, parseListQuery } from "@/lib/api/list-query";
 import type { WorkOrderStatus } from "@prisma/client";
 
-/** Office Operations — list / create work orders (same repository as Field) */
+/** Office — list / create work orders (Project Manager + Operations) */
 export async function GET(req: NextRequest) {
   try {
     const session = await requireOfficeUser();
     if (!canApproveDocuments(session.role)) {
       return apiError("אין הרשאה", 403);
     }
-    const status = req.nextUrl.searchParams.get("status") as WorkOrderStatus | null;
-    const items = await WorkOrdersRepository.listAll({
+    const sp = req.nextUrl.searchParams;
+    const status = sp.get("status") as WorkOrderStatus | null;
+    const projectId = sp.get("projectId") || undefined;
+    const foremanId = sp.get("foremanId") || undefined;
+    const parsed = parseListQuery(sp, { defaultTake: 80, maxTake: 200 });
+
+    const fetched = await WorkOrdersRepository.listAll({
       status: status || undefined,
-      take: 80,
+      projectId,
+      foremanId,
+      take: parsed.take + 1,
+      skip: parsed.skip,
     });
-    const queue = await WorkOrdersRepository.getOpsQueueCounts();
-    return apiSuccess({ items, queue });
+    const hasMore = fetched.length > parsed.take;
+    const items = hasMore ? fetched.slice(0, parsed.take) : fetched;
+
+    const pageInfo = buildPageInfo({
+      take: parsed.take,
+      skip: parsed.skip,
+      page: parsed.page,
+      fetchedCount: fetched.length,
+      returnedCount: items.length,
+    });
+
+    const [queue, statusCounts] = await Promise.all([
+      WorkOrdersRepository.getOpsQueueCounts(),
+      WorkOrdersRepository.getStatusCounts({ projectId, foremanId }),
+    ]);
+    return apiSuccess({ items, pageInfo, queue, statusCounts });
   } catch (error) {
     return handleApiError(error);
   }
@@ -27,8 +53,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await requireOfficeUser();
-    if (!canApproveDocuments(session.role)) {
-      return apiError("אין הרשאה", 403);
+    if (!hasDocumentPermission(session.role, "create")) {
+      return apiError("אין הרשאה ליצירת סידור", 403);
     }
     const body = await req.json();
     if (!body.projectId) return apiError("יש לבחור פרויקט");

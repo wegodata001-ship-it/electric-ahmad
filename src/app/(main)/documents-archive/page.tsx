@@ -1,5 +1,5 @@
-import { DocumentsArchivePage } from "@/features/work-diaries/components/documents-archive-page";
+import { DocumentsHubV2Page } from "@/features/documents/components/documents-hub-v2-page";
 
 export default function Page() {
-  return <DocumentsArchivePage />;
+  return <DocumentsHubV2Page />;
 }

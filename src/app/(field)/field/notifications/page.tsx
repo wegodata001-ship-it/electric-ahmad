@@ -1,5 +1,5 @@
-import { NotificationCenterPage } from "@/features/platform/components";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <NotificationCenterPage />;
+  redirect("/field");
 }

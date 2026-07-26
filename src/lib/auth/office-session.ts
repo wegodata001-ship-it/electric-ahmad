@@ -36,6 +36,7 @@ export async function readOfficeSessionPayload(): Promise<OfficeSessionPayload |
 /**
  * Require authenticated office / project-manager user.
  * Validates role, active employee (when linked), and soft-delete.
+ * Uses a slim select (no full Employee row) — same security checks, 1 RTT.
  */
 export async function requireOfficeUser(): Promise<OfficeUserSession> {
   const payload = await readOfficeSessionPayload();
@@ -45,7 +46,22 @@ export async function requireOfficeUser(): Promise<OfficeUserSession> {
 
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    include: { employee: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      username: true,
+      role: true,
+      avatarUrl: true,
+      passwordHash: true,
+      employee: {
+        select: {
+          id: true,
+          isDeleted: true,
+          status: true,
+        },
+      },
+    },
   });
 
   if (!user || !user.passwordHash || !isOfficeRole(user.role)) {

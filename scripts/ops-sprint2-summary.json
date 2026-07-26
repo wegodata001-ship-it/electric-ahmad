@@ -1,0 +1,65 @@
+{
+  "sprint": "Production Readiness Sprint 2 — Operations Gate",
+  "measuredAt": "2026-07-26T14:07:00.000Z",
+  "storage": {
+    "script": "npx tsx scripts/setup-storage.ts + node scripts/verify-storage-private.mjs",
+    "result": "PASS",
+    "allBucketsPrivate": true,
+    "signedUrlOk": true,
+    "publicUrlBlocked": true,
+    "serviceRoleExposedToClient": false,
+    "evidence": "scripts/ops-storage-verification.json"
+  },
+  "backupRestore": {
+    "type": "logical_schema_restore_drill",
+    "result": "PASS",
+    "durationSec": 17,
+    "scratchSchema": "ops_restore_drill_20260726140336",
+    "evidence": "scripts/ops-restore-drill-results.json",
+    "docsUpdated": "docs/ops/backup-and-dr.md",
+    "residual": "Dashboard PITR into separate Supabase project — quarterly"
+  },
+  "sentry": {
+    "result": "BLOCKED",
+    "dsnConfigured": false,
+    "evidence": "scripts/ops-sentry-smoke-results.json",
+    "actionRequired": "Set SENTRY_DSN + NEXT_PUBLIC_SENTRY_DSN (+ optional SENTRY_RELEASE) on production host, re-run node scripts/ops-sentry-smoke.mjs"
+  },
+  "loadTest": {
+    "result": "COMPLETED_WITH_BOTTLENECKS",
+    "base": "http://localhost:3010",
+    "errorRateAllLevels": 0,
+    "levels": [
+      { "vus": 10, "avgMs": 1151, "p95": 2265, "p99": 3362, "errorRate": 0, "rps": 8.28 },
+      { "vus": 25, "avgMs": 1311, "p95": 2481, "p99": 3037, "errorRate": 0, "rps": 17.88 },
+      { "vus": 50, "avgMs": 2199, "p95": 3993, "p99": 4280, "errorRate": 0, "rps": 21.22 },
+      { "vus": 100, "avgMs": 4195, "p95": 7339, "p99": 7732, "errorRate": 0, "rps": 21.4 },
+      { "vus": 200, "avgMs": 8856, "p95": 15135, "p99": 16358, "errorRate": 0, "rps": 18.62 }
+    ],
+    "bottlenecks": [
+      "p95 exceeds 3s from 50 VUs (RTT floor ~0.45s × concurrency saturation on single Next dev process)",
+      "p95/p99 cliff at 100–200 VUs — report only, no optimization without approval"
+    ],
+    "cpuMemoryDbConnections": "Not instrumented in-process; capture from Vercel/Supabase dashboards in staging/prod run",
+    "evidence": "scripts/ops-load-test-results.json"
+  },
+  "scores": {
+    "overallBefore": 61,
+    "overallAfter": 68,
+    "domains": {
+      "Security": 72,
+      "Workflow": 78,
+      "StorageOps": 95,
+      "BackupRestore": 72,
+      "MonitoringSentry": 25,
+      "LoadTesting": 70,
+      "Performance": 88
+    }
+  },
+  "decision": "Ready with Minor Fixes",
+  "blockersForGreen": [
+    "Configure SENTRY_DSN in production and verify test event",
+    "Optional: schedule Supabase Dashboard PITR restore to separate project",
+    "Capacity planning: 100+ concurrent users need scaled Node instances / region colocation (no code opt without approval)"
+  ]
+}

@@ -1,5 +1,5 @@
-import { DeliveryNotesPage } from "@/features/delivery-notes/components/delivery-notes-page";
+import { PmDeliveryNotesList } from "@/apps/project/pm-delivery-notes";
 
-export default function Page() {
-  return <DeliveryNotesPage />;
+export default function ProjectDeliveryNotesPage() {
+  return <PmDeliveryNotesList />;
 }

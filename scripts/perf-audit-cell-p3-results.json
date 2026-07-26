@@ -1,0 +1,354 @@
+{
+  "measuredAt": "2026-07-26T12:34:30.551Z",
+  "sheetId": "cms1h5gb10009l604tdvjvdv2",
+  "cellId": "cms1pno2100bmr1r44vxmghg5",
+  "baselineFromPriorAudit": {
+    "httpBatch1Cell": 1668,
+    "httpSingleSameValue": 2406
+  },
+  "inventory": {
+    "endpoint": "PUT /api/measurement-sheets/:id/cells",
+    "uiHotPath": "saveCells → body.cells[] → setCellsBatch",
+    "singlePath": "body.rowId+boqItemId → setCellQuantity",
+    "fullGridRefetch": false,
+    "boqRefetch": false,
+    "aggregatesAfterSave": false,
+    "includesAfterUpdate": false,
+    "responseBatch": "{ saved: N }",
+    "responseSingle": "{ id, rowId, boqItemId, quantity }",
+    "batchQueries": [
+      "1× measurementSheet.findUnique (status)",
+      "1× measurementCell.findMany (ALL cells on sheet)",
+      "tx: N× cell.update (loop, 1 per dirty cell)",
+      "tx: optional createMany cells",
+      "tx: optional findMany created cells",
+      "tx: createMany MeasurementEntry",
+      "tx: measurementSheet.update (touch)"
+    ],
+    "singleQueries": [
+      "1× measurementSheet.findUnique (FULL row)",
+      "tx: findUnique cell by composite",
+      "tx: update OR create cell",
+      "tx: create MeasurementEntry",
+      "tx: measurementSheet.update"
+    ],
+    "notes": [
+      "Each Prisma statement to remote Supabase ≈ 1 RTT (~400–600ms)",
+      "Interactive $transaction does NOT collapse RTTs — statements still serial over wire",
+      "Batch prefetches ALL sheet cells even for 1 dirty cell",
+      "Audit entry write is mandatory business side-effect (not optional in current logic)",
+      "Sheet status touch on every save"
+    ]
+  },
+  "stages": [
+    {
+      "name": "RTT SELECT 1 (min)",
+      "ms": 464,
+      "queries": 1,
+      "rtt": 1,
+      "samples": [
+        536,
+        474,
+        464,
+        465,
+        510
+      ]
+    },
+    {
+      "name": "RTT SELECT 1 (avg)",
+      "ms": 490,
+      "queries": 1,
+      "rtt": 1,
+      "samples": [
+        536,
+        474,
+        464,
+        465,
+        510
+      ]
+    },
+    {
+      "name": "Auth: requireOfficeUser slim (avg)",
+      "ms": 679,
+      "queries": 1,
+      "rtt": 1,
+      "samples": [
+        687,
+        675,
+        675
+      ]
+    },
+    {
+      "name": "Validation: sheet status + qty clamp",
+      "ms": 463,
+      "queries": 1,
+      "rtt": 1,
+      "editable": true,
+      "status": "in_progress",
+      "qty": 0.001
+    },
+    {
+      "name": "REPO prefetch findMany all cells (avg)",
+      "ms": 470,
+      "queries": 1,
+      "rtt": 1,
+      "samples": [
+        471,
+        479,
+        459
+      ],
+      "cellCount": 15
+    },
+    {
+      "name": "REPO UPDATE cell only (avg)",
+      "ms": 506,
+      "queries": 1,
+      "rtt": 1,
+      "samples": [
+        494,
+        513,
+        511
+      ]
+    },
+    {
+      "name": "REPO INSERT entry only (avg)",
+      "ms": 532,
+      "queries": 1,
+      "rtt": 1,
+      "samples": [
+        589,
+        474
+      ]
+    },
+    {
+      "name": "REPO UPDATE sheet touch (avg)",
+      "ms": 474,
+      "queries": 1,
+      "rtt": 1,
+      "samples": [
+        463,
+        484
+      ]
+    },
+    {
+      "name": "REPO setCellsBatch 1-cell FULL (avg)",
+      "ms": 1889,
+      "queries": "4–5 (sheet + prefetch + tx: update+entry+sheet)",
+      "rtt": "4–5 serial",
+      "samples": [
+        1894,
+        1905,
+        1867
+      ],
+      "breakdownAvg": {
+        "sheetLookup": 512,
+        "prefetchCells": 487,
+        "txUpdateCell": 198,
+        "txCreateEntry": 190,
+        "txTouchSheet": 205,
+        "transactionTotal": 890
+      }
+    },
+    {
+      "name": "REPO setCellQuantity FULL (avg)",
+      "ms": 1531,
+      "queries": "5 (sheet + tx find+update+entry+sheet)",
+      "rtt": "5 serial",
+      "samples": [
+        1571,
+        1493,
+        1529
+      ],
+      "breakdownAvg": {
+        "sheetFull": 471,
+        "txFindCell": 186,
+        "txUpdate": 195,
+        "txEntry": 190,
+        "txSheet": 192,
+        "transactionTotal": 1061
+      }
+    },
+    {
+      "name": "Mapping + JSON.stringify (local)",
+      "ms": 0,
+      "queries": 0,
+      "rtt": 0,
+      "batchBytes": 11,
+      "singleBytes": 123
+    },
+    {
+      "name": "HTTP PUT batch 1-cell (UI hot path) (avg, skip warm)",
+      "ms": 2324,
+      "queries": "auth+repo",
+      "rtt": "multi",
+      "samples": [
+        2297,
+        2317,
+        2357
+      ],
+      "bytes": 35,
+      "ok": true,
+      "min": 2297
+    },
+    {
+      "name": "HTTP PUT single-cell body (avg, skip warm)",
+      "ms": 2135,
+      "queries": "auth+repo",
+      "rtt": "multi",
+      "samples": [
+        2121,
+        2134,
+        2151
+      ],
+      "bytes": 147,
+      "ok": true,
+      "min": 2121
+    },
+    {
+      "name": "EXPLAIN UPDATE cell by id",
+      "ms": 0.07,
+      "ok": true,
+      "planningMs": 0.072,
+      "seqScan": false,
+      "indexScan": true,
+      "queries": 1,
+      "rtt": "N/A (server exec)"
+    },
+    {
+      "name": "EXPLAIN SELECT cells by sheetId",
+      "ms": 0.045,
+      "ok": true,
+      "planningMs": 0.073,
+      "seqScan": false,
+      "indexScan": true,
+      "queries": 1,
+      "rtt": "N/A (server exec)"
+    },
+    {
+      "name": "EXPLAIN SELECT cell by unique (rowId,boqItemId)",
+      "ms": 0.04,
+      "ok": true,
+      "planningMs": 0.098,
+      "seqScan": false,
+      "indexScan": true,
+      "queries": 1,
+      "rtt": "N/A (server exec)"
+    },
+    {
+      "name": "EXPLAIN SELECT sheet status",
+      "ms": 0.039,
+      "ok": true,
+      "planningMs": 0.071,
+      "seqScan": true,
+      "indexScan": false,
+      "queries": 1,
+      "rtt": "N/A (server exec)"
+    },
+    {
+      "name": "EXPLAIN INSERT MeasurementEntry (dry via SELECT)",
+      "ms": 0.052,
+      "ok": true,
+      "planningMs": 0.077,
+      "seqScan": false,
+      "indexScan": true,
+      "queries": 1,
+      "rtt": "N/A (server exec)"
+    }
+  ],
+  "explains": [
+    {
+      "label": "UPDATE cell by id",
+      "ok": true,
+      "executionMs": 0.07,
+      "planningMs": 0.072,
+      "seqScan": false,
+      "indexScan": true
+    },
+    {
+      "label": "SELECT cells by sheetId",
+      "ok": true,
+      "executionMs": 0.045,
+      "planningMs": 0.073,
+      "seqScan": false,
+      "indexScan": true
+    },
+    {
+      "label": "SELECT cell by unique (rowId,boqItemId)",
+      "ok": true,
+      "executionMs": 0.04,
+      "planningMs": 0.098,
+      "seqScan": false,
+      "indexScan": true
+    },
+    {
+      "label": "SELECT sheet status",
+      "ok": true,
+      "executionMs": 0.039,
+      "planningMs": 0.071,
+      "seqScan": true,
+      "indexScan": false
+    },
+    {
+      "label": "INSERT MeasurementEntry (dry via SELECT)",
+      "ok": true,
+      "executionMs": 0.052,
+      "planningMs": 0.077,
+      "seqScan": false,
+      "indexScan": true
+    }
+  ],
+  "http": {
+    "batch": {
+      "avg": 2324,
+      "min": 2297,
+      "samples": [
+        2297,
+        2317,
+        2357
+      ],
+      "bytes": 35,
+      "ok": true
+    },
+    "single": {
+      "avg": 2135,
+      "min": 2121,
+      "samples": [
+        2121,
+        2134,
+        2151
+      ],
+      "bytes": 147,
+      "ok": true
+    }
+  },
+  "rootCause": {
+    "verdict": "Serial RTT amplification: auth DB + sheet lookup + cells prefetch + multi-statement transaction (cell UPDATE + entry INSERT + sheet UPDATE). SQL execution is sub-ms; wall time is infrastructure RTT × query count.",
+    "wasteOn": [
+      "Authentication (separate DB query ~1 RTT)",
+      "Repository serial queries (prefetch all cells + 3 tx writes)",
+      "RTT (dominant — each statement ~RTT)"
+    ],
+    "notWasteOn": [
+      "SQL Execution Time (EXPLAIN ~0.02–0.1ms)",
+      "Mapping / Serialization (~0ms, tiny payload)",
+      "Full grid refetch (already eliminated on batch path)",
+      "BOQ refetch / aggregates"
+    ],
+    "queryCountEstimate": {
+      "httpBatch": "1 auth + 2 pre + 3 tx ≈ 6 RTTs",
+      "httpSingle": "1 auth + 1 sheet + 4 tx ≈ 6 RTTs"
+    },
+    "theoryAfterOpt": {
+      "fusedAuthPlusSingleUpsert": "~980ms (2×RTT)",
+      "absoluteFloorIfOneWriteOnly": "~464–490ms (1×RTT)",
+      "note": "Target 150–250ms is below measured RTT floor (~420ms). Unreachable from this environment without colocating app+DB or removing remote RTT."
+    }
+  },
+  "stopRulePreview": {
+    "rttMin": 464,
+    "rttAvg": 490,
+    "targetHttp": "150–300ms",
+    "targetBelowRttFloor": true,
+    "message": "Target 150–300ms < RTT min — optimization can reduce query count but cannot beat ~1×RTT from this host to eu-north-1 Supabase."
+  }
+}

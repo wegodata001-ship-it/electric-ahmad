@@ -59,6 +59,9 @@ const SYSTEM_ADMIN_PERMS: DocumentPermission[] = [
 const PROJECT_OPS_PERMS: DocumentPermission[] = [
   "view_all",
   "view_own",
+  "create",
+  "edit_draft",
+  "send_for_approval",
   "approve",
   "return_for_revision",
   "add_comments",

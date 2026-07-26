@@ -1,0 +1,72 @@
+{
+  "measuredAt": "2026-07-26T12:04:51.142Z",
+  "before": {
+    "hubHttpAvgMs": 1163,
+    "hubHttpMinMs": 1158,
+    "dbRoundTrips": 2,
+    "authMeMs": 680
+  },
+  "after": {
+    "hubSamples": [
+      {
+        "ms": 541,
+        "status": 200,
+        "bytes": 875,
+        "ok": true,
+        "boq": 5
+      },
+      {
+        "ms": 508,
+        "status": 200,
+        "bytes": 875,
+        "ok": true,
+        "boq": 5
+      },
+      {
+        "ms": 511,
+        "status": 200,
+        "bytes": 875,
+        "ok": true,
+        "boq": 5
+      },
+      {
+        "ms": 515,
+        "status": 200,
+        "bytes": 875,
+        "ok": true,
+        "boq": 5
+      },
+      {
+        "ms": 491,
+        "status": 200,
+        "bytes": 875,
+        "ok": true,
+        "boq": 5
+      }
+    ],
+    "hubMinMs": 491,
+    "hubAvgMs": 513,
+    "hubMaxMs": 541,
+    "meSamples": [
+      769,
+      691,
+      673
+    ],
+    "meAvgMs": 711,
+    "dbRoundTrips": 1,
+    "rttSamples": [
+      1122,
+      434,
+      497,
+      438,
+      428
+    ],
+    "rttAvgMs": 584,
+    "rttMinMs": 428
+  },
+  "improvement": {
+    "hubPct": 56,
+    "under1s": true,
+    "under900ms": true
+  }
+}

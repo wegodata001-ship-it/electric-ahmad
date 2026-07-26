@@ -1,0 +1,52 @@
+{
+  "measuredAt": "2026-07-26T12:29:16.705Z",
+  "sheetId": "cms1h5gb10009l604tdvjvdv2",
+  "projectId": "cms034ch70002kz04wu99jp4h",
+  "before": {
+    "httpAvg": 3222,
+    "httpMin": null,
+    "repoIncludeAvg": 2182,
+    "authRtt": 623,
+    "roundTrips": "auth + Prisma fan-out (multi)",
+    "notes": "From perf-audit-sheet-p2-results.json"
+  },
+  "after": {
+    "rttMin": 420,
+    "rttAvg": 591,
+    "rttSamples": [
+      1260,
+      428,
+      424,
+      420,
+      422
+    ],
+    "repoCteMin": 602,
+    "repoCteAvg": 624,
+    "repoCteSamples": [
+      665,
+      602,
+      604
+    ],
+    "httpMin": 688,
+    "httpAvg": 722,
+    "httpSamples": [
+      688,
+      811,
+      694,
+      695
+    ],
+    "httpOk": true,
+    "httpBytes": 6574,
+    "payloadBytes": 6793,
+    "cellCount": 15,
+    "roundTrips": "1 (HMAC + fused auth CTE)"
+  },
+  "improvement": {
+    "httpPercent": 78,
+    "repoPercent": 71
+  },
+  "stopRule": {
+    "remainingNearRtt": false,
+    "message": "Room may remain if HTTP still >> 1×RTT; inspect samples."
+  }
+}

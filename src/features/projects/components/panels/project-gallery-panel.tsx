@@ -1,11 +1,8 @@
 "use client";
 
-import { ProjectDocumentsHubPage } from "@/features/projects/components/project-documents-hub-page";
+import { DocumentsHubV2Page } from "@/features/documents/components/documents-hub-v2-page";
 
-/**
- * @deprecated מודול תמונות בוטל — הכל תחת מסמכים.
- * נשאר כעטיפה לתאימות ייבואים ישנים.
- */
+/** תמונות/גלריה — חלק ממרכז המסמכים */
 export function ProjectGalleryPanel({ projectId }: { projectId: string }) {
-  return <ProjectDocumentsHubPage projectId={projectId} embedded />;
+  return <DocumentsHubV2Page projectId={projectId} embedded />;
 }

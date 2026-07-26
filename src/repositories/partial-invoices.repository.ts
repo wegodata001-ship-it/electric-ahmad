@@ -7,6 +7,10 @@ import {
   formatBillingMonth,
 } from "@/utils/invoice-calc";
 import { cleanBoqDescription } from "@/utils/boq-text";
+import {
+  assertDocumentMutable,
+  INVOICE_EDITABLE_STATUSES,
+} from "@/lib/workflow/document-guards";
 
 export type CreatePartialInvoiceInput = {
   projectId: string;
@@ -43,6 +47,11 @@ export type UpdatePartialInvoiceInput = {
   billTo?: string;
   contractor?: string;
   notes?: string;
+  /**
+   * Accepted for backward compatibility only — the value is IGNORED by
+   * `PartialInvoicesRepository.update`. Status transitions must go through the
+   * dedicated approval / send / sign workflow endpoints.
+   */
   status?: CreatePartialInvoiceInput["status"];
   items: {
     boqItemId: string;
@@ -344,6 +353,13 @@ export class PartialInvoicesRepository {
     });
     if (!existing) throw new Error("חשבון לא נמצא");
 
+    // Content edits are only legal in editable statuses. Status transitions
+    // themselves go through the approval / sign endpoints — never PATCH.
+    assertDocumentMutable(String(existing.status), {
+      allowStatuses: INVOICE_EDITABLE_STATUSES,
+      entityLabel: "החשבון",
+    });
+
     const projectId = existing.projectId;
     const project = existing.project;
 
@@ -498,7 +514,9 @@ export class PartialInvoicesRepository {
           vatPercent,
           vatAmount,
           totalWithVat,
-          status: input.status ?? existing.status,
+          // status is intentionally NOT taken from input — status changes must
+          // go through approval / send / sign endpoints so workflow gates hold.
+          status: existing.status,
           date: invoiceDate,
           dueDate,
           notes:

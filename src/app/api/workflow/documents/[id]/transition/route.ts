@@ -4,6 +4,8 @@ import { WorkflowRepository } from "@/repositories/workflow.repository";
 import { WorkflowTransitionError } from "@/lib/workflow/status-engine";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import type { WorkflowAction } from "@/lib/workflow/types";
+import { parseJsonBody } from "@/lib/validation/parse-body";
+import { workflowTransitionSchema } from "@/lib/validation/schemas";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -12,15 +14,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const session = await requireOfficeUser();
     const { id } = await ctx.params;
-    const body = await req.json();
+    const body = await parseJsonBody(req, workflowTransitionSchema);
     const action = body.action as WorkflowAction;
-    if (!action) return apiError("חסרה פעולה (action)", 400);
 
     const doc = await WorkflowRepository.transition({
       documentId: id,
       action,
       comment: body.comment,
-      approverIds: Array.isArray(body.approverIds) ? body.approverIds : undefined,
+      approverIds: body.approverIds,
       actor: {
         userId: session.userId,
         role: session.role,

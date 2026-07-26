@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { mapEmployee } from "@/lib/mappers";
-import { getAuthContext } from "@/lib/auth/session";
+import { requirePermission } from "@/lib/auth/assert-office";
 import { provisionFieldLoginForEmployee } from "@/lib/auth/create-field-manager";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
@@ -15,7 +15,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await getAuthContext();
+    const session = await requirePermission("manage_employees");
+    const { userId } = session;
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
 

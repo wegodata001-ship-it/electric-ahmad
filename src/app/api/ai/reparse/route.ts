@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { AiDocumentParserService } from "@/lib/ai/document-parser.service";
@@ -6,19 +7,42 @@ import type { ParsedContractBoqResult } from "@/lib/ai/types";
 import { AiParseRepository } from "@/repositories/ai-parse.repository";
 import { getAuthContext } from "@/lib/auth/session";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { parseJsonBody } from "@/lib/validation/parse-body";
+import { idString } from "@/lib/validation/schemas";
+import {
+  enforceRateLimit,
+  getClientIp,
+} from "@/lib/security/rate-limit";
 
 export const maxDuration = 300;
+
+const AI_BUCKET = "ai-reparse";
+const AI_LIMIT = 20;
+const AI_WINDOW_MS = 60 * 60 * 1000;
+
+const reparseSchema = z.object({
+  projectId: idString,
+  documentId: idString,
+});
 
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await getAuthContext();
-    const body = await request.json();
-    const projectId = String(body.projectId ?? "");
-    const documentId = String(body.documentId ?? "");
 
-    if (!projectId || !documentId) {
-      return apiError("מזהה פרויקט ומסמך נדרשים");
-    }
+    const ip = getClientIp(request);
+    const limited = enforceRateLimit(
+      {
+        key: `${AI_BUCKET}:${ip}:${userId}`,
+        limit: AI_LIMIT,
+        windowMs: AI_WINDOW_MS,
+      },
+      "יותר מדי בקשות עיבוד AI. נסו שוב בעוד רגע."
+    );
+    if (limited) return limited;
+
+    const body = await parseJsonBody(request, reparseSchema);
+    const projectId = body.projectId;
+    const documentId = body.documentId;
 
     const document = await prisma.document.findUnique({ where: { id: documentId } });
     if (!document) return apiError("מסמך לא נמצא", 404);

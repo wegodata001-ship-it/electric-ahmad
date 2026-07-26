@@ -4,6 +4,7 @@ import {
   PROJECT_MANAGER_ROLE,
   isOfficeRole,
 } from "@/lib/auth/roles";
+import { getSessionSecret } from "@/lib/env/required-secrets";
 
 export const OFFICE_SESSION_COOKIE = "wego_office_session";
 export const OFFICE_SESSION_TTL_SECONDS = 60 * 60 * 12; // 12h
@@ -16,11 +17,7 @@ export type OfficeSessionPayload = {
 };
 
 function getSecret(): string {
-  return (
-    process.env.SESSION_SECRET ||
-    process.env.AUTH_SECRET ||
-    "wego-dev-field-session-secret-change-me"
-  );
+  return getSessionSecret();
 }
 
 function toBase64Url(bytes: ArrayBuffer | Uint8Array): string {

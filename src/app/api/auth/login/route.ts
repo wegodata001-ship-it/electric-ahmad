@@ -17,11 +17,34 @@ import {
 } from "@/lib/auth/field-cookie";
 import { AuditRepository } from "@/repositories/audit.repository";
 import { apiError, handleApiError } from "@/lib/api/response";
+import { parseJsonBody } from "@/lib/validation/parse-body";
+import { officeLoginSchema } from "@/lib/validation/schemas";
+import {
+  enforceRateLimit,
+  getClientIp,
+  logFailedLogin,
+} from "@/lib/security/rate-limit";
+
+const LOGIN_BUCKET = "auth-login";
+const LOGIN_LIMIT = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
 /** Unified login — one screen, portal redirect by role */
 export async function POST(request: NextRequest) {
+  const ip = getClientIp(request);
+
+  const limited = enforceRateLimit(
+    {
+      key: `${LOGIN_BUCKET}:${ip}`,
+      limit: LOGIN_LIMIT,
+      windowMs: LOGIN_WINDOW_MS,
+    },
+    "יותר מדי ניסיונות התחברות. נסו שוב בעוד מספר דקות."
+  );
+  if (limited) return limited;
+
   try {
-    const body = await request.json();
+    const body = await parseJsonBody(request, officeLoginSchema);
     const identifier = String(body.username ?? body.email ?? "")
       .trim()
       .toLowerCase();
@@ -43,20 +66,44 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user || !user.passwordHash) {
+      logFailedLogin({
+        bucket: LOGIN_BUCKET,
+        ip,
+        identifier,
+        reason: "unknown-user",
+      });
       return apiError("שם משתמש או סיסמה שגויים", 401);
     }
 
     if (user.employee) {
       if (user.employee.isDeleted) {
+        logFailedLogin({
+          bucket: LOGIN_BUCKET,
+          ip,
+          identifier,
+          reason: "account-deleted",
+        });
         return apiError("החשבון נמחק", 403);
       }
       if (user.employee.status !== "active") {
+        logFailedLogin({
+          bucket: LOGIN_BUCKET,
+          ip,
+          identifier,
+          reason: "inactive",
+        });
         return apiError("המשתמש אינו פעיל", 403);
       }
     }
 
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
+      logFailedLogin({
+        bucket: LOGIN_BUCKET,
+        ip,
+        identifier,
+        reason: "bad-password",
+      });
       return apiError("שם משתמש או סיסמה שגויים", 401);
     }
 

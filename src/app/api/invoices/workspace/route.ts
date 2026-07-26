@@ -1,20 +1,35 @@
 import { NextRequest } from "next/server";
-import { requireOfficeUser } from "@/lib/auth/office-session";
+import {
+  OfficeAuthError,
+  readOfficeSessionPayload,
+  requireOfficeUser,
+} from "@/lib/auth/office-session";
 import { MeasurementSheetsRepository } from "@/repositories/measurement-sheets.repository";
 import { ProjectsRepository } from "@/repositories/projects.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireOfficeUser();
+    const payload = await readOfficeSessionPayload();
+    if (!payload) {
+      throw new OfficeAuthError("נדרשת התחברות למערכת", 401);
+    }
+
     const projectId = req.nextUrl.searchParams.get("projectId");
 
     if (projectId) {
-      const tree = await MeasurementSheetsRepository.getProjectTree(projectId);
-      if (!tree) return apiError("פרויקט לא נמצא", 404);
-      return apiSuccess(tree);
+      const result = await MeasurementSheetsRepository.getProjectTreeForOffice(
+        projectId,
+        payload.userId
+      );
+      if (result.status === "forbidden") {
+        throw new OfficeAuthError("אין הרשאת מנהל פרויקט", 403);
+      }
+      if (result.status === "not_found") return apiError("פרויקט לא נמצא", 404);
+      return apiSuccess(result.data);
     }
 
+    await requireOfficeUser();
     const projects = await ProjectsRepository.findAll();
     return apiSuccess({
       projects: projects.map((p: any) => ({
@@ -26,6 +41,9 @@ export async function GET(req: NextRequest) {
       })),
     });
   } catch (error) {
+    if (error instanceof OfficeAuthError) {
+      return apiError(error.message, error.status);
+    }
     return handleApiError(error);
   }
 }

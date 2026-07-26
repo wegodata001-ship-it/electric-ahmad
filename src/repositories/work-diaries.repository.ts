@@ -4,6 +4,10 @@ import {
   allocateDocumentNumber,
 } from "@/lib/documents/sequences";
 import {
+  assertCanSoftDelete,
+  DIARY_EDITABLE_STATUSES,
+} from "@/lib/workflow/document-guards";
+import {
   generateSignToken,
   hashSignToken,
   buildSignUrl,
@@ -207,6 +211,7 @@ function mapDiary(row: any) {
     clientSignedAt: row.clientSignedAt?.toISOString() ?? null,
     clientSignedIp: row.clientSignedIp,
     clientSignedDevice: row.clientSignedDevice,
+    signedPdfUrl: row.signedPdfUrl ?? null,
     lockedAt: row.lockedAt?.toISOString() ?? null,
     currentVersion: row.workflowDocument?.version ?? row.currentVersion,
     createdAt: row.createdAt.toISOString(),
@@ -267,6 +272,13 @@ function mapDiary(row: any) {
       decidedAt: a.decidedAt?.toISOString() ?? null,
       approver: a.approver,
     })),
+    rejectionComment:
+      (wfApprovals ?? [])
+        .filter((a: any) => a.status === "rejected" && a.comment)
+        .sort(
+          (a: any, b: any) =>
+            (b.decidedAt?.getTime?.() ?? 0) - (a.decidedAt?.getTime?.() ?? 0)
+        )[0]?.comment ?? null,
     events: (wfEvents ?? []).map((e: any) => ({
       id: e.id,
       action: e.type,
@@ -649,6 +661,18 @@ export const WorkDiariesRepository = {
       include: { workflowDocument: true },
     });
     if (!existing) throw new Error("יומן עבודה לא נמצא");
+
+    // Deleting a diary that was already approved/signed/locked would erase an
+    // artefact the workflow (and possibly the client) already relies on. Only
+    // draft / in-revision diaries may be deleted.
+    const effectiveStatus = existing.workflowDocument
+      ? String(existing.workflowDocument.status)
+      : mapLegacyDiaryStatusToWorkflow(existing.status);
+    assertCanSoftDelete(effectiveStatus, existing.lockedAt, {
+      entityLabel: "יומן עבודה",
+      editableStatuses: DIARY_EDITABLE_STATUSES,
+    });
+
     await prisma.workDiary.update({
       where: { id },
       data: { deletedAt: new Date(), updatedById: actorId },
@@ -892,6 +916,9 @@ export const WorkDiariesRepository = {
 
   async getPublicForSign(documentNumber: string, tokenParam: string) {
     const { parseSignQuery } = await import("@/lib/documents/sign-tokens");
+    const { buildDiaryPortal } = await import(
+      "@/lib/share/client-portal-payload"
+    );
     const parsed = parseSignQuery(tokenParam);
     if (!parsed) throw new Error("קישור לא תקין");
 
@@ -901,14 +928,52 @@ export const WorkDiariesRepository = {
         revokedAt: null,
         workDiary: { documentNumber, deletedAt: null },
       },
-      include: { workDiary: { include: includeDetail } },
+      include: {
+        workDiary: { include: includeDetail },
+        // createdBy may not exist on token — load separately if needed
+      },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.usedAt) throw new Error("הקישור כבר נוצל");
-    if (token.expiresAt && token.expiresAt < new Date()) throw new Error("הקישור פג תוקף");
-    if (token.tokenHash !== hashSignToken(parsed.raw)) throw new Error("קישור לא תקין");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("הקישור פג תוקף");
+    }
+    if (token.tokenHash !== hashSignToken(parsed.raw)) {
+      throw new Error("קישור לא תקין");
+    }
 
-    return mapDiary(token.workDiary);
+    const mapped = mapDiary(token.workDiary);
+    let sentBy: string | null = null;
+    if (token.createdById) {
+      const u = await prisma.user.findUnique({
+        where: { id: token.createdById },
+        select: { name: true },
+      });
+      sentBy = u?.name ?? null;
+    }
+
+    const { buildVerificationId } = await import(
+      "@/lib/share/archive-signed-document"
+    );
+    const verificationId = buildVerificationId(
+      mapped.documentNumber,
+      token.publicId
+    );
+    const portal = await buildDiaryPortal(mapped, {
+      createdAt: token.createdAt,
+      expiresAt: token.expiresAt,
+      sentBy,
+      alreadySigned: Boolean(token.usedAt || token.workDiary.clientSignedAt),
+    });
+
+    return {
+      ...mapped,
+      portal: {
+        ...portal,
+        signedPdfUrl: mapped.signedPdfUrl || portal.signedPdfUrl,
+      },
+      alreadySigned: portal.alreadySigned,
+      verificationId,
+    };
   },
 
   async applyClientSignature(opts: {
@@ -918,8 +983,19 @@ export const WorkDiariesRepository = {
     signerName: string;
     ip?: string | null;
     device?: string | null;
+    /** האם לשמור גרסה חתומה בארכיון המסמכים (ברירת מחדל: כן) */
+    saveToDocuments?: boolean;
   }) {
     const { parseSignQuery } = await import("@/lib/documents/sign-tokens");
+    const { assertValidSignatureDataUrl } = await import(
+      "@/lib/share/validate-signature"
+    );
+    const {
+      archiveClientSignedDocument,
+      buildVerificationId,
+    } = await import("@/lib/share/archive-signed-document");
+
+    const signatureDataUrl = assertValidSignatureDataUrl(opts.signatureDataUrl);
     const parsed = parseSignQuery(opts.tokenParam);
     if (!parsed) throw new Error("קישור לא תקין");
 
@@ -933,39 +1009,56 @@ export const WorkDiariesRepository = {
       include: { workDiary: true },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.expiresAt && token.expiresAt < new Date()) throw new Error("הקישור פג תוקף");
-    if (token.tokenHash !== hashSignToken(parsed.raw)) throw new Error("קישור לא תקין");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("הקישור פג תוקף");
+    }
+    if (token.tokenHash !== hashSignToken(parsed.raw)) {
+      throw new Error("קישור לא תקין");
+    }
 
     const diary = token.workDiary;
+    const signedAt = new Date();
+    const verificationId = buildVerificationId(
+      diary.documentNumber,
+      token.publicId
+    );
+    const signedViewPath = `/sign/work-diary/${encodeURIComponent(diary.documentNumber)}/signed?t=${encodeURIComponent(opts.tokenParam)}`;
+
     await prisma.$transaction(async (tx) => {
       await tx.workDiarySignToken.update({
         where: { id: token.id },
-        data: { usedAt: new Date() },
+        data: { usedAt: signedAt },
       });
       await tx.workDiary.update({
         where: { id: diary.id },
         data: {
-          clientSignatureUrl: opts.signatureDataUrl,
+          clientSignatureUrl: signatureDataUrl,
           clientSignedName: opts.signerName,
-          clientSignedAt: new Date(),
+          clientSignedAt: signedAt,
           clientSignedIp: opts.ip ?? null,
           clientSignedDevice: opts.device ?? null,
           clientSignedVersion: diary.currentVersion,
-          lockedAt: new Date(),
+          status: "signed",
+          lockedAt: signedAt,
+          signedPdfUrl: signedViewPath,
         },
       });
     });
 
     if (diary.workflowDocumentId) {
-      await WorkflowRepository.transition({
-        documentId: diary.workflowDocumentId,
-        action: "client_signed",
-        actor: {
-          userId: diary.createdById,
-          role: "CLIENT",
-          name: opts.signerName,
-        },
-      });
+      try {
+        await WorkflowRepository.transition({
+          documentId: diary.workflowDocumentId,
+          action: "client_signed",
+          actor: {
+            userId: diary.createdById,
+            role: "CLIENT",
+            name: opts.signerName,
+          },
+        });
+      } catch {
+        /* status may already allow signed via legacy path */
+      }
       await syncWorkDiaryArchiveDocument({
         workflowDocumentId: diary.workflowDocumentId,
         workDiaryId: diary.id,
@@ -976,15 +1069,46 @@ export const WorkDiariesRepository = {
       });
     }
 
+    if (opts.saveToDocuments !== false) {
+      await archiveClientSignedDocument({
+        kind: "work_diary",
+        projectId: diary.projectId,
+        entityId: diary.id,
+        documentNumber: diary.documentNumber,
+        userId: diary.createdById,
+        signedViewPath,
+        signerName: opts.signerName,
+        signedAt,
+        ip: opts.ip,
+        device: opts.device,
+        linkPublicId: token.publicId,
+        verificationId,
+      });
+    }
+
+    const approverIds = await prisma.workDiaryApproval
+      .findMany({
+        where: { workDiaryId: diary.id },
+        select: { approverId: true },
+      })
+      .then((rows) => rows.map((r) => r.approverId));
+
     await notifyUsers(
-      [diary.createdById],
+      [diary.createdById, diary.updatedById, ...approverIds],
       "הלקוח חתם על יומן עבודה",
-      `${diary.documentNumber} נחתם`,
-      `/field/work-diaries/${diary.id}`,
+      `${diary.documentNumber} נחתם ע״י ${opts.signerName}`,
+      signedViewPath,
       diary.projectId
     );
 
-    return this.getById(diary.id);
+    const mapped = await this.getById(diary.id);
+    return {
+      ...mapped,
+      verificationId,
+      signedViewUrl: signedViewPath,
+      signedPdfUrl: signedViewPath,
+      alreadySigned: true,
+    };
   },
 
   async listPendingApprovals(approverId: string) {

@@ -1,5 +1,5 @@
-import { WorkDiariesListPage } from "@/features/work-diaries/components/work-diaries-list-page";
+import { FieldDiariesList } from "@/apps/field/field-diaries-list";
 
 export default function Page() {
-  return <WorkDiariesListPage />;
+  return <FieldDiariesList />;
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Check, Send, X } from "lucide-react";
+import { RevisionFeedbackBanner } from "@/features/approvals/components/revision-feedback-banner";
 import { workDiariesService } from "../services/work-diaries.service";
 import { COMPANY_PROFILE } from "@/config/company";
 
@@ -108,6 +109,12 @@ export function WorkDiaryDetailPage({ id }: { id: string }) {
 
       {error && (
         <div className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">{error}</div>
+      )}
+
+      {diary.status === "revision" && (
+        <RevisionFeedbackBanner
+          comment={diary.rejectionComment || diary.revisionComment}
+        />
       )}
 
       <div className="flex flex-wrap gap-2">

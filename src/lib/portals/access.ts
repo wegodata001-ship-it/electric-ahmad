@@ -8,13 +8,16 @@ import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import type { PortalId } from "@/lib/portals/config";
 import { PORTALS, portalIdForRole } from "@/lib/portals/config";
 
-/** Which portals a role may enter (Portal ≠ Permission — soft boundary) */
+/**
+ * Soft portal boundaries — each role's primary workspace.
+ * System can enter all; others stay in their own portal.
+ */
 export function portalsAllowedForRole(role?: string | null): PortalId[] {
   if (isSystemAdminRole(role)) {
     return ["system", "project", "operations", "field"];
   }
-  if (role === PROJECT_MANAGER_ROLE) return ["project", "operations"];
-  if (role === OPERATIONS_MANAGER_ROLE) return ["operations", "project"];
+  if (role === PROJECT_MANAGER_ROLE) return ["project"];
+  if (role === OPERATIONS_MANAGER_ROLE) return ["operations"];
   if (isFieldManagerRole(role)) return ["field"];
   if (isOfficeRole(role)) return ["project"];
   return [];

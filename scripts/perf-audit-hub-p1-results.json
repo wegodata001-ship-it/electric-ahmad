@@ -1,0 +1,297 @@
+{
+  "measuredAt": "2026-07-26T11:57:10.346Z",
+  "projectId": "cmrlu49ha0002r1ek2rzer25y",
+  "stages": [
+    {
+      "name": "HTTP hub cold",
+      "ms": 4213,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "bytes": 833,
+        "httpMs": 4213
+      }
+    },
+    {
+      "name": "HTTP hub warm",
+      "ms": 3685,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "bytes": 833,
+        "httpMs": 3685
+      }
+    },
+    {
+      "name": "Auth: user.findUnique + employee include",
+      "ms": 1043,
+      "ok": true,
+      "detail": {
+        "keys": 11
+      }
+    },
+    {
+      "name": "WAVE Promise.all Q2–Q13 (12 queries)",
+      "ms": 1190,
+      "ok": true,
+      "detail": {
+        "count": 12
+      }
+    },
+    {
+      "name": "REPO full getHub shape (Q1 + wave + Q14)",
+      "ms": 1632,
+      "ok": true,
+      "detail": {
+        "count": 14,
+        "mapWallMs": 1631,
+        "bytes": 357,
+        "sheets": 0,
+        "invoices": 0,
+        "boq": 0
+      }
+    },
+    {
+      "name": "ALT REPO lean: Q1 + parallel aggregates (incl rooms)",
+      "ms": 1744,
+      "ok": true,
+      "detail": {
+        "count": 15,
+        "note": "still many RTTs; rooms in parallel"
+      }
+    },
+    {
+      "name": "BASELINE SELECT 1",
+      "ms": 434,
+      "ok": true,
+      "detail": {
+        "count": 1
+      }
+    }
+  ],
+  "queries": [
+    {
+      "name": "Q1 project.findUnique + foreman",
+      "ms": 829,
+      "ok": true,
+      "detail": {
+        "keys": 14
+      }
+    },
+    {
+      "name": "Q2 boqItem.findMany (3 fields)",
+      "ms": 490,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "Q3 measurementSheet.findMany + _count",
+      "ms": 561,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "Q4 measurementCell.aggregate",
+      "ms": 591,
+      "ok": true,
+      "detail": {
+        "count": 0,
+        "sum": 0
+      }
+    },
+    {
+      "name": "Q5 measurementEntry.count",
+      "ms": 820,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "Q6 measurementEntry.findFirst (last)",
+      "ms": 652,
+      "ok": true,
+      "detail": {
+        "keys": 0
+      }
+    },
+    {
+      "name": "Q7 partialInvoice.findMany (all)",
+      "ms": 507,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "Q8 document.count (all)",
+      "ms": 426,
+      "ok": true,
+      "detail": {
+        "count": 1
+      }
+    },
+    {
+      "name": "Q9 document.count (recent week)",
+      "ms": 423,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "Q10 workDiary.count",
+      "ms": 450,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "Q11 workDiary.findFirst (last)",
+      "ms": 425,
+      "ok": true,
+      "detail": {
+        "keys": 0
+      }
+    },
+    {
+      "name": "Q12 opsDeliveryNote.count (all)",
+      "ms": 438,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "Q13 opsDeliveryNote.count (open)",
+      "ms": 427,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "Q14 projectRoom.count (SERIAL after Promise.all)",
+      "ms": 427,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "ALT boq aggregate (_count + _avg progress + _sum completed)",
+      "ms": 505,
+      "ok": true,
+      "detail": {
+        "count": 0,
+        "avg": null,
+        "sum": 0
+      }
+    },
+    {
+      "name": "ALT measurementSheet.count only",
+      "ms": 458,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    },
+    {
+      "name": "ALT invoice groupBy status",
+      "ms": 477,
+      "ok": true,
+      "detail": {
+        "count": 0
+      }
+    }
+  ],
+  "breakdown": [
+    {
+      "stage": "Authentication (user DB lookup)",
+      "ms": 1043,
+      "pct": 28
+    },
+    {
+      "stage": "Repository Q1 project",
+      "ms": 829,
+      "pct": null
+    },
+    {
+      "stage": "Repository parallel wave (12 queries)",
+      "ms": 1190,
+      "pct": 32
+    },
+    {
+      "stage": "Repository serial Q14 rooms",
+      "ms": 427,
+      "pct": null
+    },
+    {
+      "stage": "Full repo wall (Q1+wave+Q14+map)",
+      "ms": 1632,
+      "pct": 44
+    },
+    {
+      "stage": "HTTP total warm (auth+repo+serialize+network)",
+      "ms": 3685,
+      "pct": 100
+    },
+    {
+      "stage": "DB RTT floor (SELECT 1)",
+      "ms": 434,
+      "pct": null
+    }
+  ],
+  "explains": [
+    {
+      "label": "boqItem by projectId",
+      "ok": true,
+      "text": "Index Scan using \"BoqItem_projectId_idx\" on \"BoqItem\"  (cost=0.14..2.08 rows=1 width=16) (actual time=0.011..0.012 rows=0 loops=1)\n  Index Cond: (\"projectId\" = 'cmrlu49ha0002r1ek2rzer25y'::text)\n  Filter: (\"deletedAt\" IS NULL)\n  Buffers: shared hit=1\nPlanning Time: 0.088 ms\nExecution Time: 0.039 ms"
+    },
+    {
+      "label": "measurementCell agg via sheet.projectId",
+      "ok": true,
+      "text": "Aggregate  (cost=5.33..5.34 rows=1 width=40) (actual time=0.015..0.016 rows=1 loops=1)\n  Buffers: shared hit=1\n  ->  Nested Loop  (cost=0.15..5.11 rows=42 width=3) (actual time=0.013..0.013 rows=0 loops=1)\n        Buffers: shared hit=1\n        ->  Seq Scan on \"MeasurementSheet\" s  (cost=0.00..1.20 rows=1 width=26) (actual time=0.012..0.013 rows=0 loops=1)\n              Filter: (\"projectId\" = 'cmrlu49ha0002r1ek2rzer25y'::text)\n              Rows Removed by Filter: 17\n              Buffers: shared hit=1\n        ->  Index Scan using \"MeasurementCell_sheetId_idx\" on \"MeasurementCell\" c  (cost=0.15..3.46 rows=45 width=29) (never executed)\n              Index Cond: (\"sheetId\" = s.id)\nPlanning:\n  Buffers: shared hit=24\nPlanning Time: 0.323 ms\nExecution Time: 0.050 ms"
+    },
+    {
+      "label": "measurementSheet + counts",
+      "ok": false,
+      "text": "\nInvalid `prisma.$queryRawUnsafe()` invocation:\n\n\nRaw query failed. Code: `42P01`. Message: `relation \"MeasurementRow\" does not exist`"
+    },
+    {
+      "label": "partialInvoice by projectId",
+      "ok": true,
+      "text": "Sort  (cost=1.02..1.03 rows=1 width=66) (actual time=0.018..0.018 rows=0 loops=1)\n  Sort Key: \"sequenceNumber\" DESC\n  Sort Method: quicksort  Memory: 25kB\n  Buffers: shared hit=1\n  ->  Seq Scan on \"PartialInvoice\"  (cost=0.00..1.01 rows=1 width=66) (actual time=0.014..0.014 rows=0 loops=1)\n        Filter: (\"projectId\" = 'cmrlu49ha0002r1ek2rzer25y'::text)\n        Rows Removed by Filter: 8\n        Buffers: shared hit=1\nPlanning Time: 0.088 ms\nExecution Time: 0.041 ms"
+    }
+  ],
+  "uiUsage": {
+    "usedByProjectTreeHubPage": [
+      "project.* (name, values, axisLabel, foreman…)",
+      "cards.boq.itemCount/completedQuantity/progressPercent",
+      "cards.performance.reportCount/unitCount/lastReportAt",
+      "cards.invoices.total/draft/pending/approved/invoicedAmount",
+      "cards.documents.total/recent",
+      "cards.workDiaries.total/lastAt",
+      "cards.deliveries.total/open"
+    ],
+    "returnedButNotRenderedOnHubPage": [
+      "cards.performance.sheetCount (in JSON, not shown in module lines)",
+      "cards.invoices.items[0..7] (not in HubData UI type / not rendered)",
+      "cards.invoices.sent / paid (not in module lines)",
+      "sheets[].title/status/_count.rows/_count.cells (only length used)",
+      "boqItems rows (only aggregates needed)",
+      "cellAgg._sum.quantity (unused; only _count fallback)"
+    ],
+    "queryCountCurrent": "1 auth user + 1 project + 12 parallel + 1 serial rooms = 15 DB round-trips",
+    "serialWaterfallInRepo": "projectRoom.count AFTER Promise.all"
+  },
+  "stopRule": {
+    "triggered": true,
+    "reason": "If SELECT 1 / each trivial query is hundreds of ms, bottleneck is DB RTT/region — present findings before optimizing API further beyond reducing query count."
+  }
+}

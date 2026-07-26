@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
 import { DashboardRepository } from "@/repositories/dashboard.repository";
+import { requireOfficeAuth } from "@/lib/auth/assert-office";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
 
 export async function GET(request: NextRequest) {
   try {
+    await requireOfficeAuth();
     const q = request.nextUrl.searchParams.get("q");
     if (!q || q.length < 2) return apiSuccess([]);
     return apiSuccess(await DashboardRepository.search(q));

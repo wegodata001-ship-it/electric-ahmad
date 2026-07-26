@@ -1,0 +1,753 @@
+{
+  "measuredAt": "2026-07-26T12:43:47.288Z",
+  "base": "http://localhost:3000",
+  "projectId": "cms034ch70002kz04wu99jp4h",
+  "completedCore": {
+    "P0": "10.43s → 6.13s",
+    "P1": "2.30s → 1.23s",
+    "P15": "1.16s → 0.49s",
+    "P2": "3.22s → 0.72s",
+    "P3": "2.32s → 0.46s",
+    "stop": "Hub / Auth / Sheet / Cell-save — no further code refactor"
+  },
+  "rtt": {
+    "min": 465,
+    "avg": 645,
+    "samples": [
+      1273,
+      525,
+      469,
+      491,
+      465
+    ]
+  },
+  "counts": {
+    "workflowDocuments": 8,
+    "workDiaries": 9,
+    "opsDeliveryNotes": 1,
+    "legacyDeliveryNotes": 3,
+    "documents": 24,
+    "projects": 16,
+    "rooms": 3,
+    "boqItems": 5,
+    "measurementSheets": 17
+  },
+  "p4": {
+    "screens": [
+      {
+        "screen": "Documents Hub",
+        "path": "/api/documents/hub",
+        "ok": true,
+        "status": 200,
+        "bytes": 30945,
+        "min": 2051,
+        "avg": 2075,
+        "samples": [
+          2051,
+          2051,
+          2123
+        ],
+        "itemCount": null,
+        "rttEstimate": 3
+      },
+      {
+        "screen": "Documents Archive",
+        "path": "/api/documents-archive",
+        "ok": true,
+        "status": 200,
+        "bytes": 5105,
+        "min": 2713,
+        "avg": 2758,
+        "samples": [
+          2747,
+          2813,
+          2713
+        ],
+        "itemCount": null,
+        "rttEstimate": 4
+      },
+      {
+        "screen": "Workflow Pending",
+        "path": "/api/workflow/pending",
+        "ok": true,
+        "status": 200,
+        "bytes": 36,
+        "min": 1065,
+        "avg": 1079,
+        "samples": [
+          1065,
+          1095,
+          1076
+        ],
+        "itemCount": null,
+        "rttEstimate": 2
+      },
+      {
+        "screen": "Workflow Documents (project)",
+        "path": "/api/workflow/documents?projectId=cms034ch70002kz04wu99jp4h",
+        "ok": true,
+        "status": 200,
+        "bytes": 36,
+        "min": 1090,
+        "avg": 1101,
+        "samples": [
+          1097,
+          1090,
+          1115
+        ],
+        "itemCount": null,
+        "rttEstimate": 2
+      },
+      {
+        "screen": "Ops Delivery Notes",
+        "path": "/api/ops-delivery-notes",
+        "ok": true,
+        "status": 200,
+        "bytes": 383,
+        "min": 1428,
+        "avg": 1476,
+        "samples": [
+          1556,
+          1443,
+          1428
+        ],
+        "itemCount": null,
+        "rttEstimate": 2
+      },
+      {
+        "screen": "Legacy Delivery Notes",
+        "path": "/api/delivery-notes",
+        "ok": true,
+        "status": 200,
+        "bytes": 4070,
+        "min": 1172,
+        "avg": 1177,
+        "samples": [
+          1172,
+          1186,
+          1174
+        ],
+        "itemCount": null,
+        "rttEstimate": 2
+      },
+      {
+        "screen": "Work Diaries",
+        "path": "/api/work-diaries",
+        "ok": true,
+        "status": 200,
+        "bytes": 4517,
+        "min": 1595,
+        "avg": 1640,
+        "samples": [
+          1595,
+          1611,
+          1713
+        ],
+        "itemCount": null,
+        "rttEstimate": 3
+      },
+      {
+        "screen": "Work Orders",
+        "path": "/api/work-orders",
+        "ok": true,
+        "status": 200,
+        "bytes": 1844,
+        "min": 2027,
+        "avg": 2303,
+        "samples": [
+          2027,
+          2125,
+          2756
+        ],
+        "itemCount": null,
+        "rttEstimate": 4
+      },
+      {
+        "screen": "Project Rooms / Tree data",
+        "path": "/api/projects/cms034ch70002kz04wu99jp4h/rooms",
+        "ok": true,
+        "status": 200,
+        "bytes": 779,
+        "min": 3134,
+        "avg": 4066,
+        "samples": [
+          5914,
+          3134,
+          3151
+        ],
+        "itemCount": null,
+        "rttEstimate": 6
+      },
+      {
+        "screen": "Invoice Workspace Tree",
+        "path": "/api/invoices/workspace?projectId=cms034ch70002kz04wu99jp4h",
+        "ok": true,
+        "status": 200,
+        "bytes": 1014,
+        "min": 2533,
+        "avg": 2664,
+        "samples": [
+          2533,
+          2714,
+          2746
+        ],
+        "itemCount": null,
+        "rttEstimate": 4
+      },
+      {
+        "screen": "Approvals Pending",
+        "path": "/api/approvals/pending",
+        "ok": true,
+        "status": 200,
+        "bytes": 478,
+        "min": 1676,
+        "avg": 1731,
+        "samples": [
+          1676,
+          1695,
+          1823
+        ],
+        "itemCount": null,
+        "rttEstimate": 3
+      },
+      {
+        "screen": "Dashboard KPIs",
+        "path": "/api/dashboard",
+        "ok": true,
+        "status": 200,
+        "bytes": 172,
+        "min": 514,
+        "avg": 530,
+        "samples": [
+          540,
+          536,
+          514
+        ],
+        "itemCount": null,
+        "rttEstimate": 1
+      },
+      {
+        "screen": "Projects list (dashboard)",
+        "path": "/api/projects",
+        "ok": true,
+        "status": 200,
+        "bytes": 11699,
+        "min": 699,
+        "avg": 705,
+        "samples": [
+          700,
+          717,
+          699
+        ],
+        "itemCount": null,
+        "rttEstimate": 1
+      },
+      {
+        "screen": "Notifications",
+        "path": "/api/notifications",
+        "ok": true,
+        "status": 200,
+        "bytes": 1415,
+        "min": 1192,
+        "avg": 1209,
+        "samples": [
+          1222,
+          1213,
+          1192
+        ],
+        "itemCount": null,
+        "rttEstimate": 2
+      },
+      {
+        "screen": "Execution Reports",
+        "path": "/api/execution-reports",
+        "ok": true,
+        "status": 200,
+        "bytes": 17454,
+        "min": 1768,
+        "avg": 1779,
+        "samples": [
+          1797,
+          1773,
+          1768
+        ],
+        "itemCount": null,
+        "rttEstimate": 3
+      },
+      {
+        "screen": "BOQ by project",
+        "path": "/api/boq?projectId=cms034ch70002kz04wu99jp4h",
+        "ok": true,
+        "status": 200,
+        "bytes": 2540,
+        "min": 1199,
+        "avg": 1243,
+        "samples": [
+          1249,
+          1199,
+          1282
+        ],
+        "itemCount": null,
+        "rttEstimate": 2
+      },
+      {
+        "screen": "Partial Invoices list",
+        "path": "/api/partial-invoices",
+        "ok": true,
+        "status": 200,
+        "bytes": 21173,
+        "min": 1084,
+        "avg": 1111,
+        "samples": [
+          1084,
+          1103,
+          1146
+        ],
+        "itemCount": null,
+        "rttEstimate": 2
+      }
+    ],
+    "rankedSlowest": [
+      {
+        "screen": "Project Rooms / Tree data",
+        "path": "/api/projects/cms034ch70002kz04wu99jp4h/rooms",
+        "ok": true,
+        "status": 200,
+        "bytes": 779,
+        "min": 3134,
+        "avg": 4066,
+        "samples": [
+          5914,
+          3134,
+          3151
+        ],
+        "itemCount": null,
+        "rttEstimate": 6
+      },
+      {
+        "screen": "Documents Archive",
+        "path": "/api/documents-archive",
+        "ok": true,
+        "status": 200,
+        "bytes": 5105,
+        "min": 2713,
+        "avg": 2758,
+        "samples": [
+          2747,
+          2813,
+          2713
+        ],
+        "itemCount": null,
+        "rttEstimate": 4
+      },
+      {
+        "screen": "Invoice Workspace Tree",
+        "path": "/api/invoices/workspace?projectId=cms034ch70002kz04wu99jp4h",
+        "ok": true,
+        "status": 200,
+        "bytes": 1014,
+        "min": 2533,
+        "avg": 2664,
+        "samples": [
+          2533,
+          2714,
+          2746
+        ],
+        "itemCount": null,
+        "rttEstimate": 4
+      },
+      {
+        "screen": "Work Orders",
+        "path": "/api/work-orders",
+        "ok": true,
+        "status": 200,
+        "bytes": 1844,
+        "min": 2027,
+        "avg": 2303,
+        "samples": [
+          2027,
+          2125,
+          2756
+        ],
+        "itemCount": null,
+        "rttEstimate": 4
+      },
+      {
+        "screen": "Documents Hub",
+        "path": "/api/documents/hub",
+        "ok": true,
+        "status": 200,
+        "bytes": 30945,
+        "min": 2051,
+        "avg": 2075,
+        "samples": [
+          2051,
+          2051,
+          2123
+        ],
+        "itemCount": null,
+        "rttEstimate": 3
+      },
+      {
+        "screen": "Execution Reports",
+        "path": "/api/execution-reports",
+        "ok": true,
+        "status": 200,
+        "bytes": 17454,
+        "min": 1768,
+        "avg": 1779,
+        "samples": [
+          1797,
+          1773,
+          1768
+        ],
+        "itemCount": null,
+        "rttEstimate": 3
+      },
+      {
+        "screen": "Approvals Pending",
+        "path": "/api/approvals/pending",
+        "ok": true,
+        "status": 200,
+        "bytes": 478,
+        "min": 1676,
+        "avg": 1731,
+        "samples": [
+          1676,
+          1695,
+          1823
+        ],
+        "itemCount": null,
+        "rttEstimate": 3
+      },
+      {
+        "screen": "Work Diaries",
+        "path": "/api/work-diaries",
+        "ok": true,
+        "status": 200,
+        "bytes": 4517,
+        "min": 1595,
+        "avg": 1640,
+        "samples": [
+          1595,
+          1611,
+          1713
+        ],
+        "itemCount": null,
+        "rttEstimate": 3
+      }
+    ],
+    "repoChecks": [
+      {
+        "name": "workflowDocument.findMany take 50",
+        "avg": 510,
+        "min": 470,
+        "samples": [
+          564,
+          470,
+          495
+        ],
+        "queries": 1,
+        "rtt": 1
+      },
+      {
+        "name": "workDiary.findMany take 80 slim",
+        "avg": 502,
+        "min": 471,
+        "samples": [
+          487,
+          471,
+          547
+        ],
+        "queries": 1,
+        "rtt": 1
+      },
+      {
+        "name": "projectRoom.findMany (project)",
+        "avg": 466,
+        "min": 462,
+        "samples": [
+          468,
+          462,
+          469
+        ],
+        "queries": 1,
+        "rtt": 1
+      },
+      {
+        "name": "5× COUNT parallel (docs inventory)",
+        "avg": 833,
+        "min": 462,
+        "samples": [
+          1204,
+          462
+        ],
+        "queries": 5,
+        "rtt": "~1 parallel wave"
+      }
+    ],
+    "rootCauseSummary": "Screens at ~1–2×RTT are infrastructure-bound. Screens ≥3×RTT likely still have serial query fan-out or heavy includes (Documents Hub, workflow documents, workspace tree).",
+    "codeBoundCandidates": [
+      "Project Rooms / Tree data",
+      "Documents Archive",
+      "Invoice Workspace Tree",
+      "Work Orders",
+      "Documents Hub",
+      "Execution Reports",
+      "Approvals Pending",
+      "Work Diaries"
+    ],
+    "infraBoundLikely": [
+      "Ops Delivery Notes",
+      "BOQ by project",
+      "Notifications",
+      "Legacy Delivery Notes",
+      "Partial Invoices list",
+      "Workflow Documents (project)",
+      "Workflow Pending",
+      "Projects list (dashboard)",
+      "Dashboard KPIs"
+    ]
+  },
+  "p5": {
+    "lists": [
+      {
+        "list": "Documents Hub",
+        "pagination": "cap only (~300/type)",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "high",
+        "note": "Merged multi-entity fan-out; client filter"
+      },
+      {
+        "list": "Workflow Documents API",
+        "pagination": "none (unbounded)",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "high",
+        "note": "Heavy include if used as full list"
+      },
+      {
+        "list": "Work Diaries",
+        "pagination": "take 50–80",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "medium",
+        "note": "Silent truncation"
+      },
+      {
+        "list": "Ops Delivery Notes",
+        "pagination": "take 50–80",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "medium",
+        "note": "Cap only"
+      },
+      {
+        "list": "Legacy Delivery Notes",
+        "pagination": "none",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "high",
+        "note": "findAll unbounded"
+      },
+      {
+        "list": "BOQ table",
+        "pagination": "client pageSize 15",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "high",
+        "note": "Loads full project BOQ then paginates in browser"
+      },
+      {
+        "list": "Approvals / Workflow pending",
+        "pagination": "inbox-sized",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "low",
+        "note": "OK for inbox"
+      },
+      {
+        "list": "Project Rooms",
+        "pagination": "all rooms",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "medium",
+        "note": "Full list + possible N+1 hasReports"
+      },
+      {
+        "list": "Execution Reports",
+        "pagination": "take 50",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "medium",
+        "note": "Truncation; project variant may be unbounded"
+      },
+      {
+        "list": "Projects list",
+        "pagination": "unbounded",
+        "serverPagination": false,
+        "infiniteScroll": false,
+        "virtualScroll": false,
+        "risk": "medium",
+        "note": "Client status filter"
+      }
+    ],
+    "virtualizationPresent": false,
+    "infiniteScrollPresent": false,
+    "serverSidePaginationPresent": false,
+    "rootCause": "No virtualization library; most lists use take-caps or unbounded loads with client filter/sort. Highest risk: Documents Hub fan-out, legacy delivery notes, full BOQ load.",
+    "limit": "code"
+  },
+  "p6": {
+    "nextBuildPresent": true,
+    "staticBytes": 2152975,
+    "largestStatic": [
+      {
+        "path": "static/chunks/1xzi4trn5jx6z.js",
+        "kb": 379
+      },
+      {
+        "path": "static/chunks/0iec5q4ack_04.js",
+        "kb": 222
+      },
+      {
+        "path": "static/chunks/3zdhjbz9v9mxd.js",
+        "kb": 134
+      },
+      {
+        "path": "static/chunks/2_x4j6sel70zh.js",
+        "kb": 130
+      },
+      {
+        "path": "static/chunks/0cz1d0mv5g_q7.js",
+        "kb": 110
+      },
+      {
+        "path": "static/chunks/261osb5jek9_r.js",
+        "kb": 85
+      },
+      {
+        "path": "static/chunks/2ad8bus_0mgrt.css",
+        "kb": 54
+      },
+      {
+        "path": "static/chunks/1-8s9_t85wwr4.js",
+        "kb": 53
+      },
+      {
+        "path": "static/chunks/27jktro2p5rq9.js",
+        "kb": 43
+      },
+      {
+        "path": "static/chunks/3ji_dgz22ne8r.js",
+        "kb": 43
+      },
+      {
+        "path": "static/chunks/03keig-r72b84.js",
+        "kb": 43
+      },
+      {
+        "path": "static/chunks/10je9k99a-p06.js",
+        "kb": 43
+      }
+    ],
+    "dependencyCount": 32,
+    "heavyDependenciesPresent": [
+      "exceljs",
+      "recharts",
+      "date-fns",
+      "@tanstack/react-table",
+      "lucide-react",
+      "framer-motion",
+      "@supabase/supabase-js",
+      "prisma",
+      "@prisma/client"
+    ],
+    "filesUsingNextDynamic": 0,
+    "filesUsingDynamicImport": 0,
+    "filesUsingSuspense": 21,
+    "recommendations": [
+      "Ensure portal routes (system/project/ops/field) are route-split by App Router (already separate layouts).",
+      "Lazy-load Excel/PDF export modules (xlsx/jspdf) only on export click — avoid landing in initial chunk.",
+      "Documents Hub is API-heavy; FE virtualization only helps after server pagination exists.",
+      "BOQ: prefer server pagination or virtualize rows if item count >> 200.",
+      "Audit lucide-react imports — prefer per-icon imports (already typical with lucide).",
+      "Run `next build` + `@next/bundle-analyzer` for precise Before/After when optimizing (P6 opt phase)."
+    ],
+    "bundleBefore": "2103KB .next/static (dev/build artifact)",
+    "bundleAfter": "n/a (audit only — no changes)",
+    "rootCause": "App Router splits portals; remaining risk is heavy optional libs (excel/pdf) and large list renders, not measured production chunk graph in this run.",
+    "limit": "code (FE) — optimize only after approval"
+  },
+  "p7": {
+    "appRuntime": "local Next.js dev (measured from this host)",
+    "vercelRegion": "not deployed in this measurement — configure on Vercel (recommend fra1/arn1 for EU)",
+    "supabaseRegion": "eu-north-1 (Stockholm) — from pooler hostname",
+    "connectionPool": "Supabase pooler :6543 (pgbouncer=true on DATABASE_URL)",
+    "directDb": ":5432 DIRECT_URL (migrations)",
+    "dns": {
+      "ms": 140,
+      "addresses": [
+        "13.60.109.208",
+        "16.16.102.12"
+      ]
+    },
+    "tcpPooler6543": {
+      "ok": true,
+      "ms": 85
+    },
+    "tcpDirect5432": {
+      "ok": true,
+      "ms": 85
+    },
+    "tlsSupabaseApi": {
+      "ok": true,
+      "ms": 233
+    },
+    "rttSelect1": {
+      "min": 465,
+      "avg": 645,
+      "samples": [
+        1273,
+        525,
+        469,
+        491,
+        465
+      ]
+    },
+    "htmlLoginSamplesMs": [
+      664,
+      275
+    ],
+    "latencyBudget": {
+      "dnsMs": 140,
+      "tcpPoolerMs": 85,
+      "tlsApiMs": 233,
+      "dbRttMinMs": 465,
+      "dbRttAvgMs": 645,
+      "typicalSingleQueryPageMs": 645,
+      "typicalAuthPlusQueryMs": 1290,
+      "note": "App currently local (likely IL/EU mismatch). Deploying Next to Vercel fra1/arn1 near eu-north-1 can cut DB RTT from ~450ms toward ~5–40ms."
+    },
+    "regionChangeEstimate": {
+      "currentDbRttMs": 465,
+      "expectedDbRttIfColocatedMs": "5–40",
+      "expectedHubOrSheetHttpMs": "50–150 (was ~500)",
+      "expectedCellSaveMs": "20–80 (was ~460)",
+      "expectedImprovementFactor": "10–20× on DB-bound paths",
+      "action": "DO NOT change region without approval"
+    },
+    "rootCause": "Dominant floor is geographic RTT from app host to Supabase eu-north-1 (~430–500ms/query). Pooler is configured. Colocation is the primary infra lever.",
+    "limit": "infrastructure"
+  }
+}

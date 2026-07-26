@@ -1,0 +1,307 @@
+{
+  "measuredAt": "2026-07-26T12:14:50.652Z",
+  "sheetId": "cms1h5gb10009l604tdvjvdv2",
+  "projectId": "cms034ch70002kz04wu99jp4h",
+  "counts": {
+    "rows": 3,
+    "cells": 15,
+    "approvals": 0,
+    "reviewNotes": 0,
+    "events": 0,
+    "versions": 0
+  },
+  "stages": [
+    {
+      "name": "RTT SELECT 1 (min)",
+      "ms": 426,
+      "queries": 1,
+      "rtt": 1,
+      "samples": [
+        1127,
+        435,
+        437,
+        431,
+        426
+      ]
+    },
+    {
+      "name": "RTT SELECT 1 (avg)",
+      "ms": 571,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "name": "Auth: requireOfficeUser slim query",
+      "ms": 623,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "name": "REPO getById sheetInclude (min)",
+      "ms": 2165,
+      "queries": "1 Prisma (multi-SQL under hood)",
+      "rtt": "multi",
+      "samples": [
+        2182,
+        2165,
+        2198
+      ],
+      "rows": 3,
+      "cells": 15,
+      "approvals": 0,
+      "reviewNotes": 0,
+      "events": 0,
+      "versions": 0
+    },
+    {
+      "name": "REPO getById sheetInclude (avg)",
+      "ms": 2182,
+      "samples": [
+        2182,
+        2165,
+        2198
+      ]
+    },
+    {
+      "name": "Mapping + JSON.stringify (local)",
+      "ms": 16,
+      "queries": 0,
+      "bytes": 2103,
+      "cellCount": 15
+    },
+    {
+      "name": "Q-sheet+project+createdBy",
+      "ms": 782,
+      "queries": 1,
+      "rtt": 1,
+      "count": 1
+    },
+    {
+      "name": "Q-rows+projectRoom",
+      "ms": 606,
+      "queries": 1,
+      "rtt": 1,
+      "count": 3
+    },
+    {
+      "name": "Q-cells slim (ids+qty only)",
+      "ms": 438,
+      "queries": 1,
+      "rtt": 1,
+      "count": 15
+    },
+    {
+      "name": "Q-cells+boqItem include",
+      "ms": 616,
+      "queries": 1,
+      "rtt": 1,
+      "count": 15
+    },
+    {
+      "name": "ALT cells distinct boqIds + boq findMany (2q)",
+      "ms": 936,
+      "queries": 2,
+      "rtt": 2,
+      "count": 5
+    },
+    {
+      "name": "Q-meta‖ approvals+notes+events+versions",
+      "ms": 1202,
+      "queries": 4,
+      "rtt": 4
+    },
+    {
+      "name": "THEORY parallel split (8 queries)",
+      "ms": 1406,
+      "queries": 8,
+      "rtt": 8
+    },
+    {
+      "name": "THEORY 3 raw SQL (header+cells+rows)",
+      "ms": 1552,
+      "queries": 3,
+      "rtt": 3,
+      "count": 15,
+      "rows": 3
+    },
+    {
+      "name": "THEORY 1 CTE grid (sheet+rows+cells+boq)",
+      "ms": 628,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "name": "HTTP GET sheet #1",
+      "ms": 3160,
+      "queries": 2,
+      "rtt": 2,
+      "bytes": 6574,
+      "status": 200
+    },
+    {
+      "name": "HTTP GET sheet #2",
+      "ms": 3313,
+      "queries": 2,
+      "rtt": 2,
+      "bytes": 6574,
+      "status": 200
+    },
+    {
+      "name": "HTTP GET sheet #3",
+      "ms": 3194,
+      "queries": 2,
+      "rtt": 2,
+      "bytes": 6574,
+      "status": 200
+    },
+    {
+      "name": "FE journey listSheets‖boq‖getSheet",
+      "ms": 3098,
+      "queries": "3 HTTP",
+      "note": "BOQ duplicated: once in sheet.cells[].boqItem and /api/boq"
+    }
+  ],
+  "breakdown": [
+    {
+      "stage": "Authentication (DB user lookup)",
+      "ms": 623,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "stage": "Repository getById (Prisma include)",
+      "ms": 2182,
+      "queries": "~6-8 SQL",
+      "rtt": "bundled"
+    },
+    {
+      "stage": "  └ cells+boqItem alone",
+      "ms": 616,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "stage": "  └ cells slim alone",
+      "ms": 438,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "stage": "Mapping + serialization (CPU)",
+      "ms": 16,
+      "queries": 0,
+      "rtt": 0
+    },
+    {
+      "stage": "HTTP total (auth+repo+network)",
+      "ms": 3222,
+      "queries": 2,
+      "rtt": 2
+    },
+    {
+      "stage": "RTT floor",
+      "ms": 426,
+      "queries": 1,
+      "rtt": 1
+    },
+    {
+      "stage": "SQL exec (EXPLAIN cells JOIN boq)",
+      "ms": 0.083,
+      "queries": 1,
+      "rtt": 0
+    }
+  ],
+  "explains": [
+    {
+      "label": "cells by sheetId",
+      "ok": true,
+      "executionMs": 0.043,
+      "text": "Index Scan using \"MeasurementCell_sheetId_idx\" on \"MeasurementCell\"  (cost=0.15..1.29 rows=1 width=81) (actual time=0.017..0.021 rows=15 loops=1)\n  Index Cond: (\"sheetId\" = 'cms1h5gb10009l604tdvjvdv2'::text)\n  Buffers: shared hit=2\nPlanning Time: 0.075 ms\nExecution Time: 0.043 ms"
+    },
+    {
+      "label": "cells JOIN boqItem",
+      "ok": true,
+      "executionMs": 0.083,
+      "text": "Nested Loop Left Join  (cost=0.29..3.69 rows=1 width=163) (actual time=0.021..0.050 rows=15 loops=1)\n  Buffers: shared hit=32\n  ->  Index Scan using \"MeasurementCell_sheetId_idx\" on \"MeasurementCell\" c  (cost=0.15..1.29 rows=1 width=55) (actual time=0.007..0.011 rows=15 loops=1)\n        Index Cond: (\"sheetId\" = 'cms1h5gb10009l604tdvjvdv2'::text)\n        Buffers: shared hit=2\n  ->  Index Scan using \"BoqItem_pkey\" on \"BoqItem\" b  (cost=0.14..2.36 rows=1 width=160) (actual time=0.002..0.002 rows=1 loops=15)\n        Index Cond: (id = c.\"boqItemId\")\n        Buffers: shared hit=30\nPlanning:\n  Buffers: shared hit=54\nPlanning Time: 0.628 ms\nExecution Time: 0.083 ms"
+    },
+    {
+      "label": "rows JOIN projectRoom",
+      "ok": true,
+      "executionMs": 0.083,
+      "text": "Nested Loop Left Join  (cost=0.29..3.65 rows=1 width=69) (actual time=0.037..0.043 rows=3 loops=1)\n  Buffers: shared hit=8\n  ->  Index Scan using \"MeasurementSheetRow_sheetId_idx\" on \"MeasurementSheetRow\" r  (cost=0.14..1.27 rows=1 width=63) (actual time=0.023..0.024 rows=3 loops=1)\n        Index Cond: (\"sheetId\" = 'cms1h5gb10009l604tdvjvdv2'::text)\n        Buffers: shared hit=2\n  ->  Index Scan using \"ProjectRoom_pkey\" on \"ProjectRoom\" pr  (cost=0.15..2.37 rows=1 width=64) (actual time=0.004..0.004 rows=1 loops=3)\n        Index Cond: (id = r.\"projectRoomId\")\n        Buffers: shared hit=6\nPlanning:\n  Buffers: shared hit=8\nPlanning Time: 0.199 ms\nExecution Time: 0.083 ms"
+    },
+    {
+      "label": "sheet by id",
+      "ok": true,
+      "executionMs": 0.038,
+      "text": "Seq Scan on \"MeasurementSheet\"  (cost=0.00..1.20 rows=1 width=53) (actual time=0.016..0.018 rows=1 loops=1)\n  Filter: (id = 'cms1h5gb10009l604tdvjvdv2'::text)\n  Rows Removed by Filter: 16\n  Buffers: shared hit=1\nPlanning Time: 0.076 ms\nExecution Time: 0.038 ms"
+    }
+  ],
+  "http": {
+    "samples": [
+      {
+        "ms": 3160,
+        "bytes": 6574,
+        "status": 200
+      },
+      {
+        "ms": 3313,
+        "bytes": 6574,
+        "status": 200
+      },
+      {
+        "ms": 3194,
+        "bytes": 6574,
+        "status": 200
+      }
+    ],
+    "avgMs": 3222,
+    "minMs": 3160,
+    "bytes": 6574
+  },
+  "rootCause": {
+    "primary": "RTT × (auth query + heavy Prisma include fan-out)",
+    "sqlHealthy": true,
+    "overFetch": [
+      "boqItem nested on every cell (duplicate BOQ columns × cell count)",
+      "FE also fetches /api/boq in parallel — duplicate BOQ data",
+      "approvals + reviewNotes + events + versions on every grid open",
+      "full Employee-like room fields including deletedAt/isHidden filterable server-side"
+    ],
+    "nPlusOne": "No app-level N+1 loop; Prisma include issues JOINs/extra queries in one findUnique",
+    "serialInRepo": "Single findUnique — Prisma may still run multiple SQL sequentially under the hood",
+    "theoryFusedGridMs": 628,
+    "estimatedAfterOptMs": 1134,
+    "canBeat1s": false,
+    "note": "Fusing auth into sheet SQL (like hub) + slim grid CTE could approach ~1–2 RTT"
+  },
+  "recommendations": [
+    {
+      "id": "A",
+      "title": "Fuse auth into getById SQL (like P1.5 hub)",
+      "saves": "1 RTT (~400–600ms)"
+    },
+    {
+      "id": "B",
+      "title": "Split grid vs metadata endpoints OR lazy-load approvals/events/versions",
+      "saves": "payload + optional 2nd wave",
+      "contractNote": "Requires careful API contract — prefer same GET with lighter default fields if contract must stay"
+    },
+    {
+      "id": "C",
+      "title": "Dedupe BOQ: cells store boqItemId only; columns from /api/boq OR one distinct boq join",
+      "saves": "smaller include; FE already loads BOQ"
+    },
+    {
+      "id": "D",
+      "title": "Raw SQL CTE for sheet+rows+cells+boq in 1 RTT",
+      "saves": "Prisma include overhead; theory ~628ms"
+    },
+    {
+      "id": "E",
+      "title": "Do not add cache / migrations",
+      "saves": "n/a"
+    }
+  ],
+  "stop": "No optimization until approval"
+}

@@ -8,6 +8,13 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/** Key/value system settings (e.g. attendance policy) */
+model AppConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
 enum ProjectStatus {
@@ -181,6 +188,7 @@ model User {
   activities        Activity[]
   notifications     Notification[]
   auditLogs         AuditLog[]
+  officeAttendances OfficeAttendance[]
   createdExecutions BoqExecution[] @relation("ExecutionCreatedBy")
   updatedExecutions BoqExecution[] @relation("ExecutionUpdatedBy")
   executionComments BoqExecutionComment[]
@@ -1045,6 +1053,21 @@ model FieldAttendance {
   @@index([foremanId])
   @@index([projectId])
   @@index([checkedInAt])
+}
+
+/** Office / Operations daily presence (not field foreman attendance) */
+model OfficeAttendance {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkedInAt  DateTime
+  checkedOutAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([checkedInAt])
+  @@index([userId, checkedOutAt])
 }
 
 // ─── AI Document Parse ─────────────────────────────────────────────────────────

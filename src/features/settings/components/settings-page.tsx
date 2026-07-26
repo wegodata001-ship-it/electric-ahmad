@@ -1,76 +1,104 @@
 "use client";
 
-import { Card } from "@/components/ui";
-import { currentUser } from "@/mock";
-import { Avatar } from "@/components/ui";
-import { Bell, Shield, Database } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Card, Button, useToast } from "@/components/ui";
+import { apiClient } from "@/lib/api/client";
+import {
+  ATTENDANCE_POLICY_LABELS,
+  type AttendancePolicy,
+} from "@/lib/settings/attendance-policy";
+import { Shield, Clock } from "lucide-react";
 
 export function SettingsPage() {
-  const sections = [
-    {
-      title: "פרופיל",
-      icon: Shield,
-      items: [
-        { label: "שם", value: currentUser.name },
-        { label: "אימייל", value: currentUser.email },
-        { label: "תפקיד", value: currentUser.role },
-      ],
-    },
-    {
-      title: "התראות",
-      icon: Bell,
-      items: [
-        { label: "דיווחי עובדים", value: "מופעל" },
-        { label: "מסמכים חדשים", value: "מופעל" },
-        { label: "חשבונות חלקיים", value: "מופעל" },
-        { label: "סיום סעיפים", value: "מופעל" },
-      ],
-    },
-    {
-      title: "מערכת",
-      icon: Database,
-      items: [
-        { label: "גרסה", value: "1.0.0" },
-        { label: "סביבה", value: "Development (Mock Data)" },
-        { label: "מסד נתונים", value: "לא מחובר" },
-      ],
-    },
-  ];
+  const toast = useToast();
+  const [policy, setPolicy] = useState<AttendancePolicy>("optional");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiClient
+      .get<{ attendancePolicy: AttendancePolicy }>("/api/system/settings")
+      .then((d) => setPolicy(d.attendancePolicy))
+      .catch((e) => toast.error(e.message))
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await apiClient.put("/api/system/settings", {
+        attendancePolicy: policy,
+      });
+      toast.success("ההגדרה נשמרה");
+    } catch (e: any) {
+      toast.error(e?.message || "שגיאה בשמירה");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">הגדרות</h1>
-        <p className="text-sm text-gray-500 mt-1">ניהול הגדרות המערכת</p>
+        <h1 className="text-2xl font-bold text-gray-900">הגדרות מערכת</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          מדיניות נוכחות וכללי ארגון — לא ממשק שטח
+        </p>
       </div>
 
       <Card padding="lg">
-        <div className="flex items-center gap-4">
-          <Avatar src={currentUser.avatarUrl} name={currentUser.name} size="xl" />
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">{currentUser.name}</h2>
-            <p className="text-sm text-gray-500">{currentUser.email}</p>
-            <p className="text-xs text-primary-600 mt-1">{currentUser.role}</p>
-          </div>
+        <div className="mb-4 flex items-center gap-2">
+          <Clock className="h-5 w-5 text-gray-400" />
+          <h3 className="text-base font-semibold text-gray-900">
+            Attendance Policy — מדיניות נוכחות
+          </h3>
         </div>
+        <p className="mb-4 text-sm text-gray-500">
+          מנהל עבודה תמיד יכול לצפות בסידורים ואישורים בלי כניסה. ההגדרה קובעת
+          מתי המערכת תבקש כניסה לפני פעולה.
+        </p>
+        {loading ? (
+          <p className="text-sm text-gray-400">טוען…</p>
+        ) : (
+          <div className="space-y-3">
+            {(
+              Object.keys(ATTENDANCE_POLICY_LABELS) as AttendancePolicy[]
+            ).map((key) => (
+              <label
+                key={key}
+                className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50"
+              >
+                <input
+                  type="radio"
+                  name="attendance"
+                  className="mt-1"
+                  checked={policy === key}
+                  onChange={() => setPolicy(key)}
+                />
+                <span>
+                  <span className="block font-semibold text-gray-900">
+                    {ATTENDANCE_POLICY_LABELS[key]}
+                  </span>
+                </span>
+              </label>
+            ))}
+            <Button onClick={() => void save()} disabled={saving}>
+              {saving ? "שומר…" : "שמירת מדיניות"}
+            </Button>
+          </div>
+        )}
       </Card>
 
-      {sections.map((section) => (
-        <Card key={section.title} padding="lg">
-          <div className="flex items-center gap-2 mb-4">
-            <section.icon className="h-5 w-5 text-gray-400" />
-            <h3 className="text-base font-semibold text-gray-900">{section.title}</h3>
-          </div>
-          <div className="space-y-3">
-            {section.items.map((item) => (
-              <div key={item.label} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                <span className="text-sm text-gray-500">{item.label}</span>
-                <span className="text-sm font-medium text-gray-900">{item.value}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      ))}
+      <Card padding="lg">
+        <div className="mb-2 flex items-center gap-2">
+          <Shield className="h-5 w-5 text-gray-400" />
+          <h3 className="text-base font-semibold text-gray-900">הערה</h3>
+        </div>
+        <p className="text-sm text-gray-500">
+          הגדרות מתקדמות (משתמשים, הרשאות, Workflow) נמצאות בתפריט System
+          Portal — לא באפליקציות השטח/תפעול.
+        </p>
+      </Card>
     </div>
   );
 }

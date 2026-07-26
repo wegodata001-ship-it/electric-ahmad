@@ -1,21 +1,40 @@
 import { NextRequest } from "next/server";
-import { requireOfficeUser } from "@/lib/auth/office-session";
+import {
+  OfficeAuthError,
+  readOfficeSessionPayload,
+  requireOfficeUser,
+} from "@/lib/auth/office-session";
 import { ProjectRoomsRepository } from "@/repositories/project-rooms.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+/**
+ * Auth fused into rooms list SQL (1 RTT). hasReports via EXISTS — no N+1.
+ */
 export async function GET(req: NextRequest, ctx: Ctx) {
   try {
-    await requireOfficeUser();
+    const payload = await readOfficeSessionPayload();
+    if (!payload) {
+      throw new OfficeAuthError("נדרשת התחברות למערכת", 401);
+    }
+
     const { id: projectId } = await ctx.params;
     const includeHidden =
       req.nextUrl.searchParams.get("includeHidden") === "1";
-    const items = await ProjectRoomsRepository.list(projectId, {
-      includeHidden,
-    });
-    return apiSuccess({ items });
+    const result = await ProjectRoomsRepository.listForOffice(
+      projectId,
+      payload.userId,
+      { includeHidden }
+    );
+    if (result.status === "forbidden") {
+      throw new OfficeAuthError("אין הרשאת מנהל פרויקט", 403);
+    }
+    return apiSuccess({ items: result.items });
   } catch (error) {
+    if (error instanceof OfficeAuthError) {
+      return apiError(error.message, error.status);
+    }
     return handleApiError(error);
   }
 }

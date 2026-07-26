@@ -194,7 +194,21 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isWorkerPath(pathname)) {
-    return NextResponse.next();
+    // Legacy /worker/* namespace is not a live surface. It previously returned
+    // NextResponse.next() with no auth check, which was an auth bypass. Route
+    // it through the same auth funnel as the field portal:
+    //   - with a valid field session → land on /field (keeping any subpath)
+    //   - otherwise → send to unified /login with a `next` hint
+    const token = request.cookies.get(FIELD_SESSION_COOKIE)?.value;
+    const session = await verifyFieldSession(token);
+    const suffix = pathname.replace(/^\/worker/, "") || "";
+    const target = `/field${suffix}`;
+    if (session) {
+      return NextResponse.redirect(new URL(target, request.url));
+    }
+    const login = new URL("/login", request.url);
+    login.searchParams.set("next", target);
+    return NextResponse.redirect(login);
   }
 
   return handleOfficeAuth(request, pathname);

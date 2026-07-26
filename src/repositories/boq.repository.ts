@@ -1,7 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { mapBoqItem } from "@/lib/mappers";
 import { AuditRepository } from "./audit.repository";
-import type { BoqItemKind, BoqItemStatus } from "@prisma/client";
+import type { BoqItemKind, BoqItemStatus, Prisma } from "@prisma/client";
+import {
+  buildPageInfo,
+  type ListPageInfo,
+  type ListSortDir,
+} from "@/lib/api/list-query";
+import type { BoqItem } from "@/types";
 
 export type BoqItemWriteInput = {
   projectId: string;
@@ -276,6 +282,76 @@ export class BOQRepository {
       orderBy: { code: "asc" },
     });
     return rows.map(mapBoqItem);
+  }
+
+  /**
+   * Server paginated BOQ list with q/kind/status filters and sort.
+   * Returns `{ items, total, pageInfo }`.
+   */
+  static async listPage(opts: {
+    projectId?: string;
+    q?: string | null;
+    itemKind?: BoqItemKind | "all" | null;
+    status?: BoqItemStatus | "all" | null;
+    sort?: string | null;
+    dir?: ListSortDir;
+    take: number;
+    skip: number;
+  }): Promise<{
+    items: BoqItem[];
+    total: number;
+    pageInfo: ListPageInfo;
+  }> {
+    const take = Math.max(1, Math.min(opts.take, 200));
+    const skip = Math.max(0, opts.skip);
+    const dir: ListSortDir = opts.dir === "desc" ? "desc" : "asc";
+
+    const where: Prisma.BoqItemWhereInput = { deletedAt: null };
+    if (opts.projectId) where.projectId = opts.projectId;
+    if (opts.itemKind && opts.itemKind !== "all") {
+      where.itemKind = opts.itemKind;
+    }
+    if (opts.status && opts.status !== "all") {
+      where.status = opts.status;
+    }
+    const q = opts.q?.trim();
+    if (q) {
+      where.OR = [
+        { code: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
+        { category: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
+    const orderBy: Prisma.BoqItemOrderByWithRelationInput[] = (() => {
+      switch (opts.sort) {
+        case "updatedAt":
+          return [{ updatedAt: dir }, { id: dir }];
+        case "contractQuantity":
+          return [{ contractQuantity: dir }, { id: dir }];
+        case "code":
+        default:
+          return [{ code: dir }, { id: dir }];
+      }
+    })();
+
+    const [rows, total] = await Promise.all([
+      prisma.boqItem.findMany({ where, orderBy, take, skip }),
+      prisma.boqItem.count({ where }),
+    ]);
+
+    const items = rows.map(mapBoqItem);
+    const page = take > 0 ? Math.floor(skip / take) + 1 : 1;
+    const pageInfo = buildPageInfo({
+      take,
+      skip,
+      page,
+      fetchedCount: rows.length,
+      returnedCount: rows.length,
+      total,
+    });
+
+    return { items, total, pageInfo };
   }
 
   /** Updates executed quantities only — does not change managerial status */

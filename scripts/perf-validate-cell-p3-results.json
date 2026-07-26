@@ -1,0 +1,52 @@
+{
+  "measuredAt": "2026-07-26T12:37:56.066Z",
+  "sheetId": "cms1h5gb10009l604tdvjvdv2",
+  "before": {
+    "httpAvg": 2324,
+    "repoAvg": 1889,
+    "queries": "auth + sheet + prefetch + 3 tx writes ≈ 6",
+    "roundTrips": 6,
+    "payload": 35,
+    "source": "perf-audit-cell-p3-results.json"
+  },
+  "after": {
+    "rttMin": 428,
+    "rttAvg": 450,
+    "rttSamples": [
+      428,
+      501,
+      447,
+      428,
+      447
+    ],
+    "repoMin": 434,
+    "repoAvg": 464,
+    "repoSamples": [
+      441,
+      434,
+      516
+    ],
+    "httpMin": 450,
+    "httpAvg": 463,
+    "httpSamples": [
+      461,
+      477,
+      450,
+      464
+    ],
+    "httpOk": true,
+    "bytes": 35,
+    "queries": 1,
+    "roundTrips": 1
+  },
+  "improvement": {
+    "httpPercent": 80,
+    "repoPercent": 75
+  },
+  "stopRule": {
+    "targetRange": "500–900ms",
+    "inTarget": false,
+    "nearRttFloor": true,
+    "message": "STOP: remaining ≈ RTT floor — no further cell-save refactor."
+  }
+}
