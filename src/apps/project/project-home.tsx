@@ -64,7 +64,7 @@ export function ProjectHome() {
         {projects.map((p) => (
           <Link
             key={p.id}
-            href={`/projects/${p.id}/info`}
+            href={`/project/projects/${p.id}`}
             className="block rounded-2xl border border-slate-200 bg-white px-4 py-4"
           >
             <p className="font-black text-slate-900">{p.name}</p>

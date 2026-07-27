@@ -69,7 +69,7 @@ export function ProjectDetailPage({ projectId }: ProjectDetailPageProps) {
   return (
     <div className="space-y-6">
       <Link
-        href="/projects"
+        href="/project/projects"
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
       >
         <ArrowRight className="h-4 w-4" />

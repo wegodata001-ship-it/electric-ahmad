@@ -95,7 +95,7 @@ export function ProjectsPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
             >
-              <Link href={`/invoices?projectId=${project.id}`}>
+              <Link href={`/project/projects/${project.id}`}>
                 <Card hover padding="none" className="overflow-hidden">
                   <div className="relative h-32 sm:h-40 w-full bg-gray-100">
                     <Image

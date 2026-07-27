@@ -4,7 +4,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../src/lib/auth/password";
-import { PROJECT_MANAGER_ROLE } from "../src/lib/auth/roles";
+import { SYSTEM_MANAGER_ROLE } from "../src/lib/auth/roles";
 
 const prisma = new PrismaClient();
 
@@ -18,6 +18,7 @@ async function main() {
     where: { OR: [{ email }, { username }] },
   });
 
+  // Super Admin → System Back Office only (full width). Never Project Portal.
   if (existing) {
     await prisma.user.update({
       where: { id: existing.id },
@@ -25,11 +26,11 @@ async function main() {
         email,
         username,
         passwordHash,
-        role: PROJECT_MANAGER_ROLE,
+        role: SYSTEM_MANAGER_ROLE,
         name: existing.name || "אדמין WEGO",
       },
     });
-    console.log(`Updated office user: ${username} / ${password}`);
+    console.log(`Updated SUPER ADMIN: ${username} / ${password} → ${SYSTEM_MANAGER_ROLE}`);
   } else {
     await prisma.user.create({
       data: {
@@ -37,12 +38,12 @@ async function main() {
         username,
         passwordHash,
         name: "אדמין WEGO",
-        role: PROJECT_MANAGER_ROLE,
+        role: SYSTEM_MANAGER_ROLE,
         avatarUrl:
           "https://api.dicebear.com/7.x/initials/svg?seed=Admin&backgroundColor=2563eb",
       },
     });
-    console.log(`Created office user: ${username} / ${password}`);
+    console.log(`Created SUPER ADMIN: ${username} / ${password} → ${SYSTEM_MANAGER_ROLE}`);
   }
 }
 

@@ -8,6 +8,7 @@ import {
   verifyOfficeSession,
 } from "@/lib/auth/office-cookie";
 import { portalHomeForRole } from "@/lib/portals/config";
+import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 
 function isPublicFieldPath(pathname: string): boolean {
   return (
@@ -66,6 +67,30 @@ function safeNextPath(next: string | null, fallback: string): string {
   return fallback;
 }
 
+/** Legacy /dashboard is not a destination — always prefer the role portal home. */
+function isLegacyDashboardPath(pathname: string): boolean {
+  return pathname === "/dashboard" || pathname.startsWith("/dashboard/");
+}
+
+function officeLandingPath(
+  role: string | undefined,
+  next: string | null
+): string {
+  const portalHome = portalHomeForRole(role);
+  const fallback = portalHome === "/login" ? "/dashboard" : portalHome;
+  if (!next || isLegacyDashboardPath(next)) return fallback;
+  return safeNextPath(next, fallback);
+}
+
+function fieldLandingPath(next: string | null): string {
+  // Field session must never be sent to office routes (e.g. /dashboard) —
+  // that created ERR_TOO_MANY_REDIRECTS: /dashboard → /login → /dashboard.
+  if (next && next.startsWith("/field") && !next.startsWith("/field/login")) {
+    return safeNextPath(next, "/field");
+  }
+  return "/field";
+}
+
 async function handleFieldAuth(request: NextRequest, pathname: string) {
   const isFieldApi =
     pathname.startsWith("/api/field/") || pathname === "/api/field";
@@ -114,7 +139,7 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       const fieldSession = await verifyFieldSession(fieldToken);
       if (fieldSession) {
         const next = request.nextUrl.searchParams.get("next");
-        const dest = safeNextPath(next, "/field");
+        const dest = fieldLandingPath(next);
         return NextResponse.redirect(new URL(dest, request.url));
       }
 
@@ -122,11 +147,7 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       const session = await verifyOfficeSession(token);
       if (session) {
         const next = request.nextUrl.searchParams.get("next");
-        const portalHome = portalHomeForRole(session.role);
-        const dest = safeNextPath(
-          next,
-          portalHome === "/login" ? "/dashboard" : portalHome
-        );
+        const dest = officeLandingPath(session.role, next);
         return NextResponse.redirect(new URL(dest, request.url));
       }
     }
@@ -182,9 +203,38 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
         { status: 401 }
       );
     }
+    // Prefer field home over /login?next=/dashboard when only a field
+    // session exists — avoids redirect ping-pong with the login handler.
+    if (isLegacyDashboardPath(pathname)) {
+      const fieldToken = request.cookies.get(FIELD_SESSION_COOKIE)?.value;
+      const fieldSession = await verifyFieldSession(fieldToken);
+      if (fieldSession) {
+        return NextResponse.redirect(new URL("/field", request.url));
+      }
+      // No next=/dashboard — that looped with field sessions on /login.
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
     const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname);
     return NextResponse.redirect(login);
+  }
+
+  // Office users hitting legacy /dashboard → role portal (sysmgr → /system).
+  if (isLegacyDashboardPath(pathname)) {
+    const dest = officeLandingPath(session.role, null);
+    return NextResponse.redirect(new URL(dest, request.url));
+  }
+
+  // SUPER ADMIN must stay on full-width /system — never Project/Ops portal UI.
+  if (isSystemAdminRole(session.role)) {
+    if (
+      pathname === "/project" ||
+      pathname.startsWith("/project/") ||
+      pathname === "/operations" ||
+      pathname.startsWith("/operations/")
+    ) {
+      return NextResponse.redirect(new URL("/system", request.url));
+    }
   }
 
   return NextResponse.next();

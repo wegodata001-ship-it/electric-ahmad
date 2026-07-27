@@ -10,11 +10,12 @@ import { PORTALS, portalIdForRole } from "@/lib/portals/config";
 
 /**
  * Soft portal boundaries — each role's primary workspace.
- * System can enter all; others stay in their own portal.
+ * SUPER ADMIN / System Manager → System Back Office only (full width).
+ * Never Project / Ops / Field portal chrome.
  */
 export function portalsAllowedForRole(role?: string | null): PortalId[] {
   if (isSystemAdminRole(role)) {
-    return ["system", "project", "operations", "field"];
+    return ["system"];
   }
   if (role === PROJECT_MANAGER_ROLE) return ["project"];
   if (role === OPERATIONS_MANAGER_ROLE) return ["operations"];

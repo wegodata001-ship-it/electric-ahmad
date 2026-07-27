@@ -44,28 +44,28 @@ export function SystemHome() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-black tracking-tight text-white">
+        <h1 className="text-3xl font-black tracking-tight text-slate-900">
           מרכז השליטה
         </h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-400">
-          מידע · שליטה · Audit · Workflow · Documents — Portal להנהלה
+        <p className="mt-2 max-w-2xl text-sm text-slate-500">
+          מידע · שליטה · בקרה · תהליכי עבודה · מסמכים — ממשק הנהלה
         </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Tile label="פרויקטים / חברות" value={stats.projects} href="/system/companies" />
-        <Tile label="Workflow ממתינים" value={stats.workflowPending} href="/system/workflow" hot />
+        <Tile label="תהליכים ממתינים" value={stats.workflowPending} href="/system/workflow" hot />
         <Tile label="התראות שלא נקראו" value={stats.notifications} href="/system/notifications" />
-        <Tile label="Share Links" value={stats.shareLinks} href="/system/share-links" />
+        <Tile label="קישורי שיתוף" value={stats.shareLinks} href="/system/share-links" />
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <Panel href="/system/users" title="Users & Permissions" desc="משתמשים, מנהלי עבודה, עובדים" />
-        <Panel href="/system/workflow" title="Workflow Engine" desc="תור אישורים ומעברי סטטוס" />
-        <Panel href="/system/documents" title="Documents Hub" desc="ארכיון מסמכים ארגוני" />
-        <Panel href="/system/whatsapp" title="WhatsApp Hub" desc="Internal / External (תשתית)" />
-        <Panel href="/system/share-links" title="Share Links" desc="קישורי לקוח וחתימה" />
-        <Panel href="/system/settings" title="Settings" desc="הגדרות מערכת" />
+        <Panel href="/system/users" title="משתמשים והרשאות" desc="משתמשים, מנהלי עבודה, עובדים" />
+        <Panel href="/system/workflow" title="מנוע תהליכים" desc="תור אישורים ומעברי סטטוס" />
+        <Panel href="/system/documents" title="מרכז מסמכים" desc="ארכיון מסמכים ארגוני" />
+        <Panel href="/system/whatsapp" title="מרכז וואטסאפ" desc="פנימי / חיצוני (תשתית)" />
+        <Panel href="/system/share-links" title="קישורי שיתוף" desc="קישורי לקוח וחתימה" />
+        <Panel href="/system/settings" title="הגדרות" desc="הגדרות מערכת" />
       </div>
     </div>
   );
@@ -87,12 +87,12 @@ function Tile({
       href={href}
       className={
         hot
-          ? "rounded-2xl bg-cyan-500 px-4 py-5 text-slate-950"
-          : "rounded-2xl border border-white/10 bg-slate-900 px-4 py-5"
+          ? "rounded-2xl bg-slate-900 px-4 py-5 text-white shadow-sm"
+          : "rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm"
       }
     >
       <p className="text-3xl font-black">{value}</p>
-      <p className={`mt-1 text-xs font-bold ${hot ? "text-slate-800" : "text-slate-400"}`}>
+      <p className={`mt-1 text-xs font-bold ${hot ? "text-slate-300" : "text-slate-500"}`}>
         {label}
       </p>
     </Link>
@@ -111,10 +111,10 @@ function Panel({
   return (
     <Link
       href={href}
-      className="rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-4 hover:border-cyan-500/40"
+      className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm hover:border-slate-400"
     >
-      <p className="font-black text-white">{title}</p>
-      <p className="mt-1 text-xs text-slate-400">{desc}</p>
+      <p className="font-black text-slate-900">{title}</p>
+      <p className="mt-1 text-xs text-slate-500">{desc}</p>
     </Link>
   );
 }

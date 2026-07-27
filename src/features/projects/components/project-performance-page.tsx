@@ -1167,7 +1167,7 @@ export function ProjectPerformancePage({
           <div className="flex items-center gap-3">
             {!embedded && (
               <Link
-                href={`/invoices?projectId=${projectId}`}
+                href={`/project/projects/${projectId}`}
                 className="text-gray-500"
               >
                 <ArrowRight className="h-5 w-5" />

@@ -100,7 +100,7 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
       {
         id: "boq",
         title: "כתב כמויות",
-        href: `/boq?projectId=${id}`,
+        href: `/project/boq?projectId=${id}`,
         icon: ClipboardList,
         accent:
           "border-sky-300 hover:border-sky-500 bg-gradient-to-b from-sky-50 to-white",
@@ -116,7 +116,7 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
       {
         id: "performance",
         title: "דוחות ביצוע",
-        href: `/projects/${id}/performance`,
+        href: `/project/projects/${id}/performance`,
         icon: Table2,
         accent:
           "border-violet-300 hover:border-violet-500 bg-gradient-to-b from-violet-50 to-white",
@@ -132,7 +132,7 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
       {
         id: "invoices",
         title: "חשבונות",
-        href: `/projects/${id}/invoices`,
+        href: `/project/projects/${id}/invoices`,
         icon: Receipt,
         accent:
           "border-emerald-300 hover:border-emerald-500 bg-gradient-to-b from-emerald-50 to-white",
@@ -149,7 +149,7 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
       {
         id: "documents",
         title: "מסמכים",
-        href: `/projects/${id}/documents`,
+        href: `/project/projects/${id}/documents`,
         icon: FileText,
         accent:
           "border-amber-300 hover:border-amber-500 bg-gradient-to-b from-amber-50 to-white",
@@ -164,7 +164,7 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
       {
         id: "workDiaries",
         title: "יומן עבודה",
-        href: `/documents-archive`,
+        href: `/project/work-diaries`,
         icon: Package,
         accent:
           "border-indigo-300 hover:border-indigo-500 bg-gradient-to-b from-indigo-50 to-white",
@@ -179,7 +179,7 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
       {
         id: "deliveries",
         title: "תעודות משלוח",
-        href: `/delivery-notes`,
+        href: `/project/delivery-notes`,
         icon: Truck,
         accent:
           "border-orange-300 hover:border-orange-500 bg-gradient-to-b from-orange-50 to-white",
@@ -216,7 +216,7 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
       <div className="p-6">
         <p className="text-red-600">{error}</p>
         <Link
-          href="/projects"
+          href="/project/projects"
           className="mt-2 inline-block text-sm text-primary-700"
         >
           חזרה לפרויקטים
@@ -239,7 +239,7 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
     <div className="space-y-3 pb-10">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
-          href="/projects"
+          href="/project/projects"
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
         >
           <ArrowRight className="h-4 w-4" />

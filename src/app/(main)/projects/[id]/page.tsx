@@ -4,8 +4,8 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-/** Legacy links: project click goes to invoices workspace */
+/** Legacy links → Project Portal hub (פירוט מסכים) */
 export default async function Page({ params }: PageProps) {
   const { id } = await params;
-  redirect(`/invoices?projectId=${id}`);
+  redirect(`/project/projects/${id}`);
 }
