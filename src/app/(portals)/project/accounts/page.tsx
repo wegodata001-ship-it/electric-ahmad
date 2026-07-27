@@ -1,6 +1,10 @@
-import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { InvoicesWorkspacePage } from "@/features/partial-invoices/components/invoices-workspace-page";
 
-/** PM no longer uses ERP accounts tree — approvals app instead */
 export default function Page() {
-  redirect("/project/documents");
+  return (
+    <Suspense fallback={<p className="p-6 text-sm text-gray-500">טוען…</p>}>
+      <InvoicesWorkspacePage />
+    </Suspense>
+  );
 }

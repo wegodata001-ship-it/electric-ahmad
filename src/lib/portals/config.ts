@@ -57,7 +57,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     shortName: "מערכת",
     headerTitle: "ניהול מערכת",
     home: "/system",
-    description: "חברות · משתמשים · חשבונות · תשתית",
+    description: "חברות · משתמשים · תשתית",
     accent: "#0f172a",
     theme: {
       accent: "#0f172a",
@@ -70,12 +70,6 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     nav: [
       { label: "לוח בקרה", href: "/system", icon: LayoutDashboard, mode: "live" },
       { label: "פרויקטים", href: "/system/companies", icon: Building2, mode: "live" },
-      {
-        label: "חשבונות / עץ פרויקט",
-        href: "/system/accounts",
-        icon: Wallet,
-        mode: "live",
-      },
       { label: "משתמשים", href: "/system/users", icon: Users, mode: "live" },
       { label: "Workflow", href: "/system/workflow", icon: GitBranch, mode: "live" },
       { label: "מסמכים", href: "/system/documents", icon: FolderOpen, mode: "live" },
@@ -91,7 +85,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     shortName: "פרויקט",
     headerTitle: "ניהול פרויקט",
     home: "/project",
-    description: "פרויקטים · כתב כמויות · חשבונות · מסמכים",
+    description: "פרויקטים · כתב כמויות · חשבונות",
     accent: "#1d4ed8",
     theme: {
       accent: "#1d4ed8",
@@ -102,14 +96,16 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       badge: "PRJ",
     },
     nav: [
-      { label: "הבית שלי", href: "/project", icon: LayoutDashboard, mode: "live" },
+      { label: "לוח בקרה", href: "/project", icon: LayoutDashboard, mode: "live" },
       { label: "פרויקטים", href: "/project/projects", icon: Building2, mode: "live" },
-      { label: "כתב כמויות", href: "/project/boq", icon: FileText, mode: "live" },
+      { label: "כתב כמויות", href: "/project/boq", icon: ClipboardList, mode: "live" },
       { label: "חשבונות", href: "/project/accounts", icon: Wallet, mode: "live" },
-      { label: "מסמכים", href: "/project/documents", icon: FolderOpen, mode: "live" },
-      { label: "תעודות", href: "/project/delivery-notes", icon: Truck, mode: "live" },
-      { label: "חריגות / אישורים", href: "/project/approvals", icon: CheckSquare, mode: "live" },
+      { label: "תעודות משלוח", href: "/project/delivery-notes", icon: Truck, mode: "live" },
+      { label: "מסמכים", href: "/project/documents", icon: FileText, mode: "live" },
+      { label: "אישורים", href: "/project/approvals", icon: CheckSquare, mode: "live" },
       { label: "התראות", href: "/project/notifications", icon: Bell, mode: "live" },
+      { label: "שיחות", href: "/project/conversation", icon: MessageSquare, mode: "live" },
+      { label: "Share Links", href: "/project/share-links", icon: Link2, mode: "live" },
     ],
   },
   operations: {
