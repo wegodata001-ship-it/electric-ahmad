@@ -508,13 +508,21 @@ export function ProjectPerformancePage({
         includeFieldManagers: true,
       });
       setApprovers(list);
-      // Default: Operations Manager (so opsmgr can actually approve)
+      // Prefer the project's linked field manager (מנהל עבודה), then ops.
+      const fieldIds = list
+        .filter((a: any) => a.role === "FIELD_MANAGER")
+        .map((a: any) => a.id as string);
       const opsIds = list
         .filter((a: any) => a.role === "OPERATIONS_MANAGER")
-        .map((a: any) => a.id);
-      setSelectedApproverIds(
-        opsIds.length ? opsIds : list[0]?.id ? [list[0].id] : []
-      );
+        .map((a: any) => a.id as string);
+      const defaults = fieldIds.length
+        ? fieldIds
+        : opsIds.length
+          ? opsIds
+          : list[0]?.id
+            ? [list[0].id]
+            : [];
+      setSelectedApproverIds(defaults);
     } catch (e: any) {
       toast.error(e.message);
       setSubmitApproverOpen(false);

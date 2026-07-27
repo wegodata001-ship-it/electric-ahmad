@@ -13,6 +13,12 @@ type Props = {
   children: React.ReactNode;
 };
 
+/**
+ * @deprecated Wide Admin chrome (`max-w-7xl` + desktop sidebar).
+ * Architecture rule: only System Manager may use wide layout.
+ * Prefer `SystemAppShell`. Never wrap Project / Ops / Field / Worker.
+ * Kept for rare legacy callers — do not extend.
+ */
 export function PortalShell({ portalId, children }: Props) {
   const portal = PORTALS[portalId];
   const router = useRouter();

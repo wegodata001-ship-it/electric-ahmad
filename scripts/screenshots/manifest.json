@@ -1,0 +1,22 @@
+[
+  {
+    "user": "sysmgr",
+    "pass": "WegoAudit123!",
+    "path": "/system",
+    "file": "system-manager.png",
+    "dest": "C:\\elec\\scripts\\screenshots\\system-manager.png",
+    "title": "מרכז השליטה",
+    "dataApp": "system",
+    "url": "https://electric-ahmad.vercel.app/system"
+  },
+  {
+    "user": "pm1",
+    "pass": "WegoAudit123!",
+    "path": "/project",
+    "file": "project-manager.png",
+    "dest": "C:\\elec\\scripts\\screenshots\\project-manager.png",
+    "title": "הפרויקטים שלי",
+    "dataApp": "project",
+    "url": "https://electric-ahmad.vercel.app/project"
+  }
+]

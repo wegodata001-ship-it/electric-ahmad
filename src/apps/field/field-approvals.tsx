@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  approvalsService,
   opsDeliveryNotesService,
   workDiariesService,
 } from "@/features/work-diaries/services/work-diaries.service";
@@ -11,24 +12,26 @@ import { cn } from "@/lib/utils";
 
 type Row = {
   id: string;
-  kind: "work_diary" | "delivery_note";
+  kind: "work_diary" | "delivery_note" | "measurement_sheet";
   number: string;
   status: string;
   projectName?: string;
   comment?: string | null;
+  title?: string;
   href: string;
-  fixHref: string;
+  fixHref?: string;
+  inbound?: boolean;
 };
 
 const STATUS_UI: Record<string, { label: string; emoji: string; cls: string }> =
   {
     pending_approval: {
-      label: "ממתין",
+      label: "ממתין לאישורך",
       emoji: "🟡",
       cls: field.badge.yellow,
     },
     in_approval: {
-      label: "ממתין",
+      label: "ממתין לאישורך",
       emoji: "🟡",
       cls: field.badge.yellow,
     },
@@ -51,6 +54,12 @@ const STATUS_UI: Record<string, { label: string; emoji: string; cls: string }> =
     submitted: { label: "נשלח", emoji: "🟡", cls: field.badge.blue },
   };
 
+function kindLabel(kind: Row["kind"]) {
+  if (kind === "work_diary") return "יומן עבודה";
+  if (kind === "delivery_note") return "תעודת משלוח";
+  return "דף מדידה";
+}
+
 export function FieldApprovals() {
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState("");
@@ -58,10 +67,25 @@ export function FieldApprovals() {
 
   useEffect(() => {
     Promise.all([
+      approvalsService.pending().catch(() => ({ items: [] as any[] })),
       workDiariesService.list().catch(() => ({ items: [] as any[] })),
       opsDeliveryNotesService.list().catch(() => ({ items: [] as any[] })),
     ])
-      .then(([diaries, notes]) => {
+      .then(([pending, diaries, notes]) => {
+        const inbound: Row[] = (pending.items || [])
+          .filter((p: any) => p.kind === "measurement_sheet")
+          .map((p: any) => ({
+            id: p.documentId,
+            kind: "measurement_sheet" as const,
+            number: p.documentNumber || "דף מדידה",
+            status: p.status || "pending_approval",
+            projectName: p.projectName,
+            title: p.title,
+            comment: null,
+            href: `/field/approvals/review/measurement_sheet/${p.documentId}`,
+            inbound: true,
+          }));
+
         const dRows: Row[] = (diaries.items || []).map((d: any) => ({
           id: d.id,
           kind: "work_diary" as const,
@@ -82,14 +106,17 @@ export function FieldApprovals() {
           href: `/field/delivery-notes/${n.id}`,
           fixHref: `/field/delivery-notes/new?reviseId=${n.id}`,
         }));
-        const merged = [...dRows, ...nRows].sort((a, b) => {
-          const rank = (s: string) =>
-            s === "revision" || s === "revision_requested"
+
+        const merged = [...inbound, ...dRows, ...nRows].sort((a, b) => {
+          const rank = (s: string, inboundItem?: boolean) =>
+            inboundItem
               ? 0
-              : s === "pending_approval" || s === "in_approval"
+              : s === "revision" || s === "revision_requested"
                 ? 1
-                : 2;
-          return rank(a.status) - rank(b.status);
+                : s === "pending_approval" || s === "in_approval"
+                  ? 2
+                  : 3;
+          return rank(a.status, a.inbound) - rank(b.status, b.inbound);
         });
         setRows(merged);
       })
@@ -101,7 +128,7 @@ export function FieldApprovals() {
     <div className="space-y-5">
       <FieldPageHeader
         title="אישורים"
-        subtitle="המסמכים שלך — אושר · ממתין · הוחזר"
+        subtitle="דפי מדידה לאישורך · יומנים ותעודות ששלחת"
       />
 
       {error && <p className={field.error}>{error}</p>}
@@ -114,7 +141,7 @@ export function FieldApprovals() {
         <FieldEmptyState
           emoji="✅"
           title="אין מסמכים להצגה"
-          description="כאן יופיעו יומנים ותעודות ששלחתם לאישור."
+          description="כאן יופיעו דפי מדידה שנשלחו אליך לאישור, ויומנים/תעודות ששלחתם."
         />
       )}
 
@@ -130,20 +157,26 @@ export function FieldApprovals() {
           return (
             <Link
               key={`${row.kind}-${row.id}`}
-              href={needsFix ? row.fixHref : row.href}
+              href={needsFix && row.fixHref ? row.fixHref : row.href}
               className={cn(field.cardInteractive, "block overflow-hidden p-0")}
             >
-              {needsFix && <div className="h-1.5 w-full bg-orange-500" />}
+              {(needsFix || row.inbound) && (
+                <div
+                  className={cn(
+                    "h-1.5 w-full",
+                    needsFix ? "bg-orange-500" : "bg-teal-500"
+                  )}
+                />
+              )}
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base font-bold text-[#6B7280]">
-                      {row.kind === "work_diary"
-                        ? "יומן עבודה"
-                        : "תעודת משלוח"}
+                      {kindLabel(row.kind)}
+                      {row.inbound ? " · לאישורך" : ""}
                     </p>
                     <p className="mt-1 text-xl font-black text-[#111827]">
-                      {row.number}
+                      {row.title || row.number}
                     </p>
                     {row.projectName && (
                       <p className="mt-2 text-base text-[#6B7280]">
@@ -164,6 +197,9 @@ export function FieldApprovals() {
                       תקן ושלח שוב
                     </p>
                   </>
+                )}
+                {row.inbound && !needsFix && (
+                  <p className={cn(field.btnPrimary, "mt-4")}>פתח לאישור</p>
                 )}
               </div>
             </Link>

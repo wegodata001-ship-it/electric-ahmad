@@ -4,6 +4,24 @@ import { useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { COMPANY_PROFILE } from "@/config/company";
 
+const LOGIN_BRAND_NAME = "מערכת חשמל הזם";
+const LOGIN_BRAND_MARK = "הזם";
+
+function safeBrandName(value: string | undefined): string {
+  const v = (value ?? "").trim();
+  if (!v) return LOGIN_BRAND_NAME;
+  // Reject mojibake (Hebrew geresh spam from bad Windows/env encoding)
+  if ((v.match(/\u05F3/g) || []).length >= 2) return LOGIN_BRAND_NAME;
+  return v;
+}
+
+function safeBrandMark(value: string | undefined): string {
+  const v = (value ?? "").trim();
+  if (!v) return LOGIN_BRAND_MARK;
+  if ((v.match(/\u05F3/g) || []).length >= 2) return LOGIN_BRAND_MARK;
+  return v;
+}
+
 export function OfficeLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -12,6 +30,9 @@ export function OfficeLoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const brandName = safeBrandName(COMPANY_PROFILE.name);
+  const brandMark = safeBrandMark(COMPANY_PROFILE.logoText);
+  const [logoFailed, setLogoFailed] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -65,15 +86,23 @@ export function OfficeLoginPage() {
         className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-sm p-7 space-y-4"
       >
         <div className="text-center mb-1">
-          <div
-            className="mx-auto h-14 w-14 rounded-xl text-white flex items-center justify-center font-bold text-sm tracking-wide mb-3"
-            style={{ background: COMPANY_PROFILE.brandBlue }}
-          >
-            {COMPANY_PROFILE.logoText || "ERP"}
-          </div>
-          <h1 className="text-xl font-bold text-gray-900">
-            {COMPANY_PROFILE.name || "מערכת ניהול"}
-          </h1>
+          {COMPANY_PROFILE.logoUrl && !logoFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={COMPANY_PROFILE.logoUrl}
+              alt={brandName}
+              className="mx-auto mb-3 h-14 w-14 rounded-xl object-cover"
+              onError={() => setLogoFailed(true)}
+            />
+          ) : (
+            <div
+              className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl text-sm font-bold tracking-wide text-white"
+              style={{ background: COMPANY_PROFILE.brandBlue }}
+            >
+              {brandMark}
+            </div>
+          )}
+          <h1 className="text-xl font-bold text-gray-900">{brandName}</h1>
           <p className="text-sm text-gray-500 mt-1">
             התחברות אחת · הפניה אוטומטית ל־Portal
           </p>

@@ -11,7 +11,7 @@ export function WorkerLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background" data-layout="portal" data-app="worker">
       <header className="sticky top-0 z-30 bg-white border-b border-gray-200/80">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
           <Link href="/worker" className="flex items-center gap-2">

@@ -39,6 +39,7 @@ export function OpsAppShell({ children }: { children: React.ReactNode }) {
       className="flex min-h-dvh flex-col bg-[#fff7ed] text-stone-900"
       dir="rtl"
       data-app="operations"
+      data-layout="portal"
     >
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-amber-200/80 bg-[#fffbeb]/95 px-4 backdrop-blur">
         <div className="min-w-0">

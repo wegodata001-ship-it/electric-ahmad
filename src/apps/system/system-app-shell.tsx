@@ -30,7 +30,12 @@ export function SystemAppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100" dir="rtl" data-app="system">
+    <div
+      className="min-h-screen bg-slate-950 text-slate-100"
+      dir="rtl"
+      data-app="system"
+      data-layout="admin"
+    >
       <div className="mx-auto flex min-h-screen max-w-7xl">
         <aside className="hidden w-60 shrink-0 flex-col border-l border-white/10 bg-slate-900 lg:flex">
           <div className="border-b border-white/10 px-4 py-5">

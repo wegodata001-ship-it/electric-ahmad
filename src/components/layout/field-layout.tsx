@@ -13,6 +13,10 @@ const nav = [
   { name: "פרופיל", href: "/field/profile", icon: UserRound },
 ] as const;
 
+/**
+ * @deprecated Unused. Field portal uses `FieldAppShell` (`max-w-lg` portal).
+ * Do not wire this wide desktop sidebar layout back into Field routes.
+ */
 export function FieldLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();

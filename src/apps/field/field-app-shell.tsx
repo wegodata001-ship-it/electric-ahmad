@@ -37,6 +37,7 @@ export function FieldAppShell({ children }: { children: React.ReactNode }) {
       className="flex min-h-dvh flex-col bg-[#F7F8FA] text-[#111827]"
       dir="rtl"
       data-app="field"
+      data-layout="portal"
       data-theme="light"
     >
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[#E5E7EB] bg-white/95 px-4 backdrop-blur">

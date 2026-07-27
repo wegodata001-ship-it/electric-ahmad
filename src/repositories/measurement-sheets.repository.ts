@@ -1890,13 +1890,31 @@ export class MeasurementSheetsRepository {
       { version: docVersion, approverIds }
     );
 
-    await this.notify(
-      approverIds,
-      "דוח ביצוע ממתין לאישור",
-      `${sheet.title} (V${docVersion}) ממתין לאישורך`,
-      `/approvals`,
-      sheet.projectId
-    );
+    // Field managers land on /field/approvals; office on /approvals.
+    const fieldApproverIds = await prisma.user.findMany({
+      where: { id: { in: approverIds }, role: "FIELD_MANAGER" },
+      select: { id: true },
+    });
+    const fieldIds = new Set(fieldApproverIds.map((u) => u.id));
+    const officeIds = approverIds.filter((id) => !fieldIds.has(id));
+    if (fieldIds.size) {
+      await this.notify(
+        [...fieldIds],
+        "דוח ביצוע ממתין לאישור",
+        `${sheet.title} (V${docVersion}) ממתין לאישורך`,
+        `/field/approvals`,
+        sheet.projectId
+      );
+    }
+    if (officeIds.length) {
+      await this.notify(
+        officeIds,
+        "דוח ביצוע ממתין לאישור",
+        `${sheet.title} (V${docVersion}) ממתין לאישורך`,
+        `/approvals`,
+        sheet.projectId
+      );
+    }
 
     await prisma.activity.create({
       data: {
@@ -2086,7 +2104,8 @@ export class MeasurementSheetsRepository {
       version: r.sheet.currentVersion,
       status: r.sheet.status,
       sentAt: r.sentAt.toISOString(),
-      link: `/operations/approvals/review/measurement_sheet/${r.sheetId}`,
+      // Consumers rewrite by portal; field uses /field/approvals/review/...
+      link: `/approvals/review/measurement_sheet/${r.sheetId}`,
     }));
   }
 

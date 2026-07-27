@@ -158,6 +158,20 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
     );
   }
 
+  // Field managers may reach measurement-sheet approval APIs (handler
+  // enforces role + assignment). Without this, proxy returns office 401
+  // before the field fallback in /api/approvals/* can run.
+  if (
+    pathname === "/api/approvals/pending" ||
+    pathname === "/api/approvals/review"
+  ) {
+    const fieldToken = request.cookies.get(FIELD_SESSION_COOKIE)?.value;
+    const fieldSession = await verifyFieldSession(fieldToken);
+    if (fieldSession) {
+      return NextResponse.next();
+    }
+  }
+
   const token = request.cookies.get(OFFICE_SESSION_COOKIE)?.value;
   const session = await verifyOfficeSession(token);
 

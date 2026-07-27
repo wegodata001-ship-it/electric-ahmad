@@ -1,0 +1,66 @@
+[
+  {
+    "portal": "system-manager",
+    "user": "sysmgr",
+    "path": "/system",
+    "portalPath": "/system",
+    "dest": "C:\\elec\\scripts\\screenshots\\system-manager.png",
+    "url": "http://localhost:3000/system",
+    "dataApp": "system",
+    "dataLayout": "admin",
+    "expectLayout": "admin",
+    "mainMax": {
+      "width": 1040,
+      "maxWidth": "none"
+    },
+    "ok": true
+  },
+  {
+    "portal": "project-portal",
+    "user": "pm1",
+    "path": "/project",
+    "portalPath": "/project",
+    "dest": "C:\\elec\\scripts\\screenshots\\project-portal.png",
+    "url": "http://localhost:3000/project",
+    "dataApp": "project",
+    "dataLayout": "portal",
+    "expectLayout": "portal",
+    "mainMax": {
+      "width": 512,
+      "maxWidth": "512px"
+    },
+    "ok": true
+  },
+  {
+    "portal": "operations-portal",
+    "user": "opsmgr",
+    "path": "/operations",
+    "portalPath": "/operations",
+    "dest": "C:\\elec\\scripts\\screenshots\\operations-portal.png",
+    "url": "http://localhost:3000/operations",
+    "dataApp": "operations",
+    "dataLayout": "portal",
+    "expectLayout": "portal",
+    "mainMax": {
+      "width": 512,
+      "maxWidth": "512px"
+    },
+    "ok": true
+  },
+  {
+    "portal": "field-portal",
+    "user": "foreman1",
+    "path": "/field",
+    "portalPath": "/field",
+    "dest": "C:\\elec\\scripts\\screenshots\\field-portal.png",
+    "url": "http://localhost:3000/field",
+    "dataApp": "field",
+    "dataLayout": "portal",
+    "expectLayout": "portal",
+    "mainMax": {
+      "width": 512,
+      "maxWidth": "512px"
+    },
+    "ok": true
+  }
+]

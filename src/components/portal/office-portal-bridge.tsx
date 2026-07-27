@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PortalShell } from "@/components/portal/portal-shell";
 import { ProjectAppShell } from "@/apps/project/project-app-shell";
 import { OpsAppShell } from "@/apps/operations/ops-app-shell";
+import { SystemAppShell } from "@/apps/system/system-app-shell";
 import type { PortalId } from "@/lib/portals/config";
 import { portalIdForRole } from "@/lib/portals/config";
 import { fetchClientMe } from "@/lib/auth/client-me";
 
 /**
  * Wraps legacy (main) office routes with the role's portal chrome.
- * Project / Operations use mobile daily-work shells — not ERP chrome.
+ *
+ * Architecture (frozen):
+ * - system → wide SystemAppShell (Back Office only)
+ * - project / operations → narrow Portal shells (never Admin width)
  */
 export function OfficePortalBridge({
   children,
@@ -40,6 +43,10 @@ export function OfficePortalBridge({
     );
   }
 
+  if (portalId === "system") {
+    return <SystemAppShell>{children}</SystemAppShell>;
+  }
+
   if (portalId === "project") {
     return <ProjectAppShell>{children}</ProjectAppShell>;
   }
@@ -48,5 +55,6 @@ export function OfficePortalBridge({
     return <OpsAppShell>{children}</OpsAppShell>;
   }
 
-  return <PortalShell portalId={portalId}>{children}</PortalShell>;
+  // Fallback: treat as project portal (never wide Admin chrome)
+  return <ProjectAppShell>{children}</ProjectAppShell>;
 }
