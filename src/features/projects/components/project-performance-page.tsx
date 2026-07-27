@@ -441,6 +441,12 @@ export function ProjectPerformancePage({
     applySheet(s);
   }
 
+  /** Reload the project sheet list (sidebar / revision counts). */
+  async function loadSheets() {
+    const sheetsRes = await invoicesWorkspaceService.listSheets(projectId);
+    setSheets(sheetsRes.items);
+  }
+
   async function onRoomsChanged() {
     try {
       await refreshSheetLocal();

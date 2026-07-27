@@ -21,9 +21,15 @@ async function main() {
 
   console.log(`Found ${sheets.length} empty grids`);
   for (const s of sheets) {
+    // ensureBoqGrid → getById: null when the sheet is missing after work
+    // (deleted concurrently) or fetchSheetById returns non-ok. Valid skip case.
     const out = await MeasurementSheetsRepository.ensureBoqGrid(s.id, user.id, {
       seedIfEmpty: true,
     });
+    if (!out) {
+      console.warn(`Measurement grid generation failed for sheet ${s.id}`);
+      continue;
+    }
     console.log({
       title: s.title,
       cells: out.cells.length,
