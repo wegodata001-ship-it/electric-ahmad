@@ -53,17 +53,42 @@ function isOfficeAliasPath(pathname: string): boolean {
   );
 }
 
-function safeNextPath(next: string | null, fallback: string): string {
-  if (
-    next &&
+function isSafeInternalPath(next: string | null): next is string {
+  return (
+    !!next &&
     next.startsWith("/") &&
     !next.startsWith("//") &&
     next !== "/login" &&
     next !== "/field/login"
-  ) {
-    return next;
+  );
+}
+
+function isFieldOnlyPath(pathname: string): boolean {
+  return (
+    pathname === "/field" ||
+    pathname.startsWith("/field/") ||
+    pathname === "/api/field" ||
+    pathname.startsWith("/api/field/")
+  );
+}
+
+/**
+ * Honor `next` only when it belongs to the same portal family.
+ * Mixing field `next=/dashboard` with a field session caused ERR_TOO_MANY_REDIRECTS:
+ * /login → /dashboard → /login?next=/dashboard → …
+ */
+function safeNextPath(
+  next: string | null,
+  fallback: string,
+  kind: "field" | "office"
+): string {
+  if (!isSafeInternalPath(next)) return fallback;
+  if (kind === "field") {
+    return isFieldOnlyPath(next) ? next : fallback;
   }
-  return fallback;
+  // Office sessions must not be sent into the field portal via `next`.
+  if (isFieldOnlyPath(next)) return fallback;
+  return next;
 }
 
 async function handleFieldAuth(request: NextRequest, pathname: string) {
@@ -80,7 +105,9 @@ async function handleFieldAuth(request: NextRequest, pathname: string) {
       // Unified login is the primary entry — keep /field/login as BC redirect
       const unified = new URL("/login", request.url);
       const next = request.nextUrl.searchParams.get("next");
-      if (next) unified.searchParams.set("next", next);
+      if (next && isFieldOnlyPath(next)) {
+        unified.searchParams.set("next", next);
+      }
       return NextResponse.redirect(unified);
     }
     return NextResponse.next();
@@ -109,12 +136,12 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
 
   if (isPublicOfficePath(pathname)) {
     if (pathname === "/login") {
-      // Field session wins when present
+      // Field session wins when present — never bounce to office routes.
       const fieldToken = request.cookies.get(FIELD_SESSION_COOKIE)?.value;
       const fieldSession = await verifyFieldSession(fieldToken);
       if (fieldSession) {
         const next = request.nextUrl.searchParams.get("next");
-        const dest = safeNextPath(next, "/field");
+        const dest = safeNextPath(next, "/field", "field");
         return NextResponse.redirect(new URL(dest, request.url));
       }
 
@@ -123,10 +150,13 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       if (session) {
         const next = request.nextUrl.searchParams.get("next");
         const portalHome = portalHomeForRole(session.role);
-        const dest = safeNextPath(
-          next,
-          portalHome === "/login" ? "/dashboard" : portalHome
-        );
+        const fallback = portalHome === "/login" ? "/dashboard" : portalHome;
+        // Field managers who somehow hold an office cookie still belong in /field.
+        if (fallback === "/field") {
+          const dest = safeNextPath(next, "/field", "field");
+          return NextResponse.redirect(new URL(dest, request.url));
+        }
+        const dest = safeNextPath(next, fallback, "office");
         return NextResponse.redirect(new URL(dest, request.url));
       }
     }
@@ -162,6 +192,20 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
   const session = await verifyOfficeSession(token);
 
   if (!session) {
+    // Logged-in field managers hitting / or /dashboard must go to /field,
+    // not /login?next=/dashboard (that created an infinite redirect loop).
+    const fieldToken = request.cookies.get(FIELD_SESSION_COOKIE)?.value;
+    const fieldSession = await verifyFieldSession(fieldToken);
+    if (fieldSession) {
+      if (isApi) {
+        return NextResponse.json(
+          { success: false, error: "נדרשת התחברות למערכת מנהל הפרויקט" },
+          { status: 401 }
+        );
+      }
+      return NextResponse.redirect(new URL("/field", request.url));
+    }
+
     if (isApi) {
       return NextResponse.json(
         { success: false, error: "נדרשת התחברות למערכת מנהל הפרויקט" },
@@ -171,6 +215,18 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname);
     return NextResponse.redirect(login);
+  }
+
+  // Office cookie present but role is field-only → send to field portal.
+  const home = portalHomeForRole(session.role);
+  if (home === "/field" && !isFieldOnlyPath(pathname)) {
+    if (isApi) {
+      return NextResponse.json(
+        { success: false, error: "אין הרשאה למסך זה במערכת מנהל העבודה" },
+        { status: 403 }
+      );
+    }
+    return NextResponse.redirect(new URL("/field", request.url));
   }
 
   return NextResponse.next();
