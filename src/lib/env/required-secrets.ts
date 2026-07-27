@@ -15,17 +15,6 @@
 
 import { supabaseConfig } from "@/config/storage";
 
-/** Thrown when session/HMAC secrets are missing or invalid — map to HTTP 503. */
-export class SessionSecretError extends Error {
-  readonly status = 503;
-  readonly code = "SESSION_SECRET_MISSING" as const;
-
-  constructor(message: string) {
-    super(message);
-    this.name = "SessionSecretError";
-  }
-}
-
 const KNOWN_BAD_SESSION_SECRETS: readonly string[] = [
   "wego-dev-field-session-secret-change-me",
 ];
@@ -77,16 +66,16 @@ export function getSessionSecret(): string {
       : null;
 
   if (!chosenName) {
-    throw new SessionSecretError(
-      "סוד סשן חסר: יש להגדיר SESSION_SECRET ב־Vercel (Project → Settings → Environment Variables) / " +
-        "Missing session secret: set SESSION_SECRET (preferred) or AUTH_SECRET in the host environment"
+    throw new Error(
+      "סוד סשן חסר: יש להגדיר SESSION_SECRET (מומלץ) או AUTH_SECRET כברירת מחדל / " +
+        "Missing session secret: set SESSION_SECRET (preferred) or AUTH_SECRET"
     );
   }
 
   const value = (chosenName === "SESSION_SECRET" ? primary : alias) as string;
 
   if (looksLikePlaceholder(value)) {
-    throw new SessionSecretError(
+    throw new Error(
       `סוד סשן פסול (${chosenName}) — ערך ברירת מחדל אסור בשימוש בייצור / ` +
         `Refusing to use placeholder session secret in ${chosenName}. ` +
         `Generate a strong random value (>= 32 chars).`
@@ -94,7 +83,7 @@ export function getSessionSecret(): string {
   }
 
   if (value.length < 32) {
-    throw new SessionSecretError(
+    throw new Error(
       `סוד הסשן ${chosenName} קצר מ־32 תווים / ` +
         `${chosenName} must be at least 32 characters long (got ${value.length}).`
     );

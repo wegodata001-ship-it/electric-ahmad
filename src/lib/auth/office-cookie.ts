@@ -82,18 +82,7 @@ export async function verifyOfficeSession(
   if (!token) return null;
   const [encoded, sig] = token.split(".");
   if (!encoded || !sig) return null;
-  // Missing SESSION_SECRET must not crash Proxy/RSC into Internal Server Error —
-  // treat as unauthenticated so the user is redirected to /login with a clear API error on login.
-  let expected: string;
-  try {
-    expected = await hmacSign(encoded);
-  } catch (err) {
-    console.error(
-      "[office-cookie] verifyOfficeSession: session secret unavailable",
-      err instanceof Error ? err.message : err
-    );
-    return null;
-  }
+  const expected = await hmacSign(encoded);
   if (expected.length !== sig.length) return null;
   let ok = true;
   for (let i = 0; i < expected.length; i++) {
