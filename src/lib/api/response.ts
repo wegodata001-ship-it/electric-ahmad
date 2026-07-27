@@ -4,6 +4,7 @@ import { FieldAuthError } from "@/lib/auth/field-session";
 import { OfficeAuthError } from "@/lib/auth/office-session";
 import { toUserFacingError } from "@/lib/api/user-facing-error";
 import { ValidationError } from "@/lib/validation/parse-body";
+import { SessionSecretError } from "@/lib/env/required-secrets";
 
 export function apiSuccess<T>(data: T, status = 200) {
   return NextResponse.json({ success: true, data }, { status });
@@ -19,6 +20,11 @@ export async function handleApiError(error: unknown) {
       { success: false, error: error.message, issues: error.issues },
       { status: error.status }
     );
+  }
+
+  if (error instanceof SessionSecretError) {
+    console.error("[config]", error.message);
+    return apiError(error.message, error.status);
   }
 
   if (error instanceof FieldAuthError) {

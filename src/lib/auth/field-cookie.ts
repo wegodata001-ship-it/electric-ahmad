@@ -72,7 +72,17 @@ export async function verifyFieldSession(
   if (!token) return null;
   const [encoded, sig] = token.split(".");
   if (!encoded || !sig) return null;
-  const expected = await hmacSign(encoded);
+  // Missing SESSION_SECRET must not crash Proxy/RSC into Internal Server Error.
+  let expected: string;
+  try {
+    expected = await hmacSign(encoded);
+  } catch (err) {
+    console.error(
+      "[field-cookie] verifyFieldSession: session secret unavailable",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
   if (expected.length !== sig.length) return null;
   let ok = true;
   for (let i = 0; i < expected.length; i++) {
