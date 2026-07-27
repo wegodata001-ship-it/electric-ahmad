@@ -21,9 +21,19 @@ async function main() {
 
   console.log(`Found ${sheets.length} empty grids`);
   for (const s of sheets) {
+    // ensureBoqGrid → getById may return null if the sheet disappeared mid-run.
     const out = await MeasurementSheetsRepository.ensureBoqGrid(s.id, user.id, {
       seedIfEmpty: true,
     });
+    if (!out) {
+      console.warn({
+        title: s.title,
+        id: s.id,
+        skipped: true,
+        reason: "sheet not found after ensureBoqGrid",
+      });
+      continue;
+    }
     console.log({
       title: s.title,
       cells: out.cells.length,

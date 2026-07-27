@@ -441,6 +441,11 @@ export function ProjectPerformancePage({
     applySheet(s);
   }
 
+  async function loadSheets() {
+    const sheetsRes = await invoicesWorkspaceService.listSheets(projectId);
+    setSheets(sheetsRes.items);
+  }
+
   async function onRoomsChanged() {
     try {
       await refreshSheetLocal();
