@@ -27,11 +27,24 @@ const DashboardCharts = dynamic(
 /** חשבונות בפורטל פרויקט — גרפים וסיכומים בלבד (לא עץ workspace) */
 export function ProjectAccountsCharts() {
   const [kpis, setKpis] = useState<DashboardKPIs | null>(null);
+  const [chartData, setChartData] = useState<
+    Array<{ name: string; completed: number; remaining: number }>
+  >([]);
+  const [progressData, setProgressData] = useState<
+    Array<{ month: string; planned: number; actual: number }>
+  >([]);
 
   useEffect(() => {
-    dashboardService
-      .getKPIs()
-      .then(setKpis)
+    Promise.all([
+      dashboardService.getKPIs(),
+      dashboardService.getChartData(),
+      dashboardService.getProgressData(),
+    ])
+      .then(([nextKpis, nextChartData, nextProgressData]) => {
+        setKpis(nextKpis);
+        setChartData(nextChartData);
+        setProgressData(nextProgressData);
+      })
       .catch(() => setKpis(null));
   }, []);
 
@@ -67,7 +80,7 @@ export function ProjectAccountsCharts() {
         />
       </div>
 
-      <DashboardCharts />
+      <DashboardCharts chartData={chartData} progressData={progressData} />
     </div>
   );
 }
