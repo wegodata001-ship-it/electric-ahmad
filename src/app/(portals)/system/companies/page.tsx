@@ -1,6 +1,8 @@
-import { ProjectsPage } from "@/features/projects/components/projects-page";
+"use client";
 
-/** System: פרויקטים / חברות — מודול פרויקטים הקיים */
+import { SystemProjectDashboard } from "@/apps/system/system-project-dashboard";
+
+/** System: חברות / פרויקטים — Dashboard פרויקט עם רשימה בצד ימין */
 export default function Page() {
-  return <ProjectsPage />;
+  return <SystemProjectDashboard />;
 }
