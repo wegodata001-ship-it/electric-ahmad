@@ -612,6 +612,42 @@ export function DocumentsHubV2Page({
                       הוסף למערכת המסמכים
                     </button>
                   )}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      void (async () => {
+                        setBusy(true);
+                        try {
+                          const res = await apiClient.post<{
+                            url: string;
+                          }>("/api/external-share", {
+                            entityType: "document",
+                            entityId:
+                              detail.archiveDocumentId ||
+                              detail.entityId ||
+                              detail.list?.id,
+                            projectId: projectId || detail.list?.projectId,
+                            title: detail.list?.title || detail.list?.name,
+                            expiresInDays: 30,
+                          });
+                          if (res.url) {
+                            await navigator.clipboard.writeText(res.url);
+                            setInfo("נוצר קישור חיצוני והועתק ללוח");
+                          }
+                        } catch (e: any) {
+                          setError(e.message || "יצירת קישור נכשלה");
+                        } finally {
+                          setBusy(false);
+                        }
+                      })();
+                    }}
+                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border-2 border-sky-300 bg-sky-50 font-bold text-sky-900"
+                  >
+                    <Link2 className="h-4 w-4" />
+                    יצירת קישור חיצוני
+                  </button>
+
                   {!!detail.shares?.length && (
                     <section>
                       <h3 className="mb-2 text-sm font-black">קישורי Share</h3>

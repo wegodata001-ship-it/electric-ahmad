@@ -41,6 +41,18 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [markingSent, setMarkingSent] = useState(false);
   const [showApproverModal, setShowApproverModal] = useState(false);
+  /** Operations Manager may view but must not mark invoice as sent to client */
+  const [blockSendToClient, setBlockSendToClient] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((j) => {
+        const role = j?.data?.role ?? j?.role;
+        setBlockSendToClient(role === "OPERATIONS_MANAGER");
+      })
+      .catch(() => undefined);
+  }, []);
 
   const reload = useCallback(async () => {
     const [inv, apps] = await Promise.all([
@@ -103,7 +115,8 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
 
   const foremanBadge = INVOICE_FOREMAN_BADGE_LABELS[invoice.status];
   const canSend = CAN_SEND_FOR_APPROVAL.has(invoice.status);
-  const canMarkSent = invoice.status === "approved_by_foreman";
+  const canMarkSent =
+    invoice.status === "approved_by_foreman" && !blockSendToClient;
   const latestApproval = approvals[0];
 
   return (

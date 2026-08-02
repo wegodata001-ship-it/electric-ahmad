@@ -56,8 +56,8 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     name: "System Portal",
     shortName: "מערכת",
     headerTitle: "ניהול מערכת",
-    home: "/system",
-    description: "חברות · משתמשים · תשתית",
+    home: "/system/accounts",
+    description: "עץ פרויקט · משתמשים · תשתית",
     accent: "#0f172a",
     theme: {
       accent: "#0f172a",
@@ -68,8 +68,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       badge: "SYS",
     },
     nav: [
-      { label: "לוח בקרה", href: "/system", icon: LayoutDashboard, mode: "live" },
-      { label: "פרויקטים", href: "/system/companies", icon: Building2, mode: "live" },
+      { label: "עץ פרויקט", href: "/system/accounts", icon: GitBranch, mode: "live" },
       { label: "משתמשים", href: "/system/users", icon: Users, mode: "live" },
       { label: "Workflow", href: "/system/workflow", icon: GitBranch, mode: "live" },
       { label: "מסמכים", href: "/system/documents", icon: FolderOpen, mode: "live" },
@@ -216,10 +215,10 @@ export function portalHomeForRole(role?: string | null): string {
 
 export function portalIdForRole(role?: string | null): PortalId | null {
   const home = portalHomeForRole(role);
-  if (home === "/system") return "system";
-  if (home === "/project") return "project";
-  if (home === "/operations") return "operations";
-  if (home === "/field") return "field";
+  if (home === "/system" || home.startsWith("/system/")) return "system";
+  if (home === "/project" || home.startsWith("/project/")) return "project";
+  if (home === "/operations" || home.startsWith("/operations/")) return "operations";
+  if (home === "/field" || home.startsWith("/field/")) return "field";
   return null;
 }
 

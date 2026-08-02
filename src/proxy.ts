@@ -27,7 +27,9 @@ function isPublicOfficePath(pathname: string): boolean {
     pathname === "/api/auth/logout" ||
     pathname === "/api/health" ||
     pathname.startsWith("/sign/") ||
-    pathname.startsWith("/api/sign/")
+    pathname.startsWith("/api/sign/") ||
+    pathname.startsWith("/share/") ||
+    pathname.startsWith("/api/external-share/public/")
   );
 }
 
@@ -233,7 +235,7 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       pathname === "/operations" ||
       pathname.startsWith("/operations/")
     ) {
-      return NextResponse.redirect(new URL("/system", request.url));
+      return NextResponse.redirect(new URL("/system/accounts", request.url));
     }
   }
 

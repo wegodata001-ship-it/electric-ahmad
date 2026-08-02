@@ -105,15 +105,24 @@ export function ProjectPerformancePage({
 
   const STATUS_UI: Record<string, { label: string; className: string }> = {
     draft: { label: "טיוטה", className: "bg-gray-100 text-gray-700" },
-    in_progress: { label: "בעבודה", className: "bg-sky-50 text-sky-800" },
+    in_progress: { label: "טיוטה", className: "bg-sky-50 text-sky-800" },
     pending_approval: {
-      label: "ממתין לאישור",
+      label: "מוכן לחשבון",
       className: "bg-amber-50 text-amber-800",
     },
-    revision: { label: "דורש תיקון", className: "bg-orange-50 text-orange-800" },
-    approved: { label: "מאושר", className: "bg-emerald-50 text-emerald-800" },
-    locked: { label: "מאושר", className: "bg-emerald-50 text-emerald-800" },
-    invoiced: { label: "הופק לחשבון", className: "bg-violet-50 text-violet-800" },
+    revision: { label: "טיוטה", className: "bg-orange-50 text-orange-800" },
+    approved: {
+      label: "מוכן לחשבון",
+      className: "bg-emerald-50 text-emerald-800",
+    },
+    locked: {
+      label: "שויך לחשבון",
+      className: "bg-indigo-50 text-indigo-800",
+    },
+    invoiced: {
+      label: "נכלל בחשבון מאושר",
+      className: "bg-violet-50 text-violet-800",
+    },
   };
 
   function applySheet(s: any) {
@@ -350,7 +359,20 @@ export function ProjectPerformancePage({
       }
       setDraft(next);
       setSaved({ ...next });
-      if (!opts?.silent) toast.success("נשמר");
+      if (!opts?.silent) {
+        toast.success("דף המדידה נשמר בהצלחה");
+        // Prompt: transfer to invoice (draft stays if user declines)
+        if (
+          sheet &&
+          (sheet.status === "draft" ||
+            sheet.status === "in_progress" ||
+            sheet.status === "approved" ||
+            sheet.status === "pending_approval") &&
+          !sheet.partialInvoiceId
+        ) {
+          setAskInvoice(true);
+        }
+      }
       return true;
     } catch (e: any) {
       toast.error(e.message);
@@ -1366,8 +1388,8 @@ export function ProjectPerformancePage({
         open={askInvoice}
         onClose={() => setAskInvoice(false)}
         onConfirm={() => void handleGenerateInvoice()}
-        title="הפקת חשבון"
-        description="הדוח אושר. האם להפיק ממנו חשבון?"
+        title="דף המדידה נשמר בהצלחה"
+        description="האם להעביר לחשבון? בחירת «לא» משאירה את הדף בטיוטה / מוכן לחשבון."
         confirmLabel="כן"
         cancelLabel="לא"
         loading={generatingInvoice}

@@ -2079,3 +2079,29 @@ model WorkflowAttachment {
   @@index([documentId])
   @@index([fileType])
 }
+
+/**
+ * קישור שיתוף חיצוני מאובטח — כללי לכל ישות (מסמך, חשבון, דף מדידה…).
+ * רק מנהל מערכת יוצר; צפייה ללא Login.
+ */
+model ExternalShareLink {
+  id           String    @id @default(cuid())
+  /** document | invoice | measurement_sheet | work_diary | delivery_note | other */
+  entityType   String
+  entityId     String
+  projectId    String?
+  title        String?
+  tokenHash    String    @unique
+  publicId     String    @unique
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  viewCount    Int       @default(0)
+  lastViewedAt DateTime?
+  createdById  String
+  notes        String?
+  createdAt    DateTime  @default(now())
+
+  @@index([entityType, entityId])
+  @@index([projectId])
+  @@index([createdById])
+}

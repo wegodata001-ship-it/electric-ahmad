@@ -20,7 +20,7 @@ export async function GET() {
     await requireOfficeUser();
     const limit = 50;
 
-    const [diaryTokens, noteTokens] = await Promise.all([
+    const [diaryTokens, noteTokens, sheetTokens] = await Promise.all([
       prisma.workDiarySignToken.findMany({
         take: limit,
         orderBy: { createdAt: "desc" },
@@ -36,6 +36,20 @@ export async function GET() {
         include: {
           opsDeliveryNote: {
             select: { id: true, documentNumber: true, projectId: true },
+          },
+        },
+      }),
+      prisma.measurementSheetSignToken.findMany({
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: {
+          sheet: {
+            select: {
+              id: true,
+              title: true,
+              sequenceNumber: true,
+              projectId: true,
+            },
           },
         },
       }),
@@ -61,6 +75,19 @@ export async function GET() {
         documentId: t.opsDeliveryNoteId,
         documentNumber: t.opsDeliveryNote.documentNumber,
         projectId: t.opsDeliveryNote.projectId,
+        publicId: t.publicId,
+        createdAt: t.createdAt.toISOString(),
+        expiresAt: t.expiresAt?.toISOString() ?? null,
+        usedAt: t.usedAt?.toISOString() ?? null,
+        revokedAt: t.revokedAt?.toISOString() ?? null,
+        status: tokenStatus(t),
+      })),
+      ...sheetTokens.map((t) => ({
+        id: t.id,
+        kind: "measurement_sheet" as const,
+        documentId: t.sheetId,
+        documentNumber: t.sheet.title || `MS-${t.sheet.sequenceNumber}`,
+        projectId: t.sheet.projectId,
         publicId: t.publicId,
         createdAt: t.createdAt.toISOString(),
         expiresAt: t.expiresAt?.toISOString() ?? null,

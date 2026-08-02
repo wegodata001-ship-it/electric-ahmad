@@ -1,16 +1,10 @@
 "use client";
 
-import { Suspense } from "react";
-import { InvoicesWorkspacePage } from "@/features/partial-invoices/components/invoices-workspace-page";
+import { AdminProjectWorkspace } from "@/apps/system/admin-project-workspace";
 
 /**
- * System Admin: עץ פרויקט / חשבונות — מסך עבודה ראשי.
- * רשימת פרויקטים בצד ימין + עץ מודולים + תוכן דינמי במרכז.
+ * מסך הבית של מנהל המערכת — עץ פרויקט + עבודה במודולים.
  */
 export default function Page() {
-  return (
-    <Suspense fallback={<p className="p-6 text-sm text-gray-500">טוען…</p>}>
-      <InvoicesWorkspacePage />
-    </Suspense>
-  );
+  return <AdminProjectWorkspace />;
 }

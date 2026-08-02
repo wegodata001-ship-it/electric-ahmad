@@ -6,14 +6,12 @@ import { usePortalSession } from "@/apps/shared/use-portal-session";
 import { cn } from "@/lib/utils";
 
 /**
- * SUPER ADMIN / System Manager only — desktop Back Office (light / white).
- * Full viewport width. Never use portal (max-w-lg) chrome here.
- * Do not reuse this shell for Project / Ops / Field / Worker.
+ * SUPER ADMIN / System Manager — desktop Back Office (light).
+ * Primary work surface = Project Tree (/system/accounts).
+ * Dashboard / Companies removed from nav (routes kept for BC).
  */
 const NAV = [
-  { href: "/system", label: "לוח שליטה", exact: true },
-  { href: "/system/companies", label: "חברות / פרויקטים" },
-  { href: "/system/accounts", label: "עץ פרויקט / חשבונות" },
+  { href: "/system/accounts", label: "עץ פרויקט", exact: false },
   { href: "/system/users", label: "משתמשים" },
   { href: "/system/workflow", label: "תהליכי עבודה" },
   { href: "/system/documents", label: "מסמכים" },
@@ -35,6 +33,9 @@ export function SystemAppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const isAccounts =
+    pathname === "/system/accounts" || pathname.startsWith("/system/accounts?");
+
   return (
     <div
       className="min-h-screen w-full bg-slate-50 text-slate-900"
@@ -45,7 +46,7 @@ export function SystemAppShell({ children }: { children: React.ReactNode }) {
       data-theme="light"
     >
       <div className="flex min-h-screen w-full">
-        <aside className="flex w-60 shrink-0 flex-col border-l border-slate-200 bg-white">
+        <aside className="flex w-56 shrink-0 flex-col border-l border-slate-200 bg-white">
           <div className="border-b border-slate-100 px-4 py-5">
             <p className="text-[10px] font-bold tracking-wide text-slate-500">
               בקרת מערכת
@@ -84,7 +85,14 @@ export function SystemAppShell({ children }: { children: React.ReactNode }) {
           </button>
         </aside>
 
-        <main className="min-w-0 flex-1 px-6 py-6 lg:px-10">{children}</main>
+        <main
+          className={cn(
+            "min-w-0 flex-1",
+            isAccounts ? "px-3 py-3 lg:px-4" : "px-6 py-6 lg:px-10"
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

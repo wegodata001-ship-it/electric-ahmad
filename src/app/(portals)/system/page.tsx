@@ -1,5 +1,6 @@
-import { SystemHome } from "@/apps/system/system-home";
+import { redirect } from "next/navigation";
 
+/** מסך הבית של ADMIN = עץ הפרויקט (לא Dashboard כללי) */
 export default function Page() {
-  return <SystemHome />;
+  redirect("/system/accounts");
 }
