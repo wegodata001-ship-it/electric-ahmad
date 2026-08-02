@@ -2,25 +2,23 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Bell,
-  CheckSquare,
-  ClipboardList,
-  Clock,
-  Home,
-  User,
-} from "lucide-react";
 import { usePortalSession } from "@/apps/shared/use-portal-session";
 import { cn } from "@/lib/utils";
 
-const TABS = [
-  { href: "/operations", label: "בית", icon: Home, exact: true },
-  { href: "/operations/attendance", label: "נוכחות", icon: Clock },
-  { href: "/operations/work-orders", label: "סידורים", icon: ClipboardList },
-  { href: "/operations/approvals", label: "אישורים", icon: CheckSquare },
-  { href: "/operations/notifications", label: "התראות", icon: Bell },
-  { href: "/operations/profile", label: "פרופיל", icon: User },
-] as const;
+/**
+ * Operations Manager — same work surface as System Admin (project tree),
+ * differences enforced by permissions only (no send-to-client).
+ */
+const NAV = [
+  { href: "/operations/accounts", label: "עץ פרויקט", exact: false },
+  { href: "/operations/approvals", label: "אישורים" },
+  { href: "/operations/attendance", label: "נוכחות" },
+  { href: "/operations/work-orders", label: "סידורים" },
+  { href: "/operations/documents", label: "מסמכים" },
+  { href: "/operations/share-links", label: "קישורי שיתוף" },
+  { href: "/operations/notifications", label: "התראות" },
+  { href: "/operations/profile", label: "פרופיל" },
+];
 
 export function OpsAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -28,62 +26,104 @@ export function OpsAppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-[#fff7ed] text-amber-900">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500">
         טוען…
       </div>
     );
   }
 
+  const isAccounts =
+    pathname === "/operations/accounts" ||
+    pathname.startsWith("/operations/accounts?");
+
   return (
     <div
-      className="flex min-h-dvh flex-col bg-[#fff7ed] text-stone-900"
+      className="min-h-screen w-full bg-slate-50 text-slate-900"
       dir="rtl"
       data-app="operations"
-      data-layout="portal"
+      data-layout="admin"
+      data-theme="light"
     >
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-amber-200/80 bg-[#fffbeb]/95 px-4 backdrop-blur">
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold text-amber-800">תפעול יומי</p>
-          <p className="truncate text-sm font-black">{userName || "מנהל תפעול"}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void logout()}
-          disabled={loggingOut}
-          className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-bold"
-        >
-          יציאה
-        </button>
-      </header>
+      <div className="flex min-h-screen w-full">
+        <aside className="hidden w-56 shrink-0 flex-col border-l border-slate-200 bg-white md:flex">
+          <div className="border-b border-slate-100 px-4 py-5">
+            <p className="text-[10px] font-bold tracking-wide text-amber-700">
+              מנהל תפעול
+            </p>
+            <p className="mt-1 text-lg font-black text-slate-900">מרכז עבודה</p>
+            <p className="truncate text-xs text-slate-500">{userName}</p>
+          </div>
+          <nav className="flex-1 space-y-0.5 p-2">
+            {NAV.map((item) => {
+              const active = item.exact
+                ? pathname === item.href
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "block rounded-lg px-3 py-2 text-sm font-semibold",
+                    active
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+          <button
+            type="button"
+            onClick={() => void logout()}
+            disabled={loggingOut}
+            className="m-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            יציאה
+          </button>
+        </aside>
 
-      <main className="mx-auto w-full max-w-lg flex-1 px-3 pb-28 pt-4">
-        {children}
-      </main>
-
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-amber-200/80 bg-white/98 pb-[env(safe-area-inset-bottom)] backdrop-blur">
-        <div className="mx-auto flex max-w-lg items-stretch justify-between px-0.5">
-          {TABS.map((tab) => {
-            const exact = "exact" in tab && tab.exact;
-            const active = exact
-              ? pathname === tab.href
-              : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
-            const Icon = tab.icon;
-            return (
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
+            <div>
+              <p className="text-sm font-black">מנהל תפעול</p>
+              <p className="text-xs text-slate-500">{userName}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="rounded-lg border px-2 py-1 text-xs"
+            >
+              יציאה
+            </button>
+          </header>
+          <nav className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 md:hidden">
+            {NAV.map((item) => (
               <Link
-                key={tab.href}
-                href={tab.href}
+                key={item.href}
+                href={item.href}
                 className={cn(
-                  "flex min-h-[4.25rem] flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-bold leading-tight",
-                  active ? "text-amber-800" : "text-stone-400"
+                  "shrink-0 rounded-full px-3 py-1.5 text-xs font-bold",
+                  pathname === item.href || pathname.startsWith(`${item.href}/`)
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-700"
                 )}
               >
-                <Icon className="h-5 w-5" />
-                {tab.label}
+                {item.label}
               </Link>
-            );
-          })}
+            ))}
+          </nav>
+          <main
+            className={cn(
+              "min-w-0 flex-1",
+              isAccounts ? "px-2 py-2 sm:px-3 sm:py-3" : "px-4 py-5 lg:px-8"
+            )}
+          >
+            {children}
+          </main>
         </div>
-      </nav>
+      </div>
     </div>
   );
 }

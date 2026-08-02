@@ -56,6 +56,7 @@ const SYSTEM_ADMIN_PERMS: DocumentPermission[] = [
   "override_workflow",
 ];
 
+/** Project / Ops — almost full office; send_to_client is System Admin only */
 const PROJECT_OPS_PERMS: DocumentPermission[] = [
   "view_all",
   "view_own",
@@ -65,7 +66,6 @@ const PROJECT_OPS_PERMS: DocumentPermission[] = [
   "approve",
   "return_for_revision",
   "add_comments",
-  "send_to_client",
   "view_history",
 ];
 

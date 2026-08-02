@@ -6,6 +6,10 @@ import {
   canApproveDocuments,
   roleGradeLabel,
 } from "@/lib/auth/document-permissions";
+import {
+  canSendFinancialToClient,
+  SEND_TO_CLIENT_FORBIDDEN_MESSAGE,
+} from "@/lib/auth/financial-permissions";
 import { FIELD_MANAGER_ROLE } from "@/lib/auth/roles";
 import type { InvoiceStatus } from "@prisma/client";
 
@@ -646,6 +650,14 @@ export class InvoiceApprovalsRepository {
   }
 
   static async markSentToClient(invoiceId: string, userId: string) {
+    const actor = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!canSendFinancialToClient(actor?.role)) {
+      throw new Error(SEND_TO_CLIENT_FORBIDDEN_MESSAGE);
+    }
+
     const invoice = await prisma.partialInvoice.findUnique({
       where: { id: invoiceId },
     });

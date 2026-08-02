@@ -83,9 +83,6 @@ const MODULES: ModuleDef[] = [
   { id: "reports", label: "דוחות", icon: BarChart3 },
 ];
 
-const STORAGE_KEY = "admin-project-workspace-v1";
-const BASE_PATH = "/system/accounts";
-
 function PanelLoading() {
   return (
     <div className="flex min-h-[200px] items-center justify-center text-sm text-slate-400">
@@ -94,11 +91,20 @@ function PanelLoading() {
   );
 }
 
+type WorkspaceProps = {
+  /** Portal route for URL sync, e.g. /system/accounts or /operations/accounts */
+  basePath?: string;
+  storageKey?: string;
+};
+
 /**
- * מרכז השליטה של מנהל המערכת:
- * עץ פרויקטים קבוע בצד + תוכן דינמי במרכז (בלי מעבר עמוד).
+ * עץ פרויקט משותף — System Manager + Operations Manager.
+ * הבדלים בין תפקידים נאכפים בהרשאות (FE+BE), לא בשכפול UI.
  */
-export function AdminProjectWorkspace() {
+export function AdminProjectWorkspace({
+  basePath = "/system/accounts",
+  storageKey = "admin-project-workspace-v1",
+}: WorkspaceProps = {}) {
   const toast = useToast();
   const [projects, setProjects] = useState<TreeProject[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -110,7 +116,7 @@ export function AdminProjectWorkspace() {
   // Restore tree state
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKey);
       if (!raw) return;
       const saved = JSON.parse(raw) as {
         selectedId?: string;
@@ -123,14 +129,14 @@ export function AdminProjectWorkspace() {
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [storageKey]);
 
   // Persist
   useEffect(() => {
     if (!selectedId) return;
     try {
       localStorage.setItem(
-        STORAGE_KEY,
+        storageKey,
         JSON.stringify({ selectedId, activeModule, expanded })
       );
     } catch {
@@ -140,8 +146,8 @@ export function AdminProjectWorkspace() {
       projectId: selectedId,
       module: activeModule,
     });
-    window.history.replaceState(null, "", `${BASE_PATH}?${qs.toString()}`);
-  }, [selectedId, activeModule, expanded]);
+    window.history.replaceState(null, "", `${basePath}?${qs.toString()}`);
+  }, [selectedId, activeModule, expanded, basePath, storageKey]);
 
   useEffect(() => {
     let cancelled = false;

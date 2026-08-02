@@ -111,9 +111,9 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     id: "operations",
     name: "Operations Portal",
     shortName: "תפעול",
-    headerTitle: "עבודה יומית",
-    home: "/operations",
-    description: "נוכחות · סידורים · אישורים",
+    headerTitle: "מנהל תפעול",
+    home: "/operations/accounts",
+    description: "עץ פרויקט · עבודה יומית · ללא שליחה ללקוח",
     accent: "#b45309",
     theme: {
       accent: "#b45309",
@@ -124,7 +124,13 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       badge: "OPS",
     },
     nav: [
-      { label: "בית", href: "/operations", icon: LayoutDashboard, mode: "live" },
+      { label: "עץ פרויקט", href: "/operations/accounts", icon: GitBranch, mode: "live" },
+      {
+        label: "אישורים",
+        href: "/operations/approvals",
+        icon: CheckSquare,
+        mode: "live",
+      },
       { label: "נוכחות", href: "/operations/attendance", icon: Clock, mode: "live" },
       {
         label: "סידורי עבודה",
@@ -132,12 +138,8 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
         icon: ClipboardList,
         mode: "live",
       },
-      {
-        label: "אישורים",
-        href: "/operations/approvals",
-        icon: CheckSquare,
-        mode: "live",
-      },
+      { label: "מסמכים", href: "/operations/documents", icon: FolderOpen, mode: "live" },
+      { label: "Share Links", href: "/operations/share-links", icon: Share2, mode: "live" },
       { label: "התראות", href: "/operations/notifications", icon: Bell, mode: "live" },
       { label: "פרופיל", href: "/operations/profile", icon: User, mode: "live" },
     ],

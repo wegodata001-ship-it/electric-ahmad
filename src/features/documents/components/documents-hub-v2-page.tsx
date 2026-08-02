@@ -86,6 +86,22 @@ export function DocumentsHubV2Page({
   const [ensureAsk, setEnsureAsk] = useState<HubListItem | null>(null);
   const [convText, setConvText] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [canCreateExternalShare, setCanCreateExternalShare] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((j) => {
+        const role = j?.data?.role ?? j?.role;
+        setCanCreateExternalShare(
+          role === "SYSTEM_MANAGER" ||
+            role === "ADMIN" ||
+            role === "admin" ||
+            role === "מנהל מערכת"
+        );
+      })
+      .catch(() => undefined);
+  }, []);
 
   // Latest values used inside async loaders / infinite-scroll callback.
   const latest = useRef({ projectId, folderId, query, skip, hasMore });
@@ -612,41 +628,47 @@ export function DocumentsHubV2Page({
                       הוסף למערכת המסמכים
                     </button>
                   )}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      void (async () => {
-                        setBusy(true);
-                        try {
-                          const res = await apiClient.post<{
-                            url: string;
-                          }>("/api/external-share", {
-                            entityType: "document",
-                            entityId:
-                              detail.archiveDocumentId ||
-                              detail.entityId ||
-                              detail.list?.id,
-                            projectId: projectId || detail.list?.projectId,
-                            title: detail.list?.title || detail.list?.name,
-                            expiresInDays: 30,
-                          });
-                          if (res.url) {
-                            await navigator.clipboard.writeText(res.url);
-                            setInfo("נוצר קישור חיצוני והועתק ללוח");
+                  {canCreateExternalShare ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        void (async () => {
+                          setBusy(true);
+                          try {
+                            const res = await apiClient.post<{
+                              url: string;
+                            }>("/api/external-share", {
+                              entityType: "document",
+                              entityId:
+                                detail.archiveDocumentId ||
+                                detail.entityId ||
+                                detail.list?.id,
+                              projectId: projectId || detail.list?.projectId,
+                              title: detail.list?.title || detail.list?.name,
+                              expiresInDays: 30,
+                            });
+                            if (res.url) {
+                              await navigator.clipboard.writeText(res.url);
+                              setInfo("נוצר קישור חיצוני והועתק ללוח");
+                            }
+                          } catch (e: any) {
+                            setError(e.message || "יצירת קישור נכשלה");
+                          } finally {
+                            setBusy(false);
                           }
-                        } catch (e: any) {
-                          setError(e.message || "יצירת קישור נכשלה");
-                        } finally {
-                          setBusy(false);
-                        }
-                      })();
-                    }}
-                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border-2 border-sky-300 bg-sky-50 font-bold text-sky-900"
-                  >
-                    <Link2 className="h-4 w-4" />
-                    יצירת קישור חיצוני
-                  </button>
+                        })();
+                      }}
+                      className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border-2 border-sky-300 bg-sky-50 font-bold text-sky-900"
+                    >
+                      <Link2 className="h-4 w-4" />
+                      יצירת קישור חיצוני
+                    </button>
+                  ) : (
+                    <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                      יצירת קישור חיצוני / שליחה ללקוח — זמין למנהל מערכת בלבד
+                    </p>
+                  )}
 
                   {!!detail.shares?.length && (
                     <section>

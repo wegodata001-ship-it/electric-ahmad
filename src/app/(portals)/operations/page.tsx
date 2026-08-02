@@ -1,5 +1,6 @@
-import { OpsHome } from "@/apps/operations/ops-home";
+import { redirect } from "next/navigation";
 
+/** מסך הבית של מנהל תפעול = עץ הפרויקט */
 export default function Page() {
-  return <OpsHome />;
+  redirect("/operations/accounts");
 }
