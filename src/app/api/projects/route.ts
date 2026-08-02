@@ -1,25 +1,52 @@
 import { NextRequest } from "next/server";
 import { ProjectsRepository } from "@/repositories/projects.repository";
-import { getAuthContext } from "@/lib/auth/session";
-import { requireOfficeAuth } from "@/lib/auth/assert-office";
+import { requireOfficeUser } from "@/lib/auth/office-session";
+import {
+  canSeeAllProjects,
+  listProjectsForRole,
+} from "@/lib/auth/project-access";
+import { PROJECT_MANAGER_ROLE } from "@/lib/auth/roles";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { mapProject } from "@/lib/mappers";
+import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireOfficeAuth();
+    const user = await requireOfficeUser();
     const status = request.nextUrl.searchParams.get("status") ?? undefined;
     const recent = request.nextUrl.searchParams.get("recent");
 
-    if (recent) {
-      const data = await ProjectsRepository.findRecent(Number(recent));
+    if (canSeeAllProjects(user.role)) {
+      if (recent) {
+        const data = await ProjectsRepository.findRecent(Number(recent));
+        return apiSuccess(data);
+      }
+      const data = status
+        ? await ProjectsRepository.findAll(status as "active")
+        : await ProjectsRepository.findAll();
       return apiSuccess(data);
     }
 
-    const data = status
-      ? await ProjectsRepository.findAll(status as "active")
-      : await ProjectsRepository.findAll();
-
-    return apiSuccess(data);
+    // Project Manager — assigned projects only
+    const rows = await listProjectsForRole({
+      userId: user.userId,
+      role: user.role,
+      mode: "assigned",
+    });
+    // Enrich with same shape as findAll where possible
+    const full = await prisma.project.findMany({
+      where: {
+        id: { in: rows.map((r) => r.id) },
+        ...(status ? { status: status as "active" } : {}),
+      },
+      include: {
+        foreman: true,
+        _count: { select: { employees: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+      ...(recent ? { take: Number(recent) } : {}),
+    });
+    return apiSuccess(full.map(mapProject));
   } catch (error) {
     return handleApiError(error);
   }
@@ -27,7 +54,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await getAuthContext();
+    const user = await requireOfficeUser();
+    if (user.role === PROJECT_MANAGER_ROLE) {
+      return apiError("מנהל פרויקט אינו יכול ליצור פרויקטים חדשים", 403);
+    }
+    if (!canSeeAllProjects(user.role)) {
+      return apiError("אין הרשאה ליצירת פרויקט", 403);
+    }
+
     const body = await request.json();
 
     if (!body.name?.trim()) return apiError("שם פרויקט חובה");
@@ -54,7 +88,7 @@ export async function POST(request: NextRequest) {
         startDate: body.startDate ? new Date(body.startDate) : undefined,
         endDate: body.endDate ? new Date(body.endDate) : undefined,
       },
-      userId
+      user.userId
     );
 
     return apiSuccess(project, 201);

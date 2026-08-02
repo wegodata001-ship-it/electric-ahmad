@@ -2,7 +2,9 @@ import { NextRequest } from "next/server";
 import {
   OfficeAuthError,
   readOfficeSessionPayload,
+  requireOfficeUser,
 } from "@/lib/auth/office-session";
+import { userCanAccessProject } from "@/lib/auth/project-access";
 import { ProjectHubRepository } from "@/repositories/project-hub.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
@@ -19,7 +21,19 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       throw new OfficeAuthError("נדרשת התחברות למערכת", 401);
     }
 
+    const user = await requireOfficeUser();
     const { id } = await ctx.params;
+
+    const allowed = await userCanAccessProject({
+      userId: user.userId,
+      role: user.role,
+      projectId: id,
+      scope: "manage",
+    });
+    if (!allowed) {
+      throw new OfficeAuthError("אין הרשאה לפרויקט זה", 403);
+    }
+
     const result = await ProjectHubRepository.getHub(id, payload.userId);
 
     if (result.status === "forbidden") {

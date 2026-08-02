@@ -4,8 +4,11 @@ import {
   readOfficeSessionPayload,
   requireOfficeUser,
 } from "@/lib/auth/office-session";
+import {
+  listProjectsForRole,
+  userCanAccessProject,
+} from "@/lib/auth/project-access";
 import { MeasurementSheetsRepository } from "@/repositories/measurement-sheets.repository";
-import { ProjectsRepository } from "@/repositories/projects.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function GET(req: NextRequest) {
@@ -15,9 +18,27 @@ export async function GET(req: NextRequest) {
       throw new OfficeAuthError("נדרשת התחברות למערכת", 401);
     }
 
+    const user = await requireOfficeUser();
     const projectId = req.nextUrl.searchParams.get("projectId");
+    const scopeParam = req.nextUrl.searchParams.get("scope");
+    const listMode =
+      scopeParam === "operational" || scopeParam === "all"
+        ? ("all" as const)
+        : ("assigned" as const);
 
     if (projectId) {
+      const accessScope =
+        scopeParam === "operational" ? "operational" : "manage";
+      const allowed = await userCanAccessProject({
+        userId: user.userId,
+        role: user.role,
+        projectId,
+        scope: accessScope,
+      });
+      if (!allowed) {
+        throw new OfficeAuthError("אין הרשאה לפרויקט זה", 403);
+      }
+
       const result = await MeasurementSheetsRepository.getProjectTreeForOffice(
         projectId,
         payload.userId
@@ -29,10 +50,14 @@ export async function GET(req: NextRequest) {
       return apiSuccess(result.data);
     }
 
-    await requireOfficeUser();
-    const projects = await ProjectsRepository.findAll();
+    const projects = await listProjectsForRole({
+      userId: user.userId,
+      role: user.role,
+      mode: listMode,
+    });
+
     return apiSuccess({
-      projects: projects.map((p: any) => ({
+      projects: projects.map((p) => ({
         id: p.id,
         name: p.name,
         contractor: p.contractor,
@@ -50,10 +75,19 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    await requireOfficeUser();
+    const user = await requireOfficeUser();
     const body = await req.json();
     if (!body.projectId) return apiError("חסר פרויקט");
     if (!body.measurementAxisType) return apiError("חסר סוג יחידה");
+
+    const allowed = await userCanAccessProject({
+      userId: user.userId,
+      role: user.role,
+      projectId: String(body.projectId),
+      scope: "manage",
+    });
+    if (!allowed) return apiError("אין הרשאה לפרויקט זה", 403);
+
     const updated = await MeasurementSheetsRepository.updateProjectAxis(
       String(body.projectId),
       {

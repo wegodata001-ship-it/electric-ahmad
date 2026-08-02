@@ -95,23 +95,33 @@ type WorkspaceProps = {
   /** Portal route for URL sync, e.g. /system/accounts or /operations/accounts */
   basePath?: string;
   storageKey?: string;
+  /**
+   * assigned = עץ רק פרויקטים שהוקצו (Project Manager).
+   * all = כל הפרויקטים (System / Ops).
+   */
+  projectScope?: "assigned" | "all";
 };
 
 /**
- * עץ פרויקט משותף — System Manager + Operations Manager.
+ * עץ פרויקט משותף — System / Operations / Project Manager.
  * הבדלים בין תפקידים נאכפים בהרשאות (FE+BE), לא בשכפול UI.
  */
 export function AdminProjectWorkspace({
   basePath = "/system/accounts",
   storageKey = "admin-project-workspace-v1",
+  projectScope = "all",
 }: WorkspaceProps = {}) {
   const toast = useToast();
   const [projects, setProjects] = useState<TreeProject[]>([]);
+  const [opsProjects, setOpsProjects] = useState<TreeProject[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [opsProjectId, setOpsProjectId] = useState<string | null>(null);
   const [activeModule, setActiveModule] = useState<AdminModuleId>("summary");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
+
+  const effectiveOpsProjectId = opsProjectId || selectedId;
 
   // Restore tree state
   useEffect(() => {
@@ -152,12 +162,20 @@ export function AdminProjectWorkspace({
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    invoicesWorkspaceService
-      .listProjects()
-      .then((r) => {
+    Promise.all([
+      invoicesWorkspaceService.listProjects().catch(() => ({ projects: [] })),
+      projectScope === "assigned"
+        ? fetch("/api/invoices/workspace?scope=operational")
+            .then((r) => r.json())
+            .then((j) => (j.data?.projects ?? j.projects ?? []) as TreeProject[])
+            .catch(() => [] as TreeProject[])
+        : Promise.resolve([] as TreeProject[]),
+    ])
+      .then(([r, allOps]) => {
         if (cancelled) return;
         const list = (r.projects ?? []) as TreeProject[];
         setProjects(list);
+        setOpsProjects(allOps.length ? allOps : list);
         setSelectedId((prev) => {
           if (prev && list.some((p) => p.id === prev)) return prev;
           const fromUrl =
@@ -183,7 +201,12 @@ export function AdminProjectWorkspace({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [projectScope]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    if (!opsProjectId) setOpsProjectId(selectedId);
+  }, [selectedId, opsProjectId]);
 
   const selected = useMemo(
     () => projects.find((p) => p.id === selectedId) ?? null,
@@ -378,11 +401,31 @@ export function AdminProjectWorkspace({
               <ProjectInvoicesPage projectId={selectedId} embedded />
             </div>
           )}
-          {selectedId && activeModule === "deliveries" && (
-            <ProjectDeliveryNotesPanel projectId={selectedId} />
+          {selectedId && activeModule === "deliveries" && effectiveOpsProjectId && (
+            <div className="space-y-3">
+              {projectScope === "assigned" && (
+                <OpsProjectPicker
+                  projects={opsProjects}
+                  value={effectiveOpsProjectId}
+                  onChange={setOpsProjectId}
+                  label="תעודות משלוח — ניתן לבחור כל פרויקט במערכת"
+                />
+              )}
+              <ProjectDeliveryNotesPanel projectId={effectiveOpsProjectId} />
+            </div>
           )}
-          {selectedId && activeModule === "workDiaries" && (
-            <ProjectWorkDiariesPanel projectId={selectedId} />
+          {selectedId && activeModule === "workDiaries" && effectiveOpsProjectId && (
+            <div className="space-y-3">
+              {projectScope === "assigned" && (
+                <OpsProjectPicker
+                  projects={opsProjects}
+                  value={effectiveOpsProjectId}
+                  onChange={setOpsProjectId}
+                  label="יומני עבודה — ניתן לבחור כל פרויקט במערכת"
+                />
+              )}
+              <ProjectWorkDiariesPanel projectId={effectiveOpsProjectId} />
+            </div>
           )}
           {selectedId && activeModule === "documents" && (
             <DocumentsHubV2Page projectId={selectedId} embedded />
@@ -419,6 +462,35 @@ function ProjectReportsPanel({ projectId }: { projectId: string }) {
         <FileText className="h-3.5 w-3.5" />
         דוחות מורחבים לייצוא יתווספו בהמשך — הנתונים כאן הם תמונת מצב חיה.
       </p>
+    </div>
+  );
+}
+
+function OpsProjectPicker({
+  projects,
+  value,
+  onChange,
+  label,
+}: {
+  projects: TreeProject[];
+  value: string;
+  onChange: (id: string) => void;
+  label: string;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-3">
+      <p className="mb-1.5 text-[11px] font-semibold text-amber-900">{label}</p>
+      <select
+        className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

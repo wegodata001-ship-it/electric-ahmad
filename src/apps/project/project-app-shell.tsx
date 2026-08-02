@@ -6,17 +6,16 @@ import { usePortalSession } from "@/apps/shared/use-portal-session";
 import { cn } from "@/lib/utils";
 
 /**
- * Project Manager portal — desktop workspace (not System Admin).
- * Wide enough for project hub / performance grids; not full-bleed admin.
+ * Project Manager — same project-tree work surface as System/Ops.
+ * Differences: assigned projects only + no send-to-client (RBAC).
  */
 const NAV = [
-  { href: "/project", label: "הבית שלי", exact: true },
-  { href: "/project/projects", label: "פרויקטים" },
-  { href: "/project/boq", label: "כתב כמויות" },
-  { href: "/project/accounts", label: "חשבונות" },
-  { href: "/project/documents", label: "מסמכים" },
+  { href: "/project/accounts", label: "עץ פרויקט" },
+  { href: "/project/approvals", label: "אישורים" },
+  { href: "/project/work-diaries", label: "יומני עבודה" },
   { href: "/project/delivery-notes", label: "תעודות" },
-  { href: "/project/approvals", label: "חריגות / אישורים" },
+  { href: "/project/documents", label: "מסמכים" },
+  { href: "/project/notifications", label: "התראות" },
 ];
 
 export function ProjectAppShell({ children }: { children: React.ReactNode }) {
@@ -31,34 +30,40 @@ export function ProjectAppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const isAccounts =
+    pathname === "/project/accounts" ||
+    pathname.startsWith("/project/accounts?");
+
   return (
     <div
-      className="min-h-screen bg-slate-50 text-slate-900"
+      className="min-h-screen w-full bg-slate-50 text-slate-900"
       dir="rtl"
       data-app="project"
-      data-layout="portal"
+      data-layout="admin"
+      data-theme="light"
     >
-      <div className="mx-auto flex min-h-screen max-w-6xl">
+      <div className="flex min-h-screen w-full">
         <aside className="hidden w-56 shrink-0 flex-col border-l border-slate-200 bg-white md:flex">
           <div className="border-b border-slate-100 px-4 py-5">
-            <p className="text-xs font-bold text-blue-700">פורטל פרויקט</p>
-            <p className="text-base font-black">ניהול פרויקט</p>
+            <p className="text-[10px] font-bold tracking-wide text-blue-700">
+              מנהל פרויקט
+            </p>
+            <p className="mt-1 text-lg font-black text-slate-900">מרכז עבודה</p>
             <p className="truncate text-xs text-slate-500">{userName}</p>
           </div>
-          <nav className="flex-1 space-y-1 p-3">
+          <nav className="flex-1 space-y-0.5 p-2">
             {NAV.map((item) => {
-              const active = item.exact
-                ? pathname === item.href
-                : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active =
+                pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "block rounded-xl px-3 py-2.5 text-sm font-bold",
+                    "block rounded-lg px-3 py-2 text-sm font-semibold",
                     active
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   )}
                 >
                   {item.label}
@@ -70,7 +75,7 @@ export function ProjectAppShell({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={() => void logout()}
             disabled={loggingOut}
-            className="m-3 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold"
+            className="m-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
           >
             יציאה
           </button>
@@ -79,7 +84,7 @@ export function ProjectAppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
             <div>
-              <p className="text-sm font-black">ניהול פרויקט</p>
+              <p className="text-sm font-black">מנהל פרויקט</p>
               <p className="text-xs text-slate-500">{userName}</p>
             </div>
             <button
@@ -95,13 +100,25 @@ export function ProjectAppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold"
+                className={cn(
+                  "shrink-0 rounded-full px-3 py-1.5 text-xs font-bold",
+                  pathname === item.href || pathname.startsWith(`${item.href}/`)
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-700"
+                )}
               >
                 {item.label}
               </Link>
             ))}
           </nav>
-          <main className="flex-1 px-4 py-5">{children}</main>
+          <main
+            className={cn(
+              "min-w-0 flex-1",
+              isAccounts ? "px-2 py-2 sm:px-3 sm:py-3" : "px-4 py-5 lg:px-8"
+            )}
+          >
+            {children}
+          </main>
         </div>
       </div>
     </div>

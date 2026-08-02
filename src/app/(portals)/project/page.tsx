@@ -1,5 +1,6 @@
-import { ProjectHome } from "@/apps/project/project-home";
+import { redirect } from "next/navigation";
 
+/** מסך הבית של מנהל פרויקט = עץ הפרויקט */
 export default function Page() {
-  return <ProjectHome />;
+  redirect("/project/accounts");
 }
