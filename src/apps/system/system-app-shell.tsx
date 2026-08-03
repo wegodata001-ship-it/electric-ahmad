@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
  */
 const NAV = [
   { href: "/system/accounts", label: "עץ פרויקט", exact: false },
+  { href: "/system/attendance-qr", label: "QR לנוכחות" },
   { href: "/system/users", label: "משתמשים" },
   { href: "/system/workflow", label: "תהליכי עבודה" },
   { href: "/system/documents", label: "מסמכים" },
