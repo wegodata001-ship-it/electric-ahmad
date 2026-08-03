@@ -18,7 +18,8 @@ type Phase =
   | "error"
   | "need_login";
 
-type EnrollStep = 1 | 2 | 3 | 4 | 5;
+/** 1=login (done) · 2=GPS · 3=selfie · 4=save trusted */
+type EnrollStep = 1 | 2 | 3 | 4;
 
 type SuccessState = {
   userName: string;
@@ -33,6 +34,7 @@ const ERROR_MAP: Record<string, string> = {
   device_not_approved: "המכשיר אינו מאושר",
   out_of_range: "אינך נמצא בטווח המעבדה",
   offline: "אין חיבור לאינטרנט",
+  already: "הנוכחות כבר נרשמה לפני מספר שניות",
 };
 
 export default function AttendanceCheckinPage() {
@@ -42,15 +44,13 @@ export default function AttendanceCheckinPage() {
   const [message, setMessage] = useState("ברוכים הבאים – סריקת הנוכחות מתבצעת...");
   const [success, setSuccess] = useState<SuccessState | null>(null);
   const [userName, setUserName] = useState("");
-  const [enrollStep, setEnrollStep] = useState<EnrollStep>(1);
+  const [enrollStep, setEnrollStep] = useState<EnrollStep>(2);
   const [selfie, setSelfie] = useState<string | null>(null);
-  const [gpsOk, setGpsOk] = useState(false);
   const [gpsCoords, setGpsCoords] = useState<{
     latitude: number;
     longitude: number;
     accuracy: number | null;
   } | null>(null);
-  const [terms, setTerms] = useState(false);
   const [enrollBusy, setEnrollBusy] = useState(false);
   const [enrollError, setEnrollError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -106,7 +106,7 @@ export default function AttendanceCheckinPage() {
 
       if (me.needsEnrollment) {
         setPhase("enroll");
-        setEnrollStep(2); // already logged in = step 1 done
+        setEnrollStep(2);
         return;
       }
 
@@ -122,27 +122,41 @@ export default function AttendanceCheckinPage() {
     }
   }
 
+  async function reportGpsFailure(code: string, deviceId: string) {
+    try {
+      await fetch("/api/attendance/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gpsError: code, deviceId }),
+      });
+    } catch {
+      /* best-effort audit */
+    }
+  }
+
   async function performAutoCheckin(deviceId: string) {
     setPhase("checking");
     setMessage("ברוכים הבאים – סריקת הנוכחות מתבצעת...");
 
     let gps: { latitude: number; longitude: number; accuracy: number | null };
     try {
-      setMessage("בודקים מיקום GPS…");
-      gps = await readGps();
+      setMessage("בודקים מיקום…");
+      // Cached GPS preferred — target <2s daily punch
+      gps = await readGps({
+        maximumAgeMs: 25_000,
+        timeoutMs: 8_000,
+        enableHighAccuracy: false,
+      });
     } catch (e: any) {
+      const code = String(e?.message || "gps_denied");
+      void reportGpsFailure(code, deviceId);
       setPhase("error");
-      setMessage(ERROR_MAP[e?.message] || ERROR_MAP.gps_denied);
+      setMessage(ERROR_MAP[code] || ERROR_MAP.gps_denied);
       return;
     }
 
     setMessage("מאמתים מכשיר וטווח…");
     const meta = detectDeviceMeta();
-    const source =
-      typeof window !== "undefined" &&
-      /nfc|android.*intent/i.test(navigator.userAgent)
-        ? "nfc"
-        : "qr";
 
     const postRes = await fetch("/api/attendance/checkin", {
       method: "POST",
@@ -153,7 +167,7 @@ export default function AttendanceCheckinPage() {
         accuracyMeters: gps.accuracy,
         deviceId,
         ...meta,
-        source,
+        source: "qr",
       }),
     });
     const postJson = await postRes.json().catch(() => ({}));
@@ -167,14 +181,15 @@ export default function AttendanceCheckinPage() {
 
     if (!postRes.ok || postJson.success === false) {
       const err = String(postJson.error || "לא ניתן לבצע רישום כעת");
-      setPhase("error");
       if (/מאושר|הרשמה/.test(err)) {
         setPhase("enroll");
         setEnrollStep(2);
         return;
       }
+      setPhase("error");
       if (/טווח|מעבדה/.test(err)) setMessage(ERROR_MAP.out_of_range);
       else if (/GPS|מיקום/.test(err)) setMessage(ERROR_MAP.gps_denied);
+      else if (/שניות|כבר נרשמה/.test(err)) setMessage(ERROR_MAP.already);
       else setMessage(err);
       return;
     }
@@ -225,13 +240,17 @@ export default function AttendanceCheckinPage() {
   async function requestGps() {
     setEnrollError("");
     try {
-      const gps = await readGps();
+      const gps = await readGps({
+        enableHighAccuracy: true,
+        maximumAgeMs: 0,
+        timeoutMs: 15_000,
+      });
       setGpsCoords(gps);
-      setGpsOk(true);
-      setEnrollStep(4);
+      setEnrollStep(3);
     } catch (e: any) {
-      setEnrollError(ERROR_MAP[e?.message] || ERROR_MAP.gps_denied);
-      setGpsOk(false);
+      const code = String(e?.message || "gps_denied");
+      void reportGpsFailure(code, getOrCreateDeviceId());
+      setEnrollError(ERROR_MAP[code] || ERROR_MAP.gps_denied);
     }
   }
 
@@ -253,7 +272,7 @@ export default function AttendanceCheckinPage() {
           selfieBase64: selfie,
           latitude: gpsCoords.latitude,
           longitude: gpsCoords.longitude,
-          termsAccepted: terms,
+          termsAccepted: true,
           ...meta,
         }),
       });
@@ -263,6 +282,9 @@ export default function AttendanceCheckinPage() {
       }
       stopCamera();
       setPhase("enroll_done");
+      // Brief success flash (first-time only), then auto punch
+      await new Promise((r) => setTimeout(r, 900));
+      await performAutoCheckin(deviceId);
     } catch (e: any) {
       setEnrollError(e?.message || "ההרשמה נכשלה");
     } finally {
@@ -271,13 +293,13 @@ export default function AttendanceCheckinPage() {
   }
 
   useEffect(() => {
-    if (phase === "enroll" && enrollStep === 2) {
+    if (phase === "enroll" && enrollStep === 3 && !selfie) {
       void startCamera();
-    } else {
+    } else if (!(phase === "enroll" && enrollStep === 3)) {
       stopCamera();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, enrollStep]);
+  }, [phase, enrollStep, selfie]);
 
   const timeLabel = success
     ? new Date(success.at).toLocaleTimeString("he-IL", {
@@ -311,13 +333,13 @@ export default function AttendanceCheckinPage() {
         {phase === "enroll" && (
           <div className="mt-6 space-y-4 text-right">
             <h1 className="text-center text-xl font-black text-slate-900">
-              הרשמה חד-פעמית למכשיר
+              הרשמה חד־פעמית למכשיר
             </h1>
             <p className="text-center text-xs text-slate-500">
-              שלב {enrollStep} מתוך 5 · {userName}
+              שלב {enrollStep} מתוך 4 · {userName}
             </p>
             <div className="flex justify-center gap-1">
-              {[1, 2, 3, 4, 5].map((s) => (
+              {[1, 2, 3, 4].map((s) => (
                 <span
                   key={s}
                   className={`h-1.5 w-8 rounded-full ${
@@ -329,7 +351,23 @@ export default function AttendanceCheckinPage() {
 
             {enrollStep === 2 && (
               <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4">
-                <p className="text-sm font-bold">שלב 2 — צילום סלפי</p>
+                <p className="text-sm font-bold">שלב 2 — אישור GPS</p>
+                <p className="text-xs text-slate-500">
+                  הנוכחות מאומתת לפי מיקום המעבדה. יש לאשר גישה למיקום פעם אחת.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void requestGps()}
+                  className="w-full rounded-2xl bg-slate-900 py-3 text-sm font-bold text-white"
+                >
+                  אשר GPS
+                </button>
+              </div>
+            )}
+
+            {enrollStep === 3 && (
+              <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4">
+                <p className="text-sm font-bold">שלב 3 — צילום סלפי</p>
                 {!selfie ? (
                   <>
                     <video
@@ -367,7 +405,7 @@ export default function AttendanceCheckinPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setEnrollStep(3)}
+                        onClick={() => setEnrollStep(4)}
                         className="flex-1 rounded-2xl bg-slate-900 py-3 text-sm font-bold text-white"
                       >
                         המשך
@@ -378,51 +416,11 @@ export default function AttendanceCheckinPage() {
               </div>
             )}
 
-            {enrollStep === 3 && (
-              <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4">
-                <p className="text-sm font-bold">שלב 3 — אישור הרשאת GPS</p>
-                <p className="text-xs text-slate-500">
-                  הנוכחות מאומתת לפי מיקום המעבדה. יש לאשר גישה למיקום.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void requestGps()}
-                  className="w-full rounded-2xl bg-slate-900 py-3 text-sm font-bold text-white"
-                >
-                  {gpsOk ? "GPS אושר ✓ — המשך" : "אשר GPS"}
-                </button>
-              </div>
-            )}
-
             {enrollStep === 4 && (
               <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4">
-                <p className="text-sm font-bold">שלב 4 — תנאי שימוש (אופציונלי)</p>
-                <label className="flex items-start gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={terms}
-                    onChange={(e) => setTerms(e.target.checked)}
-                  />
-                  <span>
-                    אני מאשר/ת שימוש במיקום ובמכשיר זה לצורך רישום נוכחות במעבדה.
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setEnrollStep(5)}
-                  className="w-full rounded-2xl bg-slate-900 py-3 text-sm font-bold text-white"
-                >
-                  המשך
-                </button>
-              </div>
-            )}
-
-            {enrollStep === 5 && (
-              <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4">
-                <p className="text-sm font-bold">שלב 5 — שמירת מכשיר מאומן</p>
+                <p className="text-sm font-bold">שלב 4 — רישום מכשיר מאושר</p>
                 <p className="text-xs text-slate-500">
-                  המכשיר יישמר כ־Trusted Device. מהפעם הבאה מספיק לסרוק את ה־QR.
+                  המכשיר יישמר כ־Trusted Device. מיד אחרי זה תתבצע כניסה אוטומטית.
                 </p>
                 <button
                   type="button"
@@ -449,18 +447,12 @@ export default function AttendanceCheckinPage() {
               ✓
             </div>
             <h1 className="text-xl font-black text-slate-900">
-              ההרשמה הושלמה בהצלחה
+              ✅ ההרשמה הושלמה בהצלחה
             </h1>
             <p className="text-sm text-slate-600">
-              מהיום מספיק לסרוק את ה־QR לצורך כניסה ויציאה.
+              מהיום מספיק לסרוק את ה־QR.
             </p>
-            <button
-              type="button"
-              onClick={() => void performAutoCheckin(getOrCreateDeviceId())}
-              className="rounded-2xl bg-slate-900 px-6 py-3 text-sm font-bold text-white"
-            >
-              המשך לרישום נוכחות
-            </button>
+            <p className="text-xs text-slate-400">מבצעים רישום נוכחות…</p>
           </div>
         )}
 
@@ -471,14 +463,14 @@ export default function AttendanceCheckinPage() {
             </div>
             <h1 className="text-2xl font-black text-slate-900">
               {phase === "already"
-                ? "הנוכחות כבר נרשמה"
-                : "הנוכחות נרשמה בהצלחה"}
+                ? "הנוכחות כבר נרשמה לפני מספר שניות"
+                : "✅ הנוכחות נרשמה בהצלחה"}
             </h1>
             <div className="rounded-3xl border border-slate-200 bg-white px-5 py-6 text-right shadow-sm">
               <Row label="עובד" value={success.userName} />
               <Row label="שעה" value={timeLabel} />
               <Row
-                label="פעולה שבוצעה"
+                label="כניסה / יציאה"
                 value={success.action === "check_in" ? "כניסה" : "יציאה"}
               />
             </div>

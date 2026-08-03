@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/office-cookie";
 import { portalHomeForRole } from "@/lib/portals/config";
 import { isSystemAdminRole } from "@/lib/auth/document-permissions";
+import { isSecretaryRole } from "@/lib/auth/attendance-permissions";
 
 function isPublicFieldPath(pathname: string): boolean {
   return (
@@ -236,6 +237,34 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       pathname.startsWith("/operations/")
     ) {
       return NextResponse.redirect(new URL("/system/accounts", request.url));
+    }
+  }
+
+  // Secretary — attendance management only
+  if (isSecretaryRole(session.role)) {
+    const allowedSystem =
+      pathname.startsWith("/system/attendance-qr") ||
+      pathname.startsWith("/api/attendance/") ||
+      pathname.startsWith("/api/auth/") ||
+      pathname === "/attendance/checkin" ||
+      pathname.startsWith("/attendance/checkin");
+    if (
+      pathname.startsWith("/system/") &&
+      !pathname.startsWith("/system/attendance-qr")
+    ) {
+      return NextResponse.redirect(
+        new URL("/system/attendance-qr", request.url)
+      );
+    }
+    if (
+      !allowedSystem &&
+      (pathname.startsWith("/project") ||
+        pathname.startsWith("/operations") ||
+        pathname.startsWith("/dashboard"))
+    ) {
+      return NextResponse.redirect(
+        new URL("/system/attendance-qr", request.url)
+      );
     }
   }
 

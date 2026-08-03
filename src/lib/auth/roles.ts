@@ -4,6 +4,8 @@ export const OPERATIONS_MANAGER_ROLE = "OPERATIONS_MANAGER" as const;
 export const ADMIN_ROLE = "ADMIN" as const;
 /** דרגה 1 — System Manager (אחמד / פאדי) */
 export const SYSTEM_MANAGER_ROLE = "SYSTEM_MANAGER" as const;
+/** מזכירה — ניהול נוכחות QR */
+export const SECRETARY_ROLE = "SECRETARY" as const;
 /** Seed / legacy office admin role (Hebrew label kept for BC) */
 export const LEGACY_SYSTEM_ADMIN_ROLE = "מנהל מערכת" as const;
 
@@ -19,6 +21,8 @@ export function isOfficeRole(role?: string | null): boolean {
     role === OPERATIONS_MANAGER_ROLE ||
     role === ADMIN_ROLE ||
     role === SYSTEM_MANAGER_ROLE ||
+    role === SECRETARY_ROLE ||
+    role === "מזכירה" ||
     role === LEGACY_SYSTEM_ADMIN_ROLE ||
     role === "admin"
   );
@@ -28,6 +32,7 @@ export function officeRoleLabel(role?: string | null): string {
   if (role === PROJECT_MANAGER_ROLE) return "מנהל פרויקט";
   if (role === OPERATIONS_MANAGER_ROLE) return "מנהל תפעול";
   if (role === FIELD_MANAGER_ROLE) return "מנהל עבודה";
+  if (role === SECRETARY_ROLE || role === "מזכירה") return "מזכירה";
   if (
     role === ADMIN_ROLE ||
     role === SYSTEM_MANAGER_ROLE ||

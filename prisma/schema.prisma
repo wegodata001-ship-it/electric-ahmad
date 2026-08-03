@@ -1063,7 +1063,7 @@ model OfficeAttendance {
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   checkedInAt    DateTime
   checkedOutAt   DateTime?
-  /** qr | nfc | manual */
+  /** qr | manual */
   source         String?
   latitude       Float?
   longitude      Float?
@@ -1082,7 +1082,7 @@ model OfficeAttendance {
   @@index([deviceId])
 }
 
-/** מכשיר מאושר לנוכחות QR/NFC — נרשם באשף חד-פעמי */
+/** מכשיר מאושר לנוכחות QR — נרשם באשף חד-פעמי */
 model AttendanceDevice {
   id                String    @id @default(cuid())
   deviceId          String    @unique

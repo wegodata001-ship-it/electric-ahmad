@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Bell, CheckSquare, ClipboardList } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { notificationService } from "@/features/notifications/services/notification.service";
-import { OpsAttendance } from "@/apps/operations/ops-attendance";
 import { cn } from "@/lib/utils";
 
 type Queue = {
@@ -44,11 +43,9 @@ export function OpsHome() {
       <section>
         <h1 className="text-2xl font-black tracking-tight">מה עושים היום?</h1>
         <p className="mt-1 text-sm text-stone-500">
-          נוכחות · סידורים · אישורים — בלי מערכת ERP
+          סידורים · אישורים — נוכחות רק דרך סריקת QR
         </p>
       </section>
-
-      <OpsAttendance compact />
 
       <nav className="grid gap-3">
         <HomeCard

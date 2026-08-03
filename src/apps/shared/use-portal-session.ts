@@ -12,6 +12,7 @@ import {
 export function usePortalSession(portalId: PortalId) {
   const router = useRouter();
   const [userName, setUserName] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -24,9 +25,10 @@ export function usePortalSession(portalId: PortalId) {
           return;
         }
         setUserName(json.data?.name ?? null);
-        const role = json.data?.role as string | undefined;
-        if (!canAccessPortal(role, portalId)) {
-          router.replace(portalHomeOrLogin(role));
+        const nextRole = json.data?.role as string | undefined;
+        setRole(nextRole ?? null);
+        if (!canAccessPortal(nextRole, portalId)) {
+          router.replace(portalHomeOrLogin(nextRole));
           return;
         }
         setReady(true);
@@ -50,5 +52,5 @@ export function usePortalSession(portalId: PortalId) {
     }
   }
 
-  return { userName, ready, loggingOut, logout };
+  return { userName, role, ready, loggingOut, logout };
 }

@@ -1,13 +1,18 @@
-import { prisma } from "@/lib/prisma";
 import {
   ATTENDANCE_CONFIG_KEYS,
-  ATTENDANCE_DEBOUNCE_MS,
   defaultAttendanceLabConfig,
   isWithinLabRadius,
   type AttendanceLabConfig,
 } from "@/lib/attendance/lab-config";
+import {
+  ATTENDANCE_DEBOUNCE_MS,
+  decideDebounce,
+  isTrustedDevice,
+} from "@/lib/attendance/attendance-rules";
 import { AuditRepository } from "@/repositories/audit.repository";
 import { uploadToStorage } from "@/lib/supabase/storage";
+import { officeRoleLabel } from "@/lib/auth/roles";
+import { prisma } from "@/lib/prisma";
 
 export type CheckinMeta = {
   latitude: number;
@@ -17,8 +22,10 @@ export type CheckinMeta = {
   deviceType?: string | null;
   userAgent?: string | null;
   osName?: string | null;
+  browserName?: string | null;
   ipAddress?: string | null;
-  source?: "qr" | "nfc" | "manual";
+  /** Always QR for lab attendance */
+  source?: "qr" | "manual";
 };
 
 export type CheckinResult =
@@ -42,6 +49,16 @@ export type CheckinResult =
       message: string;
     }
   | { status: "error"; code: string; message: string };
+
+function detectBrowserFromUa(ua?: string | null): string | null {
+  if (!ua) return null;
+  if (/Edg\//i.test(ua)) return "Edge";
+  if (/OPR\/|Opera/i.test(ua)) return "Opera";
+  if (/Chrome\//i.test(ua) && !/Edg\//i.test(ua)) return "Chrome";
+  if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) return "Safari";
+  if (/Firefox\//i.test(ua)) return "Firefox";
+  return "דפדפן";
+}
 
 async function loadLabConfig(): Promise<AttendanceLabConfig> {
   const defaults = defaultAttendanceLabConfig();
@@ -73,11 +90,30 @@ async function loadLabConfig(): Promise<AttendanceLabConfig> {
   };
 }
 
-function isTrustedDevice(d: {
-  approved: boolean;
-  enrolledAt: Date | null;
-}): boolean {
-  return Boolean(d.approved && d.enrolledAt);
+async function logFailedAttempt(opts: {
+  userId: string;
+  code: string;
+  message: string;
+  meta?: Partial<CheckinMeta>;
+}) {
+  await AuditRepository.log({
+    action: "UPDATE",
+    entityType: "OfficeAttendance",
+    entityId: opts.userId,
+    userId: opts.userId,
+    metadata: {
+      action: "attendance_failed",
+      code: opts.code,
+      message: opts.message,
+      latitude: opts.meta?.latitude ?? null,
+      longitude: opts.meta?.longitude ?? null,
+      deviceId: opts.meta?.deviceId ?? null,
+      ipAddress: opts.meta?.ipAddress ?? null,
+      userAgent: opts.meta?.userAgent ?? null,
+      osName: opts.meta?.osName ?? null,
+      source: "qr",
+    },
+  });
 }
 
 export const AttendanceCheckinRepository = {
@@ -95,9 +131,7 @@ export const AttendanceCheckinRepository = {
       ? await prisma.attendanceDevice.findUnique({ where: { deviceId } })
       : null;
     const trusted =
-      device &&
-      device.userId === userId &&
-      isTrustedDevice(device);
+      device && device.userId === userId && isTrustedDevice(device);
     return {
       needsEnrollment: !trusted,
       deviceTrusted: !!trusted,
@@ -108,9 +142,87 @@ export const AttendanceCheckinRepository = {
   async listDevices() {
     return prisma.attendanceDevice.findMany({
       orderBy: { updatedAt: "desc" },
-      take: 100,
+      take: 200,
       include: {
-        user: { select: { id: true, name: true, email: true, username: true } },
+        user: {
+          select: { id: true, name: true, email: true, username: true, role: true },
+        },
+      },
+    });
+  },
+
+  /** Employee registration roster for admin / secretary */
+  async listEmployeeRoster() {
+    const users = await prisma.user.findMany({
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        email: true,
+        attendanceDevices: {
+          orderBy: [{ enrolledAt: "desc" }, { updatedAt: "desc" }],
+          take: 3,
+        },
+        officeAttendances: {
+          orderBy: { checkedInAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            checkedInAt: true,
+            checkedOutAt: true,
+            source: true,
+          },
+        },
+      },
+    });
+
+    return users.map((u) => {
+      const trusted = u.attendanceDevices.find((d) => isTrustedDevice(d));
+      const device = trusted ?? u.attendanceDevices[0] ?? null;
+      const lastAtt = u.officeAttendances[0] ?? null;
+      const enrolled = Boolean(trusted);
+      return {
+        userId: u.id,
+        userName: u.name,
+        role: u.role,
+        roleLabel: officeRoleLabel(u.role),
+        email: u.email,
+        registered: enrolled,
+        statusLabel: enrolled ? "מכשיר רשום" : "עדיין לא נרשם",
+        enrolledAt: trusted?.enrolledAt?.toISOString() ?? null,
+        deviceRowId: device?.id ?? null,
+        deviceId: device?.deviceId ?? null,
+        deviceType: device?.deviceType ?? null,
+        osName: device?.osName ?? null,
+        browserName: detectBrowserFromUa(device?.userAgent),
+        userAgent: device?.userAgent ?? null,
+        lastSeenAt: device?.lastSeenAt?.toISOString() ?? null,
+        lastCheckInAt: lastAtt?.checkedInAt?.toISOString() ?? null,
+        lastCheckOutAt: lastAtt?.checkedOutAt?.toISOString() ?? null,
+        approved: device?.approved ?? false,
+      };
+    });
+  },
+
+  async listAttendanceLogs(userId: string, take = 50) {
+    return prisma.officeAttendance.findMany({
+      where: { userId },
+      orderBy: { checkedInAt: "desc" },
+      take,
+      select: {
+        id: true,
+        checkedInAt: true,
+        checkedOutAt: true,
+        source: true,
+        latitude: true,
+        longitude: true,
+        ipAddress: true,
+        deviceId: true,
+        deviceType: true,
+        osName: true,
+        userAgent: true,
+        accuracyMeters: true,
       },
     });
   },
@@ -120,18 +232,36 @@ export const AttendanceCheckinRepository = {
     approved: boolean,
     adminId: string
   ) {
-    return prisma.attendanceDevice.update({
+    const existing = await prisma.attendanceDevice.findUnique({
+      where: { id: deviceRowId },
+    });
+    if (!existing) throw new Error("מכשיר לא נמצא");
+
+    const row = await prisma.attendanceDevice.update({
       where: { id: deviceRowId },
       data: {
         approved,
         approvedAt: approved ? new Date() : null,
         approvedById: approved ? adminId : null,
-        // Re-approve without clearing enrollment; reset clears enrollment
         ...(approved
-          ? {}
+          ? {
+              enrolledAt: existing.enrolledAt ?? new Date(),
+            }
           : { enrolledAt: null, termsAcceptedAt: null }),
       },
     });
+    await AuditRepository.log({
+      action: "UPDATE",
+      entityType: "AttendanceDevice",
+      entityId: row.id,
+      userId: adminId,
+      metadata: {
+        action: approved ? "admin_reapprove_device" : "admin_revoke_device",
+        deviceId: row.deviceId,
+        targetUserId: row.userId,
+      },
+    });
+    return row;
   },
 
   /** Reset enrollment so worker must run wizard again */
@@ -156,7 +286,11 @@ export const AttendanceCheckinRepository = {
       entityType: "AttendanceDevice",
       entityId: row.id,
       userId: adminId,
-      metadata: { action: "reset_enrollment", deviceId: row.deviceId },
+      metadata: {
+        action: "reset_enrollment",
+        deviceId: row.deviceId,
+        targetUserId: row.userId,
+      },
     });
     return row;
   },
@@ -170,13 +304,17 @@ export const AttendanceCheckinRepository = {
       entityType: "AttendanceDevice",
       entityId: row.id,
       userId: adminId,
-      metadata: { action: "delete_device", deviceId: row.deviceId },
+      metadata: {
+        action: "delete_device",
+        deviceId: row.deviceId,
+        targetUserId: row.userId,
+      },
     });
     return row;
   },
 
   /**
-   * One-time enrollment: selfie + GPS + optional terms → Trusted Device
+   * One-time enrollment: GPS + selfie + optional terms → Trusted Device
    */
   async enrollDevice(opts: {
     userId: string;
@@ -271,6 +409,10 @@ export const AttendanceCheckinRepository = {
         deviceId,
         hasSelfie: true,
         termsAccepted: Boolean(opts.termsAccepted),
+        latitude: opts.latitude,
+        longitude: opts.longitude,
+        osName: opts.osName,
+        userAgent: opts.userAgent,
       },
     });
 
@@ -283,6 +425,12 @@ export const AttendanceCheckinRepository = {
     meta: CheckinMeta
   ): Promise<CheckinResult> {
     if (!meta.deviceId?.trim()) {
+      await logFailedAttempt({
+        userId,
+        code: "device_missing",
+        message: "לא ניתן לזהות את המכשיר",
+        meta,
+      });
       return {
         status: "error",
         code: "device_missing",
@@ -295,6 +443,12 @@ export const AttendanceCheckinRepository = {
     });
 
     if (!device || device.userId !== userId || !isTrustedDevice(device)) {
+      await logFailedAttempt({
+        userId,
+        code: "device_not_approved",
+        message: "המכשיר אינו מאושר",
+        meta,
+      });
       return {
         status: "needs_enrollment",
         code: "needs_enrollment",
@@ -322,6 +476,12 @@ export const AttendanceCheckinRepository = {
         radiusM: lab.radiusM,
       })
     ) {
+      await logFailedAttempt({
+        userId,
+        code: "out_of_range",
+        message: "אינך נמצא בטווח המעבדה",
+        meta,
+      });
       return {
         status: "error",
         code: "out_of_range",
@@ -330,45 +490,43 @@ export const AttendanceCheckinRepository = {
     }
 
     const since = new Date(Date.now() - ATTENDANCE_DEBOUNCE_MS);
-    const recentFixed = await prisma.officeAttendance.findFirst({
-      where: {
-        AND: [
-          { OR: [{ userId }, { deviceId: meta.deviceId }] },
-          {
-            OR: [
-              { checkedInAt: { gte: since } },
-              { checkedOutAt: { gte: since } },
-              { updatedAt: { gte: since } },
-            ],
-          },
-        ],
-      },
-      orderBy: { updatedAt: "desc" },
-    });
 
     const open = await prisma.officeAttendance.findFirst({
       where: { userId, checkedOutAt: null },
       orderBy: { checkedInAt: "desc" },
     });
 
-    if (recentFixed) {
-      const lastAction: "check_in" | "check_out" = recentFixed.checkedOutAt
-        ? "check_out"
-        : "check_in";
-      const at = (
-        recentFixed.checkedOutAt ?? recentFixed.checkedInAt
-      ).toISOString();
+    const [recentOut, recentIn] = await Promise.all([
+      prisma.officeAttendance.findFirst({
+        where: { userId, checkedOutAt: { gte: since } },
+        orderBy: { checkedOutAt: "desc" },
+        select: { checkedOutAt: true, checkedInAt: true },
+      }),
+      prisma.officeAttendance.findFirst({
+        where: { userId, checkedInAt: { gte: since } },
+        orderBy: { checkedInAt: "desc" },
+        select: { checkedOutAt: true, checkedInAt: true },
+      }),
+    ]);
+
+    const debounce = decideDebounce({
+      openExists: !!open,
+      recentCheckOutAt: recentOut?.checkedOutAt ?? null,
+      recentCheckInAt: recentIn?.checkedInAt ?? null,
+    });
+
+    if (debounce.block) {
       return {
         status: "already_recorded",
-        action: lastAction,
+        action: debounce.action,
         userName,
-        at,
-        message: "הנוכחות כבר נרשמה",
+        at: debounce.at.toISOString(),
+        message: "הנוכחות כבר נרשמה לפני מספר שניות",
       };
     }
 
     const auditBase = {
-      source: meta.source ?? "qr",
+      source: "qr" as const,
       latitude: meta.latitude,
       longitude: meta.longitude,
       accuracyMeters: meta.accuracyMeters ?? null,
@@ -377,6 +535,7 @@ export const AttendanceCheckinRepository = {
       deviceType: meta.deviceType ?? null,
       userAgent: meta.userAgent ?? null,
       osName: meta.osName ?? null,
+      browserName: meta.browserName ?? detectBrowserFromUa(meta.userAgent),
     };
 
     if (!open) {
@@ -384,7 +543,15 @@ export const AttendanceCheckinRepository = {
         data: {
           userId,
           checkedInAt: new Date(),
-          ...auditBase,
+          source: auditBase.source,
+          latitude: auditBase.latitude,
+          longitude: auditBase.longitude,
+          accuracyMeters: auditBase.accuracyMeters,
+          ipAddress: auditBase.ipAddress,
+          deviceId: auditBase.deviceId,
+          deviceType: auditBase.deviceType,
+          userAgent: auditBase.userAgent,
+          osName: auditBase.osName,
         },
       });
       await AuditRepository.log({
@@ -407,7 +574,15 @@ export const AttendanceCheckinRepository = {
       where: { id: open.id },
       data: {
         checkedOutAt: new Date(),
-        ...auditBase,
+        source: auditBase.source,
+        latitude: auditBase.latitude,
+        longitude: auditBase.longitude,
+        accuracyMeters: auditBase.accuracyMeters,
+        ipAddress: auditBase.ipAddress,
+        deviceId: auditBase.deviceId,
+        deviceType: auditBase.deviceType,
+        userAgent: auditBase.userAgent,
+        osName: auditBase.osName,
       },
     });
     await AuditRepository.log({
@@ -424,5 +599,19 @@ export const AttendanceCheckinRepository = {
       at: row.checkedOutAt!.toISOString(),
       attendanceId: row.id,
     };
+  },
+
+  /** Log client-side GPS failures */
+  async logGpsFailure(
+    userId: string,
+    code: "gps_denied" | "gps_unavailable" | "gps_failed",
+    meta?: Partial<CheckinMeta>
+  ) {
+    await logFailedAttempt({
+      userId,
+      code,
+      message: "יש לאשר GPS",
+      meta,
+    });
   },
 };

@@ -18,9 +18,23 @@ export function getOrCreateDeviceId(): string {
   }
 }
 
+export function detectBrowserName(ua: string): string {
+  if (/Edg\//i.test(ua)) return "Edge";
+  if (/OPR\/|Opera/i.test(ua)) return "Opera";
+  if (/Chrome\//i.test(ua) && !/Edg\//i.test(ua)) return "Chrome";
+  if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) return "Safari";
+  if (/Firefox\//i.test(ua)) return "Firefox";
+  return "דפדפן";
+}
+
 export function detectDeviceMeta() {
   if (typeof navigator === "undefined") {
-    return { deviceType: "unknown", osName: "unknown", userAgent: "" };
+    return {
+      deviceType: "unknown",
+      osName: "unknown",
+      browserName: "unknown",
+      userAgent: "",
+    };
   }
   const ua = navigator.userAgent || "";
   let deviceType = "desktop";
@@ -34,10 +48,20 @@ export function detectDeviceMeta() {
   else if (/Mac OS/i.test(ua)) osName = "macOS";
   else if (/Linux/i.test(ua)) osName = "Linux";
 
-  return { deviceType, osName, userAgent: ua.slice(0, 500) };
+  return {
+    deviceType,
+    osName,
+    browserName: detectBrowserName(ua),
+    userAgent: ua.slice(0, 500),
+  };
 }
 
-export function readGps(): Promise<{
+export function readGps(opts?: {
+  /** Prefer cached fix for fast daily punches (ms). Default 20s. */
+  maximumAgeMs?: number;
+  timeoutMs?: number;
+  enableHighAccuracy?: boolean;
+}): Promise<{
   latitude: number;
   longitude: number;
   accuracy: number | null;
@@ -62,7 +86,11 @@ export function readGps(): Promise<{
         if (err.code === err.PERMISSION_DENIED) reject(new Error("gps_denied"));
         else reject(new Error("gps_failed"));
       },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+      {
+        enableHighAccuracy: opts?.enableHighAccuracy ?? false,
+        timeout: opts?.timeoutMs ?? 10_000,
+        maximumAge: opts?.maximumAgeMs ?? 20_000,
+      }
     );
   });
 }

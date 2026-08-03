@@ -69,6 +69,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     },
     nav: [
       { label: "עץ פרויקט", href: "/system/accounts", icon: GitBranch, mode: "live" },
+      { label: "QR לנוכחות", href: "/system/attendance-qr", icon: Clock, mode: "live" },
       { label: "משתמשים", href: "/system/users", icon: Users, mode: "live" },
       { label: "Workflow", href: "/system/workflow", icon: GitBranch, mode: "live" },
       { label: "מסמכים", href: "/system/documents", icon: FolderOpen, mode: "live" },
@@ -126,7 +127,6 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
         icon: CheckSquare,
         mode: "live",
       },
-      { label: "נוכחות", href: "/operations/attendance", icon: Clock, mode: "live" },
       {
         label: "סידורי עבודה",
         href: "/operations/work-orders",
@@ -199,6 +199,9 @@ export function portalHomeForRole(role?: string | null): string {
     case "admin":
     case "מנהל מערכת":
       return PORTALS.system.home;
+    case "SECRETARY":
+    case "מזכירה":
+      return "/system/attendance-qr";
     case "PROJECT_MANAGER":
       return PORTALS.project.home;
     case "OPERATIONS_MANAGER":

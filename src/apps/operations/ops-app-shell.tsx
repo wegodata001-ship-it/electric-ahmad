@@ -12,7 +12,6 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/operations/accounts", label: "עץ פרויקט", exact: false },
   { href: "/operations/approvals", label: "אישורים" },
-  { href: "/operations/attendance", label: "נוכחות" },
   { href: "/operations/work-orders", label: "סידורים" },
   { href: "/operations/documents", label: "מסמכים" },
   { href: "/operations/share-links", label: "קישורי שיתוף" },

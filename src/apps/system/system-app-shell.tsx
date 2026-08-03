@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useEffect, useMemo } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { usePortalSession } from "@/apps/shared/use-portal-session";
+import { canManageAttendance, isSecretaryRole } from "@/lib/auth/attendance-permissions";
+import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import { cn } from "@/lib/utils";
 
-/**
- * SUPER ADMIN / System Manager — desktop Back Office (light).
- * Primary work surface = Project Tree (/system/accounts).
- * Dashboard / Companies removed from nav (routes kept for BC).
- */
-const NAV = [
+const FULL_NAV = [
   { href: "/system/accounts", label: "עץ פרויקט", exact: false },
   { href: "/system/attendance-qr", label: "QR לנוכחות" },
   { href: "/system/users", label: "משתמשים" },
@@ -22,9 +20,29 @@ const NAV = [
   { href: "/system/settings", label: "הגדרות" },
 ];
 
+const SECRETARY_NAV = [
+  { href: "/system/attendance-qr", label: "QR לנוכחות" },
+];
+
+/**
+ * System Back Office — System Manager full nav; Secretary = attendance only.
+ */
 export function SystemAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { userName, ready, loggingOut, logout } = usePortalSession("system");
+  const router = useRouter();
+  const { userName, role, ready, loggingOut, logout } = usePortalSession("system");
+
+  const nav = useMemo(() => {
+    if (isSecretaryRole(role)) return SECRETARY_NAV;
+    return FULL_NAV;
+  }, [role]);
+
+  useEffect(() => {
+    if (!ready || !role) return;
+    if (isSecretaryRole(role) && !pathname.startsWith("/system/attendance-qr")) {
+      router.replace("/system/attendance-qr");
+    }
+  }, [ready, role, pathname, router]);
 
   if (!ready) {
     return (
@@ -34,8 +52,22 @@ export function SystemAppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // Defense: non-admin / non-secretary shouldn't linger on attendance-qr via shell
+  if (
+    pathname.startsWith("/system/attendance-qr") &&
+    !canManageAttendance(role)
+  ) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
+        אין הרשאה
+      </div>
+    );
+  }
+
   const isAccounts =
     pathname === "/system/accounts" || pathname.startsWith("/system/accounts?");
+  const title = isSecretaryRole(role) ? "נוכחות" : "מרכז שליטה";
+  const subtitle = isSecretaryRole(role) ? "מזכירה" : "בקרת מערכת";
 
   return (
     <div
@@ -43,23 +75,24 @@ export function SystemAppShell({ children }: { children: React.ReactNode }) {
       dir="rtl"
       data-app="system"
       data-layout="admin"
-      data-admin="super"
+      data-admin={isSystemAdminRole(role) ? "super" : "secretary"}
       data-theme="light"
     >
       <div className="flex min-h-screen w-full">
         <aside className="flex w-56 shrink-0 flex-col border-l border-slate-200 bg-white">
           <div className="border-b border-slate-100 px-4 py-5">
             <p className="text-[10px] font-bold tracking-wide text-slate-500">
-              בקרת מערכת
+              {subtitle}
             </p>
-            <p className="mt-1 text-lg font-black text-slate-900">מרכז שליטה</p>
+            <p className="mt-1 text-lg font-black text-slate-900">{title}</p>
             <p className="truncate text-xs text-slate-500">{userName}</p>
           </div>
           <nav className="flex-1 space-y-0.5 p-2">
-            {NAV.map((item) => {
-              const active = item.exact
-                ? pathname === item.href
-                : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            {nav.map((item) => {
+              const active =
+                "exact" in item && item.exact
+                  ? pathname === item.href
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
                   key={item.href}

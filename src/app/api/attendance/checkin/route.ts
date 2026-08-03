@@ -42,14 +42,33 @@ export async function POST(req: NextRequest) {
   try {
     const session = await requireOfficeUser();
     const body = await req.json().catch(() => ({}));
+    const deviceId = String(body.deviceId ?? "").trim();
+
+    const gpsError = String(body.gpsError || "");
+    if (
+      gpsError === "gps_denied" ||
+      gpsError === "gps_unavailable" ||
+      gpsError === "gps_failed"
+    ) {
+      await AttendanceCheckinRepository.logGpsFailure(
+        session.userId,
+        gpsError,
+        { deviceId: deviceId || undefined, ipAddress: getClientIp(req) }
+      );
+      return apiError("יש לאשר GPS", 400);
+    }
 
     const latitude = Number(body.latitude);
     const longitude = Number(body.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      await AttendanceCheckinRepository.logGpsFailure(
+        session.userId,
+        "gps_denied",
+        { deviceId: deviceId || undefined, ipAddress: getClientIp(req) }
+      );
       return apiError("יש לאשר GPS", 400);
     }
 
-    const deviceId = String(body.deviceId ?? "").trim();
     if (!deviceId) return apiError("לא ניתן לזהות את המכשיר", 400);
 
     const result = await AttendanceCheckinRepository.autoToggle(
@@ -66,8 +85,9 @@ export async function POST(req: NextRequest) {
           ? String(body.userAgent).slice(0, 500)
           : req.headers.get("user-agent"),
         osName: body.osName ? String(body.osName) : null,
+        browserName: body.browserName ? String(body.browserName) : null,
         ipAddress: getClientIp(req),
-        source: body.source === "nfc" ? "nfc" : "qr",
+        source: "qr",
       }
     );
 

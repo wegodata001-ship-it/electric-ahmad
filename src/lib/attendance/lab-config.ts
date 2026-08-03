@@ -1,4 +1,4 @@
-/** הגדרות נוכחות מעבדה (QR/NFC) — AppConfig + env fallback */
+/** הגדרות נוכחות מעבדה (QR בלבד) — AppConfig + env fallback */
 
 export const ATTENDANCE_CONFIG_KEYS = {
   lat: "attendance_lab_lat",
@@ -60,4 +60,7 @@ export function isWithinLabRadius(opts: {
   );
 }
 
-export const ATTENDANCE_DEBOUNCE_MS = 45_000;
+import { ATTENDANCE_DEBOUNCE_MS as DEBOUNCE } from "@/lib/attendance/attendance-rules";
+
+/** @deprecated import from attendance-rules — kept for BC */
+export const ATTENDANCE_DEBOUNCE_MS = DEBOUNCE;

@@ -1,45 +1,81 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, Printer, QrCode, RefreshCw } from "lucide-react";
+import { Copy, Download, Printer, QrCode, RefreshCw, X } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { Button, useToast } from "@/components/ui";
-import { formatDate, formatRelative } from "@/utils/format";
+import { formatDate } from "@/utils/format";
 
-type DeviceRow = {
-  id: string;
-  deviceId: string;
-  label: string | null;
-  approved: boolean;
-  approvedAt: string | null;
+type EmployeeRow = {
+  userId: string;
+  userName: string;
+  role: string;
+  roleLabel: string;
+  email: string;
+  registered: boolean;
+  statusLabel: string;
   enrolledAt: string | null;
-  lastSeenAt: string | null;
+  deviceRowId: string | null;
+  deviceId: string | null;
   deviceType: string | null;
   osName: string | null;
-  hasSelfie: boolean;
-  userName: string | null;
-  userEmail: string | null;
+  browserName: string | null;
+  lastSeenAt: string | null;
+  lastCheckInAt: string | null;
+  lastCheckOutAt: string | null;
+  approved: boolean;
+};
+
+type LogRow = {
+  id: string;
+  checkedInAt: string;
+  checkedOutAt: string | null;
+  source: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  ipAddress: string | null;
+  deviceId: string | null;
+  deviceType: string | null;
+  osName: string | null;
+  userAgent: string | null;
 };
 
 type Config = {
   brandName: string;
   checkinPath: string;
+  publicUrl?: string;
   radiusM: number;
   lat: number;
   lng: number;
 };
 
+const OFFICIAL_URL = "https://opallab.vercel.app/attendance/checkin";
+
+function fmtDate(iso: string | null) {
+  if (!iso) return "—";
+  return formatDate(iso);
+}
+
+function fmtTime(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString("he-IL", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function AttendanceQrAdminPage() {
   const toast = useToast();
   const printRef = useRef<HTMLDivElement>(null);
-  const [devices, setDevices] = useState<DeviceRow[]>([]);
+  const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
+  const [logsUser, setLogsUser] = useState<EmployeeRow | null>(null);
+  const [logs, setLogs] = useState<LogRow[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   const checkinUrl = useMemo(() => {
-    const path = config?.checkinPath || "/attendance/checkin";
-    if (typeof window === "undefined") return path;
-    return `${window.location.origin}${path}`;
+    return config?.publicUrl || OFFICIAL_URL;
   }, [config]);
 
   const qrSrc = useMemo(() => {
@@ -49,9 +85,9 @@ export function AttendanceQrAdminPage() {
   const reload = useCallback(() => {
     setLoading(true);
     apiClient
-      .get<{ devices: DeviceRow[]; config: Config }>("/api/attendance/devices")
+      .get<{ employees: EmployeeRow[]; config: Config }>("/api/attendance/devices")
       .then((data) => {
-        setDevices(data.devices);
+        setEmployees(data.employees || []);
         setConfig(data.config);
       })
       .catch((e) => toast.error(e.message))
@@ -87,8 +123,6 @@ export function AttendanceQrAdminPage() {
   }
 
   function printQr() {
-    const node = printRef.current;
-    if (!node) return;
     const w = window.open("", "_blank", "noopener,noreferrer,width=720,height=900");
     if (!w) {
       toast.error("יש לאפשר חלונות קופצים להדפסה");
@@ -103,7 +137,7 @@ export function AttendanceQrAdminPage() {
         .url{font-size:13px;word-break:break-all;margin-top:20px}
       </style></head><body>
       <h1>${config?.brandName || "OPAL LAB"}</h1>
-      <p>סריקת נוכחות — QR / NFC</p>
+      <p>סריקת נוכחות — QR בלבד</p>
       <img src="${qrSrc}" alt="QR" />
       <p class="url">${checkinUrl}</p>
       <script>window.onload=()=>{window.print();}</script>
@@ -111,40 +145,72 @@ export function AttendanceQrAdminPage() {
     w.document.close();
   }
 
-  function downloadPdf() {
-    // Print dialog → Save as PDF
-    printQr();
-  }
-
-  async function toggleApprove(id: string, approved: boolean) {
+  async function resetDevice(row: EmployeeRow) {
+    if (!row.deviceRowId) {
+      toast.error("אין מכשיר לאיפוס");
+      return;
+    }
+    if (!confirm("לאפס מכשיר? העובד יצטרך הרשמה חד־פעמית מחדש.")) return;
     try {
-      await apiClient.patch("/api/attendance/devices", { id, approved });
-      toast.success(approved ? "המכשיר אושר" : "האישור בוטל");
+      await apiClient.patch("/api/attendance/devices", {
+        id: row.deviceRowId,
+        action: "reset",
+      });
+      toast.success("המכשיר אופס");
       reload();
     } catch (e: any) {
       toast.error(e.message);
     }
   }
 
-  async function resetDevice(id: string) {
-    if (!confirm("לאפס הרשמה? העובד יצטרך לבצע אשף הרשמה מחדש.")) return;
+  async function deleteDevice(row: EmployeeRow) {
+    if (!row.deviceRowId) {
+      toast.error("אין מכשיר למחיקה");
+      return;
+    }
+    if (!confirm("למחוק את הרשמת המכשיר לחלוטין?")) return;
     try {
-      await apiClient.patch("/api/attendance/devices", { id, action: "reset" });
-      toast.success("ההרשמה אופסה — ניתן להירשם מחדש");
+      await apiClient.patch("/api/attendance/devices", {
+        id: row.deviceRowId,
+        action: "delete",
+      });
+      toast.success("ההרשמה נמחקה");
       reload();
     } catch (e: any) {
       toast.error(e.message);
     }
   }
 
-  async function deleteDevice(id: string) {
-    if (!confirm("למחוק את המכשיר לחלוטין?")) return;
+  async function reapprove(row: EmployeeRow) {
+    if (!row.deviceRowId) {
+      toast.error("אין מכשיר לאישור");
+      return;
+    }
     try {
-      await apiClient.patch("/api/attendance/devices", { id, action: "delete" });
-      toast.success("המכשיר נמחק");
+      await apiClient.patch("/api/attendance/devices", {
+        id: row.deviceRowId,
+        approved: true,
+      });
+      toast.success("ההרשמה אושרה מחדש");
       reload();
     } catch (e: any) {
       toast.error(e.message);
+    }
+  }
+
+  async function openLogs(row: EmployeeRow) {
+    setLogsUser(row);
+    setLogsLoading(true);
+    setLogs([]);
+    try {
+      const data = await apiClient.get<{ logs: LogRow[] }>(
+        `/api/attendance/devices?view=logs&userId=${encodeURIComponent(row.userId)}`
+      );
+      setLogs(data.logs || []);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setLogsLoading(false);
     }
   }
 
@@ -156,11 +222,11 @@ export function AttendanceQrAdminPage() {
           QR לנוכחות
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          אותו קישור ל־QR ול־NFC · {config?.brandName || "OPAL LAB"}
+          נוכחות באמצעות QR בלבד · {config?.brandName || "OPAL LAB"}
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <div
           ref={printRef}
           className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm"
@@ -172,7 +238,7 @@ export function AttendanceQrAdminPage() {
           <img
             src={qrSrc}
             alt="QR נוכחות"
-            className="mx-auto mt-4 h-64 w-64 rounded-2xl border border-slate-100 bg-white p-3"
+            className="mx-auto mt-4 h-56 w-56 rounded-2xl border border-slate-100 bg-white p-3"
           />
           <p className="mt-4 break-all text-xs font-medium text-slate-600">
             {checkinUrl}
@@ -190,7 +256,7 @@ export function AttendanceQrAdminPage() {
               <Download className="h-3.5 w-3.5" />
               PNG
             </Button>
-            <Button size="sm" variant="secondary" onClick={downloadPdf}>
+            <Button size="sm" variant="secondary" onClick={printQr}>
               <Download className="h-3.5 w-3.5" />
               PDF
             </Button>
@@ -203,9 +269,11 @@ export function AttendanceQrAdminPage() {
           )}
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-bold text-slate-900">מכשירים</h2>
+        <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-base font-bold text-slate-900">
+              הרשמת עובדים
+            </h2>
             <button
               type="button"
               onClick={reload}
@@ -215,78 +283,164 @@ export function AttendanceQrAdminPage() {
               רענון
             </button>
           </div>
+
           {loading && (
             <p className="py-8 text-center text-sm text-slate-400">טוען…</p>
           )}
-          {!loading && devices.length === 0 && (
-            <p className="py-8 text-center text-sm text-slate-400">
-              אין מכשירים עדיין — עובד נרשם באשף חד-פעמי אחרי סריקת QR
-            </p>
+
+          {!loading && (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[960px] text-right text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[11px] text-slate-500">
+                    <th className="px-2 py-2 font-semibold">עובד</th>
+                    <th className="px-2 py-2 font-semibold">תפקיד</th>
+                    <th className="px-2 py-2 font-semibold">סטטוס</th>
+                    <th className="px-2 py-2 font-semibold">תאריך הרשמה</th>
+                    <th className="px-2 py-2 font-semibold">שעה</th>
+                    <th className="px-2 py-2 font-semibold">מכשיר אחרון</th>
+                    <th className="px-2 py-2 font-semibold">מערכת</th>
+                    <th className="px-2 py-2 font-semibold">דפדפן</th>
+                    <th className="px-2 py-2 font-semibold">כניסה אחרונה</th>
+                    <th className="px-2 py-2 font-semibold">פעולות</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {employees.map((row) => (
+                    <tr key={row.userId} className="align-top">
+                      <td className="px-2 py-3 font-semibold text-slate-900">
+                        {row.userName}
+                      </td>
+                      <td className="px-2 py-3 text-slate-600">{row.roleLabel}</td>
+                      <td className="px-2 py-3 whitespace-nowrap">
+                        {row.registered ? (
+                          <span className="text-emerald-700">🟢 מכשיר רשום</span>
+                        ) : (
+                          <span className="text-red-600">🔴 עדיין לא נרשם</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-3 text-slate-600">
+                        {fmtDate(row.enrolledAt)}
+                      </td>
+                      <td className="px-2 py-3 text-slate-600">
+                        {fmtTime(row.enrolledAt)}
+                      </td>
+                      <td className="px-2 py-3 text-slate-600">
+                        {row.deviceType || "—"}
+                      </td>
+                      <td className="px-2 py-3 text-slate-600">
+                        {row.osName || "—"}
+                      </td>
+                      <td className="px-2 py-3 text-slate-600">
+                        {row.browserName || "—"}
+                      </td>
+                      <td className="px-2 py-3 text-slate-600">
+                        {row.lastCheckInAt
+                          ? `${fmtDate(row.lastCheckInAt)} ${fmtTime(row.lastCheckInAt)}`
+                          : "—"}
+                      </td>
+                      <td className="px-2 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => void resetDevice(row)}
+                            disabled={!row.deviceRowId}
+                            className="rounded border border-amber-200 px-2 py-1 text-[11px] font-bold text-amber-800 disabled:opacity-40"
+                          >
+                            איפוס מכשיר
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteDevice(row)}
+                            disabled={!row.deviceRowId}
+                            className="rounded border border-red-200 px-2 py-1 text-[11px] font-bold text-red-700 disabled:opacity-40"
+                          >
+                            מחיקת הרשמה
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void reapprove(row)}
+                            disabled={!row.deviceRowId}
+                            className="rounded border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-700 disabled:opacity-40"
+                          >
+                            אישור מחדש
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void openLogs(row)}
+                            className="rounded bg-slate-900 px-2 py-1 text-[11px] font-bold text-white"
+                          >
+                            לוגי כניסה
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {employees.length === 0 && (
+                <p className="py-8 text-center text-sm text-slate-400">
+                  אין עובדים במערכת
+                </p>
+              )}
+            </div>
           )}
-          <ul className="divide-y divide-slate-100">
-            {devices.map((d) => (
-              <li
-                key={d.id}
-                className="flex flex-wrap items-start justify-between gap-3 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-900">
-                    {d.userName || "משתמש לא מקושר"}
-                    {d.label ? ` · ${d.label}` : ""}
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    {d.deviceType || "מכשיר"} · {d.osName || "OS"} ·{" "}
-                    {d.enrolledAt
-                      ? "רשום / Trusted"
-                      : d.approved
-                        ? "מאושר"
-                        : "ממתין להרשמה"}
-                    {d.hasSelfie ? " · יש סלפי" : ""}
-                  </p>
-                  <p className="truncate font-mono text-[10px] text-slate-400">
-                    {d.deviceId}
-                  </p>
-                  {d.lastSeenAt && (
-                    <p className="text-[10px] text-slate-400">
-                      נראה לאחרונה: {formatRelative(d.lastSeenAt)}
-                      {d.enrolledAt
-                        ? ` · נרשם: ${formatDate(d.enrolledAt)}`
-                        : ""}
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => void resetDevice(d.id)}
-                    className="rounded-lg border border-amber-200 px-2.5 py-1.5 text-xs font-bold text-amber-800"
-                  >
-                    איפוס הרשמה
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void deleteDevice(d.id)}
-                    className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-bold text-red-700"
-                  >
-                    מחק
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void toggleApprove(d.id, !d.approved)}
-                    className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${
-                      d.approved
-                        ? "border border-slate-200 text-slate-600"
-                        : "bg-slate-900 text-white"
-                    }`}
-                  >
-                    {d.approved ? "בטל אישור" : "אשר"}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
         </div>
       </div>
+
+      {logsUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-xl"
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div>
+                <p className="font-bold text-slate-900">לוגי כניסה</p>
+                <p className="text-xs text-slate-500">{logsUser.userName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLogsUser(null)}
+                className="rounded-lg border p-1.5"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto p-4">
+              {logsLoading && (
+                <p className="py-6 text-center text-sm text-slate-400">טוען…</p>
+              )}
+              {!logsLoading && logs.length === 0 && (
+                <p className="py-6 text-center text-sm text-slate-400">
+                  אין רשומות נוכחות
+                </p>
+              )}
+              <ul className="divide-y divide-slate-100">
+                {logs.map((l) => (
+                  <li key={l.id} className="py-3 text-sm">
+                    <p className="font-semibold text-slate-900">
+                      כניסה {fmtDate(l.checkedInAt)} {fmtTime(l.checkedInAt)}
+                      {l.checkedOutAt
+                        ? ` · יציאה ${fmtTime(l.checkedOutAt)}`
+                        : " · פתוח"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {l.deviceType || "מכשיר"} · {l.osName || "OS"} · IP{" "}
+                      {l.ipAddress || "—"} · {l.source || "qr"}
+                    </p>
+                    {(l.latitude != null || l.longitude != null) && (
+                      <p className="text-[11px] text-slate-400">
+                        GPS: {l.latitude?.toFixed(5)}, {l.longitude?.toFixed(5)}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

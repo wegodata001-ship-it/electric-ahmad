@@ -5,16 +5,17 @@ import {
   PROJECT_MANAGER_ROLE,
 } from "@/lib/auth/roles";
 import { isSystemAdminRole } from "@/lib/auth/document-permissions";
+import { isSecretaryRole } from "@/lib/auth/attendance-permissions";
 import type { PortalId } from "@/lib/portals/config";
-import { PORTALS, portalIdForRole } from "@/lib/portals/config";
+import { PORTALS, portalHomeForRole, portalIdForRole } from "@/lib/portals/config";
 
 /**
  * Soft portal boundaries — each role's primary workspace.
  * SUPER ADMIN / System Manager → System Back Office only (full width).
- * Never Project / Ops / Field portal chrome.
+ * Secretary → System portal (attendance management only).
  */
 export function portalsAllowedForRole(role?: string | null): PortalId[] {
-  if (isSystemAdminRole(role)) {
+  if (isSystemAdminRole(role) || isSecretaryRole(role)) {
     return ["system"];
   }
   if (role === PROJECT_MANAGER_ROLE) return ["project"];
@@ -36,6 +37,6 @@ export function defaultPortalForRole(role?: string | null): PortalId | null {
 }
 
 export function portalHomeOrLogin(role?: string | null): string {
-  const id = defaultPortalForRole(role);
-  return id ? PORTALS[id].home : "/login";
+  const home = portalHomeForRole(role);
+  return home === "/login" ? "/login" : home;
 }
