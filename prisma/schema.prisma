@@ -1082,22 +1082,30 @@ model OfficeAttendance {
   @@index([deviceId])
 }
 
-/** מכשיר מאושר לנוכחות QR/NFC */
+/** מכשיר מאושר לנוכחות QR/NFC — נרשם באשף חד-פעמי */
 model AttendanceDevice {
-  id           String    @id @default(cuid())
-  deviceId     String    @unique
-  label        String?
-  userId       String?
-  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  approved     Boolean   @default(false)
-  approvedAt   DateTime?
-  approvedById String?
-  lastSeenAt   DateTime?
-  userAgent    String?
-  deviceType   String?
-  osName         String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  deviceId          String    @unique
+  label             String?
+  userId            String?
+  user              User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /** Trusted device after one-time enrollment wizard */
+  approved          Boolean   @default(false)
+  approvedAt        DateTime?
+  approvedById      String?
+  enrolledAt        DateTime?
+  termsAcceptedAt   DateTime?
+  selfieUrl         String?   @db.Text
+  selfiePath        String?
+  selfieBucket      String?
+  enrollLatitude    Float?
+  enrollLongitude   Float?
+  lastSeenAt        DateTime?
+  userAgent         String?
+  deviceType        String?
+  osName              String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([userId])
   @@index([approved])

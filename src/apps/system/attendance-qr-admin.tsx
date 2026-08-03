@@ -12,9 +12,11 @@ type DeviceRow = {
   label: string | null;
   approved: boolean;
   approvedAt: string | null;
+  enrolledAt: string | null;
   lastSeenAt: string | null;
   deviceType: string | null;
   osName: string | null;
+  hasSelfie: boolean;
   userName: string | null;
   userEmail: string | null;
 };
@@ -124,6 +126,28 @@ export function AttendanceQrAdminPage() {
     }
   }
 
+  async function resetDevice(id: string) {
+    if (!confirm("לאפס הרשמה? העובד יצטרך לבצע אשף הרשמה מחדש.")) return;
+    try {
+      await apiClient.patch("/api/attendance/devices", { id, action: "reset" });
+      toast.success("ההרשמה אופסה — ניתן להירשם מחדש");
+      reload();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
+  async function deleteDevice(id: string) {
+    if (!confirm("למחוק את המכשיר לחלוטין?")) return;
+    try {
+      await apiClient.patch("/api/attendance/devices", { id, action: "delete" });
+      toast.success("המכשיר נמחק");
+      reload();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -196,7 +220,7 @@ export function AttendanceQrAdminPage() {
           )}
           {!loading && devices.length === 0 && (
             <p className="py-8 text-center text-sm text-slate-400">
-              אין מכשירים עדיין — המכשיר הראשון של כל משתמש מאושר אוטומטית
+              אין מכשירים עדיין — עובד נרשם באשף חד-פעמי אחרי סריקת QR
             </p>
           )}
           <ul className="divide-y divide-slate-100">
@@ -212,7 +236,12 @@ export function AttendanceQrAdminPage() {
                   </p>
                   <p className="text-[11px] text-slate-500">
                     {d.deviceType || "מכשיר"} · {d.osName || "OS"} ·{" "}
-                    {d.approved ? "מאושר" : "ממתין לאישור"}
+                    {d.enrolledAt
+                      ? "רשום / Trusted"
+                      : d.approved
+                        ? "מאושר"
+                        : "ממתין להרשמה"}
+                    {d.hasSelfie ? " · יש סלפי" : ""}
                   </p>
                   <p className="truncate font-mono text-[10px] text-slate-400">
                     {d.deviceId}
@@ -220,23 +249,39 @@ export function AttendanceQrAdminPage() {
                   {d.lastSeenAt && (
                     <p className="text-[10px] text-slate-400">
                       נראה לאחרונה: {formatRelative(d.lastSeenAt)}
-                      {d.approvedAt
-                        ? ` · אושר: ${formatDate(d.approvedAt)}`
+                      {d.enrolledAt
+                        ? ` · נרשם: ${formatDate(d.enrolledAt)}`
                         : ""}
                     </p>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void toggleApprove(d.id, !d.approved)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
-                    d.approved
-                      ? "border border-red-200 text-red-700"
-                      : "bg-slate-900 text-white"
-                  }`}
-                >
-                  {d.approved ? "בטל אישור" : "אשר מכשיר"}
-                </button>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void resetDevice(d.id)}
+                    className="rounded-lg border border-amber-200 px-2.5 py-1.5 text-xs font-bold text-amber-800"
+                  >
+                    איפוס הרשמה
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteDevice(d.id)}
+                    className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-bold text-red-700"
+                  >
+                    מחק
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void toggleApprove(d.id, !d.approved)}
+                    className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${
+                      d.approved
+                        ? "border border-slate-200 text-slate-600"
+                        : "bg-slate-900 text-white"
+                    }`}
+                  >
+                    {d.approved ? "בטל אישור" : "אשר"}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

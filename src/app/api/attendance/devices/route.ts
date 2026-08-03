@@ -21,9 +21,11 @@ export async function GET() {
         label: d.label,
         approved: d.approved,
         approvedAt: d.approvedAt?.toISOString() ?? null,
+        enrolledAt: d.enrolledAt?.toISOString() ?? null,
         lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
         deviceType: d.deviceType,
         osName: d.osName,
+        hasSelfie: Boolean(d.selfieUrl),
         userName: d.user?.name ?? null,
         userEmail: d.user?.email ?? null,
       })),
@@ -49,6 +51,23 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json();
     const id = String(body.id ?? "");
     if (!id) return apiError("חסר מזהה מכשיר");
+
+    const action = String(body.action || "");
+    if (action === "reset") {
+      const row = await AttendanceCheckinRepository.resetDevice(id, user.userId);
+      return apiSuccess({
+        id: row.id,
+        approved: row.approved,
+        enrolledAt: null,
+        reset: true,
+      });
+    }
+
+    if (action === "delete") {
+      await AttendanceCheckinRepository.deleteDevice(id, user.userId);
+      return apiSuccess({ deleted: true, id });
+    }
+
     const approved = Boolean(body.approved);
     const row = await AttendanceCheckinRepository.setDeviceApproved(
       id,

@@ -4,18 +4,27 @@ import { getClientIp } from "@/lib/security/rate-limit";
 import { AttendanceCheckinRepository } from "@/repositories/attendance-checkin.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
-/** Config + open status for the check-in page */
-export async function GET() {
+/** Config + enrollment status for the check-in page */
+export async function GET(req: NextRequest) {
   try {
     const session = await requireOfficeUser();
     const config = await AttendanceCheckinRepository.getConfig();
-    const open = await (await import("@/repositories/office-attendance.repository"))
-      .OfficeAttendanceRepository.getOpen(session.userId);
+    const deviceId = req.nextUrl.searchParams.get("deviceId")?.trim() || "";
+    const deviceStatus = await AttendanceCheckinRepository.getDeviceStatus(
+      deviceId,
+      session.userId
+    );
+    const open = await (
+      await import("@/repositories/office-attendance.repository")
+    ).OfficeAttendanceRepository.getOpen(session.userId);
+
     return apiSuccess({
       userName: session.userName,
       brandName: config.brandName,
       radiusM: config.radiusM,
       checkedIn: !!open,
+      needsEnrollment: deviceStatus.needsEnrollment,
+      deviceTrusted: deviceStatus.deviceTrusted,
       openAttendance: open
         ? {
             id: open.id,
@@ -28,7 +37,7 @@ export async function GET() {
   }
 }
 
-/** Auto check-in / check-out after GPS + device validation */
+/** Auto check-in / check-out after GPS + trusted device validation */
 export async function POST(req: NextRequest) {
   try {
     const session = await requireOfficeUser();
@@ -61,6 +70,10 @@ export async function POST(req: NextRequest) {
         source: body.source === "nfc" ? "nfc" : "qr",
       }
     );
+
+    if (result.status === "needs_enrollment") {
+      return apiSuccess(result);
+    }
 
     if (result.status === "error") {
       const status =
