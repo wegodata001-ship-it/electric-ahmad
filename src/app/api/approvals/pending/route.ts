@@ -178,6 +178,27 @@ export async function POST(req: NextRequest) {
           /* optional */
         }
       }
+      if (
+        approveOptions.sendToClient &&
+        kind === "delivery_note" &&
+        (result?.status === "approved" || result?.status === "sent_to_client")
+      ) {
+        try {
+          const { hasDocumentPermission } = await import(
+            "@/lib/auth/document-permissions"
+          );
+          if (hasDocumentPermission(session.role, "send_to_client")) {
+            await OpsDeliveryNotesRepository.createClientSignLink(
+              documentId,
+              session.userId,
+              req.nextUrl.origin
+            );
+            result.clientLinkCreated = true;
+          }
+        } catch {
+          /* optional */
+        }
+      }
     }
 
     return apiSuccess({

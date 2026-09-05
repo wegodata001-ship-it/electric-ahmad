@@ -14,6 +14,15 @@ import {
   assertCanSoftDelete,
   OPS_DN_EDITABLE_STATUSES,
 } from "@/lib/workflow/document-guards";
+import { AuditRepository } from "@/repositories/audit.repository";
+import { syncOpsDeliveryNoteArchiveDocument } from "@/lib/documents/official-document";
+import { isTruckDriverRole } from "@/lib/auth/driver-permissions";
+import {
+  OPERATIONS_MANAGER_ROLE,
+  SYSTEM_MANAGER_ROLE,
+  ADMIN_ROLE,
+  LEGACY_SYSTEM_ADMIN_ROLE,
+} from "@/lib/auth/roles";
 
 export type OpsDnItemInput = {
   description: string;
@@ -26,14 +35,20 @@ export type CreateOpsDnInput = {
   projectId?: string | null;
   foremanId: string;
   noteDate: Date;
+  noteTime?: string | null;
   clientName: string;
   address?: string | null;
   vehicleNumber?: string | null;
   driverName?: string | null;
   notes?: string | null;
+  price?: number | null;
+  transportCost?: number | null;
+  financialNotes?: string | null;
   items?: OpsDnItemInput[];
   foremanSignatureUrl?: string | null;
   foremanSignedName?: string | null;
+  clientSignatureUrl?: string | null;
+  clientSignedName?: string | null;
   createdById: string;
 };
 
@@ -65,13 +80,18 @@ function mapNote(row: any) {
     sequenceNumber: row.sequenceNumber,
     status: row.status as OpsDeliveryNoteStatus,
     projectId: row.projectId,
+    createdById: row.createdById,
     clientName: row.clientName,
     address: row.address,
     foremanId: row.foremanId,
     noteDate: row.noteDate.toISOString().slice(0, 10),
+    noteTime: row.noteTime ?? null,
     vehicleNumber: row.vehicleNumber,
     driverName: row.driverName,
     notes: row.notes,
+    price: row.price != null ? Number(row.price) : null,
+    transportCost: row.transportCost != null ? Number(row.transportCost) : null,
+    financialNotes: row.financialNotes ?? null,
     foremanSignatureUrl: row.foremanSignatureUrl,
     foremanSignedAt: row.foremanSignedAt?.toISOString() ?? null,
     foremanSignedName: row.foremanSignedName,
@@ -158,6 +178,91 @@ async function notifyUsers(
   });
 }
 
+async function creatorDocLink(createdById: string, noteId: string) {
+  const u = await prisma.user.findUnique({
+    where: { id: createdById },
+    select: { role: true },
+  });
+  if (isTruckDriverRole(u?.role)) return `/driver/delivery-notes/${noteId}`;
+  return `/field/delivery-notes/${noteId}`;
+}
+
+/** Ensure User has a linked Employee (required FK on OpsDeliveryNote.foremanId) */
+export async function ensureDriverEmployee(opts: {
+  userId: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+}): Promise<string> {
+  const existing = await prisma.employee.findUnique({
+    where: { userId: opts.userId },
+  });
+  if (existing && !existing.isDeleted) return existing.id;
+
+  const parts = opts.name.trim().split(/\s+/);
+  const firstName = parts[0] || "נהג";
+  const lastName = parts.slice(1).join(" ") || "משאית";
+  const email = opts.email || `driver-${opts.userId.slice(0, 8)}@local`;
+
+  if (existing?.isDeleted) {
+    const row = await prisma.employee.update({
+      where: { id: existing.id },
+      data: {
+        isDeleted: false,
+        deletedAt: null,
+        status: "active",
+        firstName,
+        lastName,
+        phone: opts.phone || existing.phone || "000",
+      },
+    });
+    return row.id;
+  }
+
+  const byEmail = await prisma.employee.findUnique({ where: { email } });
+  if (byEmail) {
+    const row = await prisma.employee.update({
+      where: { id: byEmail.id },
+      data: { userId: opts.userId, isDeleted: false, deletedAt: null, status: "active" },
+    });
+    return row.id;
+  }
+
+  const row = await prisma.employee.create({
+    data: {
+      firstName,
+      lastName,
+      phone: opts.phone || "000",
+      email,
+      role: "worker",
+      status: "active",
+      joinedAt: new Date(),
+      userId: opts.userId,
+    },
+  });
+  return row.id;
+}
+
+/** System Manager + Ops Manager users — any one may approve */
+export async function resolveDriverDnApproverIds(): Promise<string[]> {
+  const users = await prisma.user.findMany({
+    where: {
+      role: {
+        in: [
+          SYSTEM_MANAGER_ROLE,
+          ADMIN_ROLE,
+          "admin",
+          LEGACY_SYSTEM_ADMIN_ROLE,
+          OPERATIONS_MANAGER_ROLE,
+        ],
+      },
+      passwordHash: { not: null },
+    },
+    select: { id: true },
+  });
+  return users.map((u) => u.id);
+}
+
 export const OpsDeliveryNotesRepository = {
   async getById(id: string) {
     const row = await prisma.opsDeliveryNote.findFirst({
@@ -169,6 +274,7 @@ export const OpsDeliveryNotesRepository = {
 
   async list(filters: {
     foremanId?: string;
+    createdById?: string;
     projectId?: string;
     status?: OpsDeliveryNoteStatus;
     take?: number;
@@ -176,6 +282,7 @@ export const OpsDeliveryNotesRepository = {
   }) {
     const where: any = { deletedAt: null };
     if (filters.foremanId) where.foremanId = filters.foremanId;
+    if (filters.createdById) where.createdById = filters.createdById;
     if (filters.projectId) where.projectId = filters.projectId;
     if (filters.status) where.status = filters.status;
 
@@ -195,7 +302,9 @@ export const OpsDeliveryNotesRepository = {
       documentNumber: row.documentNumber,
       status: row.status,
       noteDate: row.noteDate.toISOString().slice(0, 10),
+      noteTime: row.noteTime ?? null,
       clientName: row.clientName,
+      address: row.address,
       project: row.project,
       foreman: row.foreman
         ? { id: row.foreman.id, name: `${row.foreman.firstName} ${row.foreman.lastName}` }
@@ -214,14 +323,21 @@ export const OpsDeliveryNotesRepository = {
         projectId: input.projectId ?? null,
         foremanId: input.foremanId,
         noteDate: input.noteDate,
+        noteTime: input.noteTime ?? null,
         clientName: input.clientName,
         address: input.address ?? null,
         vehicleNumber: input.vehicleNumber ?? null,
         driverName: input.driverName ?? null,
         notes: input.notes ?? null,
+        price: input.price ?? null,
+        transportCost: input.transportCost ?? null,
+        financialNotes: input.financialNotes ?? null,
         foremanSignatureUrl: input.foremanSignatureUrl ?? null,
         foremanSignedName: input.foremanSignedName ?? null,
         foremanSignedAt: input.foremanSignatureUrl ? new Date() : null,
+        clientSignatureUrl: input.clientSignatureUrl ?? null,
+        clientSignedName: input.clientSignedName ?? null,
+        clientSignedAt: input.clientSignatureUrl ? new Date() : null,
         createdById: input.createdById,
         updatedById: input.createdById,
         items: {
@@ -238,6 +354,23 @@ export const OpsDeliveryNotesRepository = {
     });
 
     await addEvent(row.id, "created", `נוצרה תעודת משלוח ${documentNumber}`, input.createdById);
+    await AuditRepository.log({
+      action: "CREATE",
+      entityType: "OpsDeliveryNote",
+      entityId: row.id,
+      userId: input.createdById,
+      metadata: { action: "created", documentNumber },
+    });
+    if (row.projectId) {
+      await syncOpsDeliveryNoteArchiveDocument({
+        opsDeliveryNoteId: row.id,
+        projectId: row.projectId,
+        documentNumber,
+        status: "draft",
+        userId: input.createdById,
+        bumpVersion: false,
+      }).catch(() => undefined);
+    }
     return mapNote(row);
   },
 
@@ -269,14 +402,21 @@ export const OpsDeliveryNotesRepository = {
         data: {
           projectId: input.projectId,
           noteDate: input.noteDate,
+          noteTime: input.noteTime,
           clientName: input.clientName,
           address: input.address,
           vehicleNumber: input.vehicleNumber,
           driverName: input.driverName,
           notes: input.notes,
+          price: input.price,
+          transportCost: input.transportCost,
+          financialNotes: input.financialNotes,
           foremanSignatureUrl: input.foremanSignatureUrl,
           foremanSignedName: input.foremanSignedName,
           foremanSignedAt: input.foremanSignatureUrl ? new Date() : undefined,
+          clientSignatureUrl: input.clientSignatureUrl,
+          clientSignedName: input.clientSignedName,
+          clientSignedAt: input.clientSignatureUrl ? new Date() : undefined,
           updatedById: input.updatedById,
           currentVersion: { increment: 1 },
           status: existing.status === "revision" ? "draft" : undefined,
@@ -285,7 +425,25 @@ export const OpsDeliveryNotesRepository = {
     });
 
     await addEvent(id, "updated", "המסמך עודכן", input.updatedById);
-    return this.getById(id);
+    await AuditRepository.log({
+      action: "UPDATE",
+      entityType: "OpsDeliveryNote",
+      entityId: id,
+      userId: input.updatedById,
+      metadata: { action: "updated" },
+    });
+    const updated = await this.getById(id);
+    if (updated?.projectId) {
+      await syncOpsDeliveryNoteArchiveDocument({
+        opsDeliveryNoteId: id,
+        projectId: updated.projectId,
+        documentNumber: updated.documentNumber,
+        status: updated.status,
+        userId: input.updatedById,
+        bumpVersion: true,
+      }).catch(() => undefined);
+    }
+    return updated;
   },
 
   async softDelete(id: string, actorId: string) {
@@ -342,13 +500,30 @@ export const OpsDeliveryNotesRepository = {
     });
 
     await addEvent(id, "submitted", "נשלחה לאישור", actorId);
+    await AuditRepository.log({
+      action: "UPDATE",
+      entityType: "OpsDeliveryNote",
+      entityId: id,
+      userId: actorId,
+      metadata: { action: "submitted", approverIds },
+    });
     await notifyUsers(
       approverIds,
       "תעודת משלוח ממתינה לאישור",
       `${existing.documentNumber} ממתינה לאישורך`,
-      `/approvals`,
+      `/operations/approvals`,
       existing.projectId
     );
+    if (existing.projectId) {
+      await syncOpsDeliveryNoteArchiveDocument({
+        opsDeliveryNoteId: id,
+        projectId: existing.projectId,
+        documentNumber: existing.documentNumber,
+        status: "pending_approval",
+        userId: actorId,
+        bumpVersion: true,
+      }).catch(() => undefined);
+    }
     return this.getById(id);
   },
 
@@ -369,6 +544,8 @@ export const OpsDeliveryNotesRepository = {
     );
     if (!mine) throw new Error("אין בקשת אישור ממתינה עבורך");
 
+    const creatorLink = await creatorDocLink(existing.createdById, id);
+
     if (decision === "rejected") {
       if (!comment?.trim()) throw new Error("חובה לרשום סיבה להחזרה לתיקון");
       await prisma.$transaction(async (tx) => {
@@ -386,38 +563,64 @@ export const OpsDeliveryNotesRepository = {
         });
       });
       await addEvent(id, "returned", `הוחזרה לתיקון: ${comment}`, approverId);
+      await AuditRepository.log({
+        action: "UPDATE",
+        entityType: "OpsDeliveryNote",
+        entityId: id,
+        userId: approverId,
+        metadata: { action: "rejected", comment },
+      });
       await notifyUsers(
         [existing.createdById],
-        "תעודת משלוח הוחזרה לתיקון",
+        "תעודת משלוח נדחתה",
         `${existing.documentNumber}: ${comment}`,
-        `/field/delivery-notes/${id}`,
+        creatorLink,
         existing.projectId
       );
       return this.getById(id);
     }
 
-    await prisma.opsDeliveryNoteApproval.update({
-      where: { id: mine.id },
-      data: { status: "approved", comment: comment ?? null, decidedAt: new Date() },
-    });
-
-    const pending = await prisma.opsDeliveryNoteApproval.count({
-      where: { opsDeliveryNoteId: id, status: "pending" },
-    });
-
-    if (pending === 0) {
-      await prisma.opsDeliveryNote.update({
+    // Any-one approval: first approver wins, cancel remaining pending
+    await prisma.$transaction(async (tx) => {
+      await tx.opsDeliveryNoteApproval.update({
+        where: { id: mine.id },
+        data: { status: "approved", comment: comment ?? null, decidedAt: new Date() },
+      });
+      await tx.opsDeliveryNoteApproval.updateMany({
+        where: { opsDeliveryNoteId: id, status: "pending" },
+        data: { status: "cancelled" },
+      });
+      await tx.opsDeliveryNote.update({
         where: { id },
         data: { status: "approved", updatedById: approverId },
       });
-      await addEvent(id, "approved", "התעודה אושרה", approverId);
-      await notifyUsers(
-        [existing.createdById],
-        "תעודת משלוח אושרה",
-        `${existing.documentNumber} אושרה`,
-        `/field/delivery-notes/${id}`,
-        existing.projectId
-      );
+    });
+
+    await addEvent(id, "approved", "התעודה אושרה", approverId);
+    await AuditRepository.log({
+      action: "UPDATE",
+      entityType: "OpsDeliveryNote",
+      entityId: id,
+      userId: approverId,
+      metadata: { action: "approved", mode: "any_one" },
+    });
+    await notifyUsers(
+      [existing.createdById],
+      "תעודת משלוח אושרה",
+      `${existing.documentNumber} אושרה`,
+      creatorLink,
+      existing.projectId
+    );
+
+    if (existing.projectId) {
+      await syncOpsDeliveryNoteArchiveDocument({
+        opsDeliveryNoteId: id,
+        projectId: existing.projectId,
+        documentNumber: existing.documentNumber,
+        status: "approved",
+        userId: approverId,
+        bumpVersion: true,
+      }).catch(() => undefined);
     }
 
     return this.getById(id);
@@ -606,13 +809,15 @@ export const OpsDeliveryNotesRepository = {
         device: opts.device,
         linkPublicId: token.publicId,
         verificationId,
+        clientName: note.clientName,
+        clientAddress: note.address,
       });
     }
 
     await notifyUsers(
       [note.createdById, note.updatedById],
       "הלקוח חתם על תעודת משלוח",
-      `${note.documentNumber} נחתמה ע״י ${opts.signerName}`,
+      `${note.documentNumber} נחתם על ידי הלקוח (${opts.signerName})`,
       signedViewPath,
       note.projectId
     );
@@ -649,8 +854,16 @@ export const OpsDeliveryNotesRepository = {
         documentId: r.opsDeliveryNote.id,
         documentNumber: r.opsDeliveryNote.documentNumber,
         project: r.opsDeliveryNote.project,
-        foremanName: `${r.opsDeliveryNote.foreman.firstName} ${r.opsDeliveryNote.foreman.lastName}`,
+        projectName: r.opsDeliveryNote.project?.name || "—",
+        destination:
+          r.opsDeliveryNote.clientName ||
+          r.opsDeliveryNote.address ||
+          "—",
+        foremanName: r.opsDeliveryNote.foreman
+          ? `${r.opsDeliveryNote.foreman.firstName} ${r.opsDeliveryNote.foreman.lastName}`
+          : r.opsDeliveryNote.driverName || "נהג",
         workDate: r.opsDeliveryNote.noteDate.toISOString().slice(0, 10),
+        notes: r.opsDeliveryNote.notes,
         sentAt: r.sentAt.toISOString(),
         status: r.opsDeliveryNote.status,
       }));
@@ -674,7 +887,7 @@ export const OpsDeliveryNotesRepository = {
     if (!isDocEditableStatus(existing.status)) {
       throw new Error("לא ניתן להעלות קבצים במצב הנוכחי");
     }
-    return prisma.opsDeliveryNoteMedia.create({
+    const row = await prisma.opsDeliveryNoteMedia.create({
       data: {
         opsDeliveryNoteId: id,
         name: media.name,
@@ -685,5 +898,16 @@ export const OpsDeliveryNotesRepository = {
         stage: media.stage ?? "other",
       },
     });
+    if (existing.projectId) {
+      await syncOpsDeliveryNoteArchiveDocument({
+        opsDeliveryNoteId: id,
+        projectId: existing.projectId,
+        documentNumber: existing.documentNumber,
+        status: existing.status,
+        userId: existing.updatedById || existing.createdById,
+        bumpVersion: true,
+      }).catch(() => undefined);
+    }
+    return row;
   },
 };

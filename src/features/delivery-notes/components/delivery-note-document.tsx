@@ -4,7 +4,10 @@ import type { DeliveryNote } from "@/types";
 import { formatDate, formatNumber } from "@/utils/format";
 import { COMPANY_PROFILE } from "@/config/company";
 
-/** Classic Israeli delivery-note print layout — qty | unit | description | notes */
+/**
+ * @deprecated Legacy layout — use DeliveryNoteTemplate from @/lib/pdf-engine.
+ * Kept temporarily for any non-print previews; print routes use the central engine.
+ */
 export function DeliveryNoteDocument({ note }: { note: DeliveryNote }) {
   const blue = COMPANY_PROFILE.brandBlue;
 

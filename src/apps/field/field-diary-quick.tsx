@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Plus, Trash2 } from "lucide-react";
 import { fieldService } from "@/features/field/services/field.service";
 import { workManagementService } from "@/features/work-management/services/work-management.service";
 import type { WorkOrder } from "@/features/work-management/types";
@@ -12,17 +13,54 @@ import {
   FieldAttendanceGate,
   requireAttendanceForAction,
 } from "@/apps/field/field-attendance-gate";
-import { pickDefaultApproverIds } from "@/lib/approvers/default-approvers";
+import { FieldApproverPicker } from "@/apps/field/field-approver-picker";
+import {
+  DIARY_PHOTO_STAGES,
+  FieldMediaCapture,
+} from "@/apps/shared/field-media-capture";
+import { SignaturePad } from "@/features/delivery-notes/components/signature-pad";
 import { field } from "@/apps/field/field-ui";
 import { cn } from "@/lib/utils";
 
-function lines(text: string) {
-  return text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+const OTHER = "__OTHER__";
+
+function hoursBetween(start?: string, end?: string): number {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return 0;
+  let mins = eh * 60 + em - (sh * 60 + sm);
+  if (mins < 0) mins += 24 * 60;
+  return Math.round((mins / 60) * 100) / 100;
 }
 
+let keySeq = 0;
+const nextKey = () => `w${++keySeq}`;
+
+type WorkerRow = {
+  key: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  hours: number;
+  notes: string;
+};
+
+function emptyWorker(): WorkerRow {
+  return {
+    key: nextKey(),
+    name: "",
+    startTime: "07:00",
+    endTime: "16:00",
+    hours: 9,
+    notes: "",
+  };
+}
+
+/**
+ * Site Manager work diary — mobile first.
+ * Core fields + extensible optional sections (equipment/materials) for future growth.
+ */
 export function FieldDiaryQuick() {
   const router = useRouter();
   const params = useSearchParams();
@@ -34,29 +72,33 @@ export function FieldDiaryQuick() {
   >([]);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [orderId, setOrderId] = useState(preselect);
-  const [projectId, setProjectId] = useState("");
+  const [projectChoice, setProjectChoice] = useState("");
+  const [customSiteName, setCustomSiteName] = useState("");
   const [workDate, setWorkDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
-  const [address, setAddress] = useState("");
-  const [workType, setWorkType] = useState("");
+  const [weather, setWeather] = useState("");
   const [workSummary, setWorkSummary] = useState("");
-  const [workersText, setWorkersText] = useState("");
-  const [hoursText, setHoursText] = useState("");
-  const [equipmentText, setEquipmentText] = useState("");
-  const [vehiclesText, setVehiclesText] = useState("");
-  const [materialsText, setMaterialsText] = useState("");
   const [notes, setNotes] = useState("");
+  const [workers, setWorkers] = useState<WorkerRow[]>([emptyWorker()]);
+  const [showExtra, setShowExtra] = useState(false);
+  const [equipmentText, setEquipmentText] = useState("");
+  const [materialsText, setMaterialsText] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
+  const [photoStage, setPhotoStage] = useState("site");
   const [files, setFiles] = useState<File[]>([]);
+  const [signature, setSignature] = useState<string | null>(null);
   const [revisionNote, setRevisionNote] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [gateOpen, setGateOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingMode, setPendingMode] = useState<"draft" | "submit" | null>(
     null
   );
   const [allowSkip, setAllowSkip] = useState(true);
+
+  const isOther = projectChoice === OTHER;
 
   useEffect(() => {
     Promise.all([
@@ -73,35 +115,36 @@ export function FieldDiaryQuick() {
     workDiariesService
       .get(reviseId)
       .then((d) => {
-        setProjectId(d.projectId || "");
+        if (d.customSiteName) {
+          setProjectChoice(OTHER);
+          setCustomSiteName(d.customSiteName);
+        } else {
+          setProjectChoice(d.projectId || "");
+        }
         setWorkDate(
           d.workDate
             ? String(d.workDate).slice(0, 10)
             : new Date().toISOString().slice(0, 10)
         );
-        setAddress(d.address || "");
-        setWorkType(d.workType || "");
+        setWeather(d.weather || "");
         setWorkSummary(d.workSummary || "");
         setNotes(d.notes || "");
-        setWorkersText(
-          (d.workers || [])
-            .map((w: any) =>
-              w.hours ? `${w.name}|${w.hours}` : w.name || ""
-            )
-            .filter(Boolean)
-            .join("\n")
-        );
+        const rows = (d.workers || []).map((w: any) => ({
+          key: nextKey(),
+          name: w.name || "",
+          startTime: w.startTime || "07:00",
+          endTime: w.endTime || "16:00",
+          hours:
+            typeof w.hours === "number"
+              ? w.hours
+              : hoursBetween(w.startTime, w.endTime),
+          notes: w.notes || "",
+        }));
+        setWorkers(rows.length ? rows : [emptyWorker()]);
         setEquipmentText(
           (d.equipment || [])
             .map((e: any) => e.name)
-            .filter((n: string) => n && !String(n).startsWith("רכב:"))
-            .join("\n")
-        );
-        setVehiclesText(
-          (d.equipment || [])
-            .map((e: any) => e.name)
-            .filter((n: string) => String(n).startsWith("רכב:"))
-            .map((n: string) => n.replace(/^רכב:\s*/, ""))
+            .filter(Boolean)
             .join("\n")
         );
         setMaterialsText(
@@ -113,9 +156,13 @@ export function FieldDiaryQuick() {
             )
             .join("\n")
         );
+        if ((d.equipment || []).length || (d.materials || []).length) {
+          setShowExtra(true);
+        }
         setRevisionNote(
           d.rejectionComment || d.revisionComment || "הוחזר לתיקון"
         );
+        if (d.foremanSignatureUrl) setSignature(d.foremanSignatureUrl);
       })
       .catch((e) => setError(e.message));
   }, [reviseId]);
@@ -127,30 +174,50 @@ export function FieldDiaryQuick() {
 
   useEffect(() => {
     if (!selected || reviseId) return;
-    setProjectId(selected.projectId);
+    setProjectChoice(selected.projectId);
     setWorkDate(selected.date.slice(0, 10));
-    setAddress(selected.address || selected.project?.location || "");
-    setWorkersText(
-      selected.workers
-        .map((w) => (w.hours ? `${w.name}|${w.hours}` : w.name))
-        .join("\n")
-    );
-    setVehiclesText(
-      (selected.vehicles || [])
-        .map((v) => [v.name, v.plate].filter(Boolean).join(" "))
-        .join("\n")
-    );
+    const rows = selected.workers.map((w) => ({
+      key: nextKey(),
+      name: w.name,
+      startTime: w.startTime || "07:00",
+      endTime: w.endTime || "16:00",
+      hours:
+        w.hours ||
+        hoursBetween(w.startTime || undefined, w.endTime || undefined) ||
+        0,
+      notes: "",
+    }));
+    if (rows.length) setWorkers(rows);
   }, [selected, reviseId]);
 
-  useEffect(() => {
-    if (!projectId || selected || reviseId) return;
-    const p = projects.find((x) => x.id === projectId);
-    if (p?.location && !address) setAddress(p.location);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  function updateWorker(key: string, patch: Partial<WorkerRow>) {
+    setWorkers((prev) =>
+      prev.map((w) => {
+        if (w.key !== key) return w;
+        const next = { ...w, ...patch };
+        if (patch.startTime !== undefined || patch.endTime !== undefined) {
+          next.hours = hoursBetween(next.startTime, next.endTime);
+        }
+        return next;
+      })
+    );
+  }
 
   async function uploadMedia(diaryId: string) {
-    for (const file of [...photos, ...files].slice(0, 12)) {
+    for (const file of photos.slice(0, 12)) {
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("stage", photoStage);
+        await fetch(`/api/field/work-diaries/${diaryId}/media`, {
+          method: "POST",
+          body: form,
+        });
+      } catch {
+        /* optional */
+      }
+    }
+    for (const file of files.slice(0, 8)) {
       try {
         const form = new FormData();
         form.append("file", file);
@@ -165,40 +232,53 @@ export function FieldDiaryQuick() {
   }
 
   function buildPayload() {
-    const workers = lines(workersText).map((line) => {
-      const [name, hrs] = line.split("|").map((s) => s.trim());
-      return {
-        name: name || line,
-        hours: Number(hrs) || Number(hoursText) || 0,
-      };
-    });
-    const equipment = [
-      ...lines(equipmentText).map((name) => ({ name })),
-      ...lines(vehiclesText).map((name) => ({ name: `רכב: ${name}` })),
-    ];
-    const materials = lines(materialsText).map((line) => {
-      const [name, qty, unit] = line.split("|").map((s) => s.trim());
-      return {
-        name: name || line,
-        quantity: Number(qty) || 1,
-        unit: unit || "יח'",
-      };
-    });
+    const equipment = equipmentText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((name) => ({ name }));
+    const materials = materialsText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [name, qty, unit] = line.split("|").map((s) => s.trim());
+        return {
+          name: name || line,
+          quantity: Number(qty) || 1,
+          unit: unit || "יח'",
+        };
+      });
+
+    const workerPayload = workers
+      .filter((w) => w.name.trim())
+      .map((w) => ({
+        name: w.name.trim(),
+        startTime: w.startTime || null,
+        endTime: w.endTime || null,
+        hours: w.hours || hoursBetween(w.startTime, w.endTime),
+        notes: w.notes.trim() || null,
+      }));
+
+    const site = customSiteName.trim();
     return {
-      projectId,
+      projectId: isOther ? null : projectChoice || null,
+      customSiteName: isOther ? site : null,
       workDate,
-      workType: workType.trim() || null,
+      weather: weather.trim() || null,
       workSummary: workSummary.trim(),
-      address: address.trim() || null,
+      address: isOther ? site || null : null,
       notes: notes.trim() || null,
-      clientName:
-        selected?.clientName ||
-        selected?.project?.contractor ||
-        projects.find((p) => p.id === projectId)?.contractor ||
-        null,
-      workers,
+      clientName: isOther
+        ? site || null
+        : selected?.clientName ||
+          selected?.project?.contractor ||
+          projects.find((p) => p.id === projectChoice)?.contractor ||
+          null,
+      workers: workerPayload,
       equipment,
       materials,
+      foremanSignatureUrl: signature,
       workItems: workSummary.trim()
         ? [{ description: workSummary.trim(), quantity: 1, unit: "יח'" }]
         : [],
@@ -207,12 +287,22 @@ export function FieldDiaryQuick() {
 
   async function requestSave(mode: "draft" | "submit") {
     setError("");
-    if (!reviseId && !projectId) {
-      setError("יש לבחור פרויקט");
-      return;
+    if (!reviseId) {
+      if (!projectChoice) {
+        setError("יש לבחור פרויקט או ״אחר״");
+        return;
+      }
+      if (isOther && !customSiteName.trim()) {
+        setError("הזינו שם מקום / אתר");
+        return;
+      }
     }
     if (!workSummary.trim()) {
       setError("כתוב מה בוצע");
+      return;
+    }
+    if (mode === "submit" && !signature) {
+      setError("יש לחתום לפני שליחה לאישור");
       return;
     }
     if (mode === "submit") {
@@ -227,11 +317,13 @@ export function FieldDiaryQuick() {
       } catch {
         /* continue */
       }
+      setPickerOpen(true);
+      return;
     }
     await doSave(mode);
   }
 
-  async function doSave(mode: "draft" | "submit") {
+  async function doSave(mode: "draft" | "submit", approverIds?: string[]) {
     setBusy(true);
     setError("");
     try {
@@ -249,11 +341,9 @@ export function FieldDiaryQuick() {
       if (!diaryId) throw new Error("שגיאה ביצירת יומן");
 
       if (mode === "submit") {
-        const approvers = await workDiariesService.listApprovers();
-        const approverIds = pickDefaultApproverIds(approvers.items);
-        if (!approverIds.length) throw new Error("אין מאשרים במערכת");
+        if (!approverIds?.length) throw new Error("יש לבחור לפחות מאשר אחד");
         await workDiariesService.submit(diaryId, approverIds);
-        router.replace("/field/approvals");
+        router.replace("/field/work-diaries");
       } else {
         router.replace("/field/work-diaries");
       }
@@ -262,6 +352,7 @@ export function FieldDiaryQuick() {
     } finally {
       setBusy(false);
       setPendingMode(null);
+      setPickerOpen(false);
     }
   }
 
@@ -280,13 +371,13 @@ export function FieldDiaryQuick() {
       <div className="space-y-5">
         {!reviseId && (
           <>
-            <label className="block space-y-2">
+            <div className="space-y-2">
               <span className="text-lg font-bold text-[#111827]">פרויקט</span>
               <select
-                value={projectId}
+                value={projectChoice}
                 onChange={(e) => {
-                  setProjectId(e.target.value);
-                  if (orderId) {
+                  setProjectChoice(e.target.value);
+                  if (orderId && e.target.value !== OTHER) {
                     const o = orders.find((x) => x.id === orderId);
                     if (o && o.projectId !== e.target.value) setOrderId("");
                   }
@@ -300,29 +391,59 @@ export function FieldDiaryQuick() {
                     {p.name}
                   </option>
                 ))}
+                <option value={OTHER}>➕ אחר</option>
               </select>
-            </label>
+            </div>
 
-            <label className="block space-y-2">
-              <span className="text-lg font-bold text-[#111827]">
-                סידור עבודה (אופציונלי)
-              </span>
-              <select
-                value={orderId}
-                onChange={(e) => setOrderId(e.target.value)}
-                className={field.input}
-              >
-                <option value="">ללא סידור / יצירה עצמאית</option>
-                {orders.map((order) => (
-                  <option key={order.id} value={order.id}>
-                    {order.project?.name || "פרויקט"} ·{" "}
-                    {new Date(order.date).toLocaleDateString("he-IL")} ·{" "}
-                    {STATUS_LABELS[order.status]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {isOther && (
+              <label className="block space-y-2">
+                <span className="text-lg font-bold text-[#111827]">
+                  שם המקום / האתר
+                </span>
+                <input
+                  value={customSiteName}
+                  onChange={(e) => setCustomSiteName(e.target.value)}
+                  placeholder="אתר זמני או מקום שאינו בפרויקטים"
+                  className={field.input}
+                />
+              </label>
+            )}
+
+            {!isOther && (
+              <label className="block space-y-2">
+                <span className="text-lg font-bold text-[#111827]">
+                  סידור עבודה (אופציונלי)
+                </span>
+                <select
+                  value={orderId}
+                  onChange={(e) => setOrderId(e.target.value)}
+                  className={field.input}
+                >
+                  <option value="">ללא סידור</option>
+                  {orders.map((order) => (
+                    <option key={order.id} value={order.id}>
+                      {order.project?.name || "פרויקט"} ·{" "}
+                      {new Date(order.date).toLocaleDateString("he-IL")} ·{" "}
+                      {STATUS_LABELS[order.status]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </>
+        )}
+
+        {reviseId && isOther && (
+          <label className="block space-y-2">
+            <span className="text-lg font-bold text-[#111827]">
+              שם המקום / האתר
+            </span>
+            <input
+              value={customSiteName}
+              onChange={(e) => setCustomSiteName(e.target.value)}
+              className={field.input}
+            />
+          </label>
         )}
 
         <label className="block space-y-2">
@@ -336,27 +457,9 @@ export function FieldDiaryQuick() {
         </label>
 
         <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">מקום עבודה</span>
-          <input
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="כתובת / אתר"
-            className={field.input}
-          />
-        </label>
-
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">סוג עבודה</span>
-          <input
-            value={workType}
-            onChange={(e) => setWorkType(e.target.value)}
-            placeholder="חשמל · תאורה · לוחות"
-            className={field.input}
-          />
-        </label>
-
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">מה בוצע?</span>
+          <span className="text-lg font-bold text-[#111827]">
+            תיאור העבודה שבוצעה
+          </span>
           <textarea
             value={workSummary}
             onChange={(e) => setWorkSummary(e.target.value)}
@@ -368,64 +471,111 @@ export function FieldDiaryQuick() {
 
         <label className="block space-y-2">
           <span className="text-lg font-bold text-[#111827]">
-            עובדים (שורה: שם או שם|שעות)
-          </span>
-          <textarea
-            value={workersText}
-            onChange={(e) => setWorkersText(e.target.value)}
-            rows={3}
-            placeholder={"ישראל ישראלי|8\nדוד כהן|6"}
-            className={field.input}
-          />
-        </label>
-
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">
-            שעות עבודה (ברירת מחדל לשורה בלי שעות)
+            מזג אוויר (אופציונלי)
           </span>
           <input
-            value={hoursText}
-            onChange={(e) => setHoursText(e.target.value)}
-            inputMode="decimal"
-            placeholder="8"
+            value={weather}
+            onChange={(e) => setWeather(e.target.value)}
+            placeholder="בהיר · מעונן · גשום…"
             className={field.input}
           />
         </label>
 
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">ציוד</span>
-          <textarea
-            value={equipmentText}
-            onChange={(e) => setEquipmentText(e.target.value)}
-            rows={2}
-            placeholder="שורה לכל פריט"
-            className={field.input}
-          />
-        </label>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-lg font-bold text-[#111827]">עובדים</span>
+            <button
+              type="button"
+              onClick={() => setWorkers((w) => [...w, emptyWorker()])}
+              className="inline-flex min-h-12 items-center gap-1 rounded-2xl bg-slate-900 px-4 text-base font-bold text-white"
+            >
+              <Plus className="h-5 w-5" />
+              הוסף
+            </button>
+          </div>
 
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">רכבים</span>
-          <textarea
-            value={vehiclesText}
-            onChange={(e) => setVehiclesText(e.target.value)}
-            rows={2}
-            placeholder="מספר רכב / תיאור"
-            className={field.input}
-          />
-        </label>
-
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">
-            חומרים (שורה: שם|כמות|יחידה)
-          </span>
-          <textarea
-            value={materialsText}
-            onChange={(e) => setMaterialsText(e.target.value)}
-            rows={2}
-            placeholder={"כבל 3×2.5|50|מ'"}
-            className={field.input}
-          />
-        </label>
+          {workers.map((w) => (
+            <div
+              key={w.key}
+              className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+            >
+              <div className="flex items-start gap-2">
+                <input
+                  value={w.name}
+                  onChange={(e) => updateWorker(w.key, { name: e.target.value })}
+                  placeholder="שם העובד"
+                  className={cn(field.input, "flex-1")}
+                />
+                {workers.length > 1 && (
+                  <button
+                    type="button"
+                    aria-label="הסר עובד"
+                    onClick={() =>
+                      setWorkers((prev) => prev.filter((x) => x.key !== w.key))
+                    }
+                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block space-y-1">
+                  <span className="text-sm font-bold text-slate-600">התחלה</span>
+                  <input
+                    type="time"
+                    value={w.startTime}
+                    onChange={(e) =>
+                      updateWorker(w.key, { startTime: e.target.value })
+                    }
+                    className={field.input}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-sm font-bold text-slate-600">סיום</span>
+                  <input
+                    type="time"
+                    value={w.endTime}
+                    onChange={(e) =>
+                      updateWorker(w.key, { endTime: e.target.value })
+                    }
+                    className={field.input}
+                  />
+                </label>
+              </div>
+              <label className="block space-y-1">
+                <span className="text-sm font-bold text-slate-600">
+                  סך שעות
+                </span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.25"
+                  value={w.hours || ""}
+                  onChange={(e) =>
+                    updateWorker(w.key, {
+                      hours: Number(e.target.value) || 0,
+                    })
+                  }
+                  className={field.input}
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-sm font-bold text-slate-600">
+                  הערות (אופציונלי)
+                </span>
+                <input
+                  value={w.notes}
+                  onChange={(e) =>
+                    updateWorker(w.key, { notes: e.target.value })
+                  }
+                  placeholder="הערה לעובד"
+                  className={field.input}
+                />
+              </label>
+            </div>
+          ))}
+        </div>
 
         <label className="block space-y-2">
           <span className="text-lg font-bold text-[#111827]">הערות</span>
@@ -440,22 +590,14 @@ export function FieldDiaryQuick() {
 
         {!reviseId && (
           <>
-            <label className="block space-y-2">
-              <span className="text-lg font-bold text-[#111827]">תמונות</span>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                multiple
-                onChange={(e) =>
-                  setPhotos(Array.from(e.target.files || []).slice(0, 8))
-                }
-                className="block w-full text-base text-[#6B7280] file:mr-3 file:min-h-12 file:rounded-xl file:border-0 file:bg-blue-600 file:px-4 file:py-3 file:font-bold file:text-white"
-              />
-              {photos.length > 0 && (
-                <p className="text-base text-[#6B7280]">{photos.length} תמונות</p>
-              )}
-            </label>
+            <FieldMediaCapture
+              label="תמונות"
+              files={photos}
+              onChange={setPhotos}
+              stage={photoStage}
+              onStageChange={setPhotoStage}
+              stages={DIARY_PHOTO_STAGES}
+            />
 
             <label className="block space-y-2">
               <span className="text-lg font-bold text-[#111827]">קבצים</span>
@@ -470,6 +612,51 @@ export function FieldDiaryQuick() {
               {files.length > 0 && (
                 <p className="text-base text-[#6B7280]">{files.length} קבצים</p>
               )}
+            </label>
+          </>
+        )}
+
+        <div className="space-y-2">
+          <span className="text-lg font-bold text-[#111827]">
+            חתימת יוצר המסמך
+          </span>
+          <p className="text-sm text-slate-500">
+            חובה לפני שליחה לאישור — חתמו באצבע על המסך
+          </p>
+          <SignaturePad value={signature} onChange={setSignature} height={160} />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowExtra((v) => !v)}
+          className="text-base font-bold text-slate-600 underline"
+        >
+          {showExtra ? "הסתר פרטים נוספים" : "פרטים נוספים (ציוד · חומרים)"}
+        </button>
+
+        {showExtra && (
+          <>
+            <label className="block space-y-2">
+              <span className="text-lg font-bold text-[#111827]">ציוד</span>
+              <textarea
+                value={equipmentText}
+                onChange={(e) => setEquipmentText(e.target.value)}
+                rows={2}
+                placeholder="שורה לכל פריט"
+                className={field.input}
+              />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-lg font-bold text-[#111827]">
+                חומרים (שם|כמות|יחידה)
+              </span>
+              <textarea
+                value={materialsText}
+                onChange={(e) => setMaterialsText(e.target.value)}
+                rows={2}
+                placeholder={"כבל 3×2.5|50|מ'"}
+                className={field.input}
+              />
             </label>
           </>
         )}
@@ -505,12 +692,20 @@ export function FieldDiaryQuick() {
         }}
         onSkip={() => {
           setGateOpen(false);
-          if (pendingMode) void doSave(pendingMode);
+          setPickerOpen(true);
         }}
         onCheckedIn={() => {
           setGateOpen(false);
-          if (pendingMode) void doSave(pendingMode);
+          setPickerOpen(true);
         }}
+      />
+
+      <FieldApproverPicker
+        open={pickerOpen}
+        projectId={isOther ? null : projectChoice || null}
+        busy={busy}
+        onCancel={() => setPickerOpen(false)}
+        onConfirm={(ids) => void doSave("submit", ids)}
       />
     </div>
   );

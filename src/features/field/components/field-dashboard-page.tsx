@@ -8,6 +8,8 @@ import {
   fieldService,
   type FieldDashboard,
 } from "@/features/field/services/field.service";
+import { detectDeviceMeta } from "@/lib/attendance/device-client";
+import { readGps } from "@/lib/attendance/gps-client";
 import "@/features/work-management/styles/work-management.css";
 
 export function FieldDashboardPage() {
@@ -38,8 +40,17 @@ export function FieldDashboardPage() {
     setBusy(true);
     setError(null);
     try {
-      if (data.checkedIn) await fieldService.checkOut();
-      else await fieldService.checkIn(projectId || undefined);
+      const gps = await readGps();
+      const device = detectDeviceMeta();
+      const meta = {
+        latitude: gps.latitude,
+        longitude: gps.longitude,
+        accuracyMeters: gps.accuracy,
+        deviceLabel: `${device.deviceType} · ${device.osName}`,
+        userAgent: device.userAgent,
+      };
+      if (data.checkedIn) await fieldService.checkOut(meta);
+      else await fieldService.checkIn({ ...meta, projectId: projectId || undefined });
       reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "שגיאה");

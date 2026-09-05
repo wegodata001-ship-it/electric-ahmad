@@ -2,26 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import {
-  BarChart3,
-  BookOpen,
-  ChevronDown,
-  ChevronLeft,
-  ClipboardList,
-  FileSpreadsheet,
-  FileText,
-  FolderOpen,
-  LayoutDashboard,
-  Receipt,
-  Table2,
-  Truck,
-} from "lucide-react";
+import { FileText } from "lucide-react";
 import { useToast } from "@/components/ui";
 import { invoicesWorkspaceService } from "@/features/partial-invoices/services/invoices-workspace.service";
 import { ProjectBoqPanel } from "@/features/projects/components/panels/project-boq-panel";
 import { ProjectDeliveryNotesPanel } from "@/features/projects/components/panels/project-delivery-notes-panel";
 import { ProjectWorkDiariesPanel } from "@/features/projects/components/panels/project-work-diaries-panel";
 import { ProjectDashboardPanel } from "@/apps/system/project-dashboard-panel";
+import {
+  ADMIN_PROJECT_MODULE_IDS,
+  ProjectModulesNavTree,
+  type ProjectModuleId,
+  type ProjectNavTreeStats,
+} from "@/features/projects/components/project-modules-nav-tree";
 import { cn } from "@/lib/utils";
 
 const ProjectInvoicesPage = dynamic(
@@ -48,40 +41,13 @@ const DocumentsHubV2Page = dynamic(
   { ssr: false, loading: () => <PanelLoading /> }
 );
 
-export type AdminModuleId =
-  | "summary"
-  | "boq"
-  | "performance"
-  | "invoices"
-  | "billing"
-  | "deliveries"
-  | "workDiaries"
-  | "documents"
-  | "reports";
+export type AdminModuleId = ProjectModuleId;
 
 type TreeProject = {
   id: string;
   name: string;
   contractor?: string;
 };
-
-type ModuleDef = {
-  id: AdminModuleId;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-};
-
-const MODULES: ModuleDef[] = [
-  { id: "summary", label: "סיכום פרויקט", icon: LayoutDashboard },
-  { id: "boq", label: "כתב כמויות", icon: ClipboardList },
-  { id: "performance", label: "דפי מדידה", icon: Table2 },
-  { id: "invoices", label: "חשבונות", icon: Receipt },
-  { id: "billing", label: "חשבוניות", icon: FileSpreadsheet },
-  { id: "deliveries", label: "תעודות משלוח", icon: Truck },
-  { id: "workDiaries", label: "יומני עבודה", icon: BookOpen },
-  { id: "documents", label: "מסמכים", icon: FolderOpen },
-  { id: "reports", label: "דוחות", icon: BarChart3 },
-];
 
 function PanelLoading() {
   return (
@@ -104,6 +70,7 @@ type WorkspaceProps = {
 
 /**
  * עץ פרויקט משותף — System / Operations / Project Manager.
+ * רשימת פרויקטים + גרף מודולים ויזואלי + תוכן מודול.
  * הבדלים בין תפקידים נאכפים בהרשאות (FE+BE), לא בשכפול UI.
  */
 export function AdminProjectWorkspace({
@@ -117,13 +84,13 @@ export function AdminProjectWorkspace({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [opsProjectId, setOpsProjectId] = useState<string | null>(null);
   const [activeModule, setActiveModule] = useState<AdminModuleId>("summary");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
-  const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
+  const [mobileProjectsOpen, setMobileProjectsOpen] = useState(false);
+  const [treeStats, setTreeStats] = useState<ProjectNavTreeStats | undefined>();
 
   const effectiveOpsProjectId = opsProjectId || selectedId;
 
-  // Restore tree state
+  // Restore workspace state
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -131,23 +98,21 @@ export function AdminProjectWorkspace({
       const saved = JSON.parse(raw) as {
         selectedId?: string;
         activeModule?: AdminModuleId;
-        expanded?: Record<string, boolean>;
       };
       if (saved.selectedId) setSelectedId(saved.selectedId);
       if (saved.activeModule) setActiveModule(saved.activeModule);
-      if (saved.expanded) setExpanded(saved.expanded);
     } catch {
       /* ignore */
     }
   }, [storageKey]);
 
-  // Persist
+  // Persist + URL sync
   useEffect(() => {
     if (!selectedId) return;
     try {
       localStorage.setItem(
         storageKey,
-        JSON.stringify({ selectedId, activeModule, expanded })
+        JSON.stringify({ selectedId, activeModule })
       );
     } catch {
       /* ignore */
@@ -157,7 +122,7 @@ export function AdminProjectWorkspace({
       module: activeModule,
     });
     window.history.replaceState(null, "", `${basePath}?${qs.toString()}`);
-  }, [selectedId, activeModule, expanded, basePath, storageKey]);
+  }, [selectedId, activeModule, basePath, storageKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,13 +150,6 @@ export function AdminProjectWorkspace({
           if (fromUrl && list.some((p) => p.id === fromUrl)) return fromUrl;
           return list[0]?.id ?? null;
         });
-        setExpanded((prev) => {
-          const next = { ...prev };
-          for (const p of list) {
-            if (next[p.id] === undefined) next[p.id] = true;
-          }
-          return next;
-        });
       })
       .catch((e) => toast.error(e.message))
       .finally(() => {
@@ -208,6 +166,34 @@ export function AdminProjectWorkspace({
     if (!opsProjectId) setOpsProjectId(selectedId);
   }, [selectedId, opsProjectId]);
 
+  // Optional stats for graph node labels (same API as invoices workspace)
+  useEffect(() => {
+    if (!selectedId) {
+      setTreeStats(undefined);
+      return;
+    }
+    let cancelled = false;
+    invoicesWorkspaceService
+      .getTree(selectedId)
+      .then((tree) => {
+        if (cancelled) return;
+        setTreeStats({
+          boqCount: tree.boqCount,
+          sheetCount: tree.sheets?.length,
+          invoiceCount: tree.invoices?.length,
+          documentCount: tree.documents?.length,
+          workDiaryCount: tree.workDiaries?.length ?? tree.workDiaryCount,
+          deliveryCount: tree.deliveries?.length ?? tree.deliveryCount,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setTreeStats(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   const selected = useMemo(
     () => projects.find((p) => p.id === selectedId) ?? null,
     [projects, selectedId]
@@ -215,20 +201,18 @@ export function AdminProjectWorkspace({
 
   const selectProject = useCallback((id: string) => {
     setSelectedId(id);
-    setExpanded((e) => ({ ...e, [id]: true }));
     setActiveModule("summary");
-    setMobileTreeOpen(false);
+    setMobileProjectsOpen(false);
   }, []);
 
-  const selectModule = useCallback((projectId: string, module: AdminModuleId) => {
-    setSelectedId(projectId);
+  const selectModule = useCallback((module: AdminModuleId) => {
     setActiveModule(module);
-    setExpanded((e) => ({ ...e, [projectId]: true }));
-    setMobileTreeOpen(false);
-  }, []);
-
-  const toggleExpand = useCallback((id: string) => {
-    setExpanded((e) => ({ ...e, [id]: !e[id] }));
+    setMobileProjectsOpen(false);
+    requestAnimationFrame(() => {
+      document
+        .getElementById("project-module-content")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }, []);
 
   if (loading) {
@@ -240,208 +224,161 @@ export function AdminProjectWorkspace({
   }
 
   return (
-    <div
-      className="flex h-[calc(100vh-3rem)] min-h-[480px] overflow-hidden rounded-2xl border border-slate-200 bg-white"
-      dir="rtl"
-      data-admin-workspace="project-tree"
-    >
-      {/* Tree — desktop always; mobile drawer */}
-      <aside
-        className={cn(
-          "z-20 flex w-72 shrink-0 flex-col border-l border-slate-200 bg-slate-50",
-          "max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:shadow-xl",
-          mobileTreeOpen ? "max-md:flex" : "max-md:hidden",
-          "md:relative md:flex"
-        )}
-      >
-        <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-black text-slate-900">עץ הפרויקט</h2>
-              <p className="text-[11px] text-slate-500">
-                {projects.length} פרויקטים · מרכז עבודה
-              </p>
-            </div>
+    <div className="space-y-4 pb-8 sm:space-y-6" dir="rtl" data-admin-workspace="project-tree">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">עץ פרויקט</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            בחרו פרויקט ומודול מהגרף — העבודה נשארת באותו מסך
+          </p>
+        </div>
+        <button
+          type="button"
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold md:hidden"
+          onClick={() => setMobileProjectsOpen(true)}
+        >
+          פרויקטים
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr] lg:gap-6">
+        {/* Project list only — modules live in the graph */}
+        <aside
+          className={cn(
+            "h-fit rounded-2xl border border-slate-200 bg-white p-3",
+            "lg:sticky lg:top-4",
+            "max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-30 max-md:w-72 max-md:overflow-y-auto max-md:shadow-xl",
+            mobileProjectsOpen ? "max-md:block" : "max-md:hidden",
+            "md:block"
+          )}
+        >
+          <div className="mb-2 flex items-center justify-between px-2">
+            <p className="text-xs font-semibold text-slate-400">פרויקטים</p>
             <button
               type="button"
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs md:hidden"
-              onClick={() => setMobileTreeOpen(false)}
+              className="rounded-lg border border-slate-200 px-2 py-0.5 text-xs md:hidden"
+              onClick={() => setMobileProjectsOpen(false)}
             >
               סגור
             </button>
           </div>
-        </div>
-
-        <div className="flex-1 space-y-1 overflow-y-auto p-2">
-          {projects.length === 0 && (
-            <p className="px-3 py-6 text-center text-sm text-slate-400">
-              אין פרויקטים
-            </p>
-          )}
-          {projects.map((p) => {
-            const isOpen = expanded[p.id] !== false;
-            const isSelected = selectedId === p.id;
-            return (
-              <div key={p.id} className="rounded-xl">
-                <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    onClick={() => toggleExpand(p.id)}
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700"
-                    aria-label={isOpen ? "כווץ" : "הרחב"}
-                  >
-                    {isOpen ? (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => selectProject(p.id)}
-                    className={cn(
-                      "min-w-0 flex-1 rounded-lg px-2 py-2 text-right transition-colors",
-                      isSelected
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-800 hover:bg-white"
-                    )}
-                  >
-                    <p className="truncate text-sm font-bold">📁 {p.name}</p>
-                    {p.contractor && (
-                      <p
-                        className={cn(
-                          "truncate text-[10px]",
-                          isSelected ? "text-slate-300" : "text-slate-500"
-                        )}
-                      >
-                        {p.contractor}
-                      </p>
-                    )}
-                  </button>
-                </div>
-
-                {isOpen && (
-                  <div className="mr-5 mt-0.5 space-y-0.5 border-r border-slate-200 pr-2">
-                    {MODULES.map((m) => {
-                      const Icon = m.icon;
-                      const active =
-                        selectedId === p.id && activeModule === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => selectModule(p.id, m.id)}
-                          className={cn(
-                            "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-right text-[13px] transition-colors",
-                            active
-                              ? "bg-blue-600 font-semibold text-white"
-                              : "text-slate-600 hover:bg-white hover:text-slate-900"
-                          )}
-                        >
-                          <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                          <span className="truncate">{m.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+          <div className="max-h-[40vh] space-y-1 overflow-y-auto lg:max-h-[70vh]">
+            {projects.length === 0 && (
+              <p className="px-3 py-6 text-center text-sm text-slate-400">
+                אין פרויקטים
+              </p>
+            )}
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => selectProject(p.id)}
+                className={cn(
+                  "w-full rounded-xl px-3 py-3 text-right text-sm transition active:scale-[0.99]",
+                  selectedId === p.id
+                    ? "bg-primary-50 font-semibold text-primary-800"
+                    : "text-slate-700 hover:bg-slate-50"
                 )}
-              </div>
-            );
-          })}
-        </div>
-      </aside>
-
-      {/* Center */}
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-black text-slate-900">
-              {selected?.name ?? "בחרו פרויקט"}
-            </p>
-            <p className="text-[11px] text-slate-500">
-              {MODULES.find((m) => m.id === activeModule)?.label ?? ""}
-            </p>
+              >
+                <span className="block truncate">{p.name}</span>
+                {p.contractor && (
+                  <span className="block truncate text-xs text-slate-400">
+                    {p.contractor}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
-          <button
-            type="button"
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold md:hidden"
-            onClick={() => setMobileTreeOpen(true)}
-          >
-            עץ פרויקטים
-          </button>
-        </header>
+        </aside>
 
-        <main className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="min-w-0 space-y-4">
           {!selectedId && (
             <p className="py-16 text-center text-sm text-slate-400">
-              בחרו פרויקט מהעץ כדי להתחיל
+              בחרו פרויקט מהרשימה כדי להתחיל
             </p>
           )}
 
-          {selectedId && activeModule === "summary" && (
-            <ProjectDashboardPanel
-              projectId={selectedId}
-              onAddVariation={() => selectModule(selectedId, "boq")}
-            />
+          {selectedId && selected && (
+            <>
+              <ProjectModulesNavTree
+                projectName={selected.name}
+                activeModule={activeModule}
+                onSelect={selectModule}
+                stats={treeStats}
+                moduleIds={ADMIN_PROJECT_MODULE_IDS}
+              />
+
+              <div
+                id="project-module-content"
+                className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-5"
+              >
+                {activeModule === "summary" && (
+                  <ProjectDashboardPanel
+                    projectId={selectedId}
+                    onAddVariation={() => selectModule("boq")}
+                  />
+                )}
+                {activeModule === "boq" && (
+                  <ProjectBoqPanel projectId={selectedId} />
+                )}
+                {activeModule === "performance" && (
+                  <ProjectPerformancePage projectId={selectedId} embedded />
+                )}
+                {activeModule === "invoices" && (
+                  <ProjectInvoicesPage projectId={selectedId} embedded />
+                )}
+                {activeModule === "billing" && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-slate-500">
+                      חשבוניות — מסמכי חיוב מאושרים של הפרויקט
+                    </p>
+                    <ProjectInvoicesPage projectId={selectedId} embedded />
+                  </div>
+                )}
+                {activeModule === "deliveries" && effectiveOpsProjectId && (
+                  <div className="space-y-3">
+                    {projectScope === "assigned" && (
+                      <OpsProjectPicker
+                        projects={opsProjects}
+                        value={effectiveOpsProjectId}
+                        onChange={setOpsProjectId}
+                        label="תעודות משלוח — ניתן לבחור כל פרויקט במערכת"
+                      />
+                    )}
+                    <ProjectDeliveryNotesPanel projectId={effectiveOpsProjectId} />
+                  </div>
+                )}
+                {activeModule === "workDiaries" && effectiveOpsProjectId && (
+                  <div className="space-y-3">
+                    {projectScope === "assigned" && (
+                      <OpsProjectPicker
+                        projects={opsProjects}
+                        value={effectiveOpsProjectId}
+                        onChange={setOpsProjectId}
+                        label="יומני עבודה — ניתן לבחור כל פרויקט במערכת"
+                      />
+                    )}
+                    <ProjectWorkDiariesPanel projectId={effectiveOpsProjectId} />
+                  </div>
+                )}
+                {activeModule === "documents" && (
+                  <DocumentsHubV2Page projectId={selectedId} embedded />
+                )}
+                {activeModule === "reports" && (
+                  <ProjectReportsPanel projectId={selectedId} />
+                )}
+              </div>
+            </>
           )}
-          {selectedId && activeModule === "boq" && (
-            <ProjectBoqPanel projectId={selectedId} />
-          )}
-          {selectedId && activeModule === "performance" && (
-            <ProjectPerformancePage projectId={selectedId} embedded />
-          )}
-          {selectedId && activeModule === "invoices" && (
-            <ProjectInvoicesPage projectId={selectedId} embedded />
-          )}
-          {selectedId && activeModule === "billing" && (
-            <div className="space-y-3">
-              <p className="text-sm text-slate-500">
-                חשבוניות — מסמכי חיוב מאושרים של הפרויקט
-              </p>
-              <ProjectInvoicesPage projectId={selectedId} embedded />
-            </div>
-          )}
-          {selectedId && activeModule === "deliveries" && effectiveOpsProjectId && (
-            <div className="space-y-3">
-              {projectScope === "assigned" && (
-                <OpsProjectPicker
-                  projects={opsProjects}
-                  value={effectiveOpsProjectId}
-                  onChange={setOpsProjectId}
-                  label="תעודות משלוח — ניתן לבחור כל פרויקט במערכת"
-                />
-              )}
-              <ProjectDeliveryNotesPanel projectId={effectiveOpsProjectId} />
-            </div>
-          )}
-          {selectedId && activeModule === "workDiaries" && effectiveOpsProjectId && (
-            <div className="space-y-3">
-              {projectScope === "assigned" && (
-                <OpsProjectPicker
-                  projects={opsProjects}
-                  value={effectiveOpsProjectId}
-                  onChange={setOpsProjectId}
-                  label="יומני עבודה — ניתן לבחור כל פרויקט במערכת"
-                />
-              )}
-              <ProjectWorkDiariesPanel projectId={effectiveOpsProjectId} />
-            </div>
-          )}
-          {selectedId && activeModule === "documents" && (
-            <DocumentsHubV2Page projectId={selectedId} embedded />
-          )}
-          {selectedId && activeModule === "reports" && (
-            <ProjectReportsPanel projectId={selectedId} />
-          )}
-        </main>
+        </div>
       </div>
 
-      {mobileTreeOpen && (
+      {mobileProjectsOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-10 bg-black/30 md:hidden"
-          aria-label="סגור עץ"
-          onClick={() => setMobileTreeOpen(false)}
+          className="fixed inset-0 z-20 bg-black/30 md:hidden"
+          aria-label="סגור רשימת פרויקטים"
+          onClick={() => setMobileProjectsOpen(false)}
         />
       )}
     </div>

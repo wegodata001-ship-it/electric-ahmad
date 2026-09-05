@@ -123,6 +123,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowDocKind, WorkflowDefinition> =
     editableStatuses: ["draft", "revision"],
     transitions: DIARY_TRANSITIONS,
     gateMeasurementOnClientSignature: true,
+    approvalMode: "any_one",
   },
   DELIVERY_NOTE: {
     kind: "DELIVERY_NOTE",
@@ -132,6 +133,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowDocKind, WorkflowDefinition> =
     editableStatuses: ["draft", "revision"],
     transitions: DELIVERY_TRANSITIONS,
     gateMeasurementOnClientSignature: false,
+    approvalMode: "any_one",
   },
   EXECUTION_REPORT: {
     kind: "EXECUTION_REPORT",
@@ -141,6 +143,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowDocKind, WorkflowDefinition> =
     editableStatuses: ["draft", "revision"],
     transitions: EXECUTION_TRANSITIONS,
     gateMeasurementOnClientSignature: true,
+    approvalMode: "any_one",
   },
   MEASUREMENT: {
     kind: "MEASUREMENT",
@@ -150,6 +153,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowDocKind, WorkflowDefinition> =
     editableStatuses: ["draft", "revision"],
     transitions: MEASUREMENT_TRANSITIONS,
     gateMeasurementOnClientSignature: false,
+    approvalMode: "any_one",
   },
   ACCOUNT: {
     kind: "ACCOUNT",
@@ -159,6 +163,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowDocKind, WorkflowDefinition> =
     editableStatuses: ["draft", "revision"],
     transitions: ACCOUNT_TRANSITIONS,
     gateMeasurementOnClientSignature: false,
+    approvalMode: "any_one",
   },
   INVOICE: {
     kind: "INVOICE",
@@ -168,6 +173,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowDocKind, WorkflowDefinition> =
     editableStatuses: ["draft", "revision"],
     transitions: INVOICE_TRANSITIONS,
     gateMeasurementOnClientSignature: false,
+    approvalMode: "any_one",
   },
   WORK_SCHEDULE: {
     kind: "WORK_SCHEDULE",
@@ -177,6 +183,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowDocKind, WorkflowDefinition> =
     editableStatuses: ["draft"],
     transitions: SCHEDULE_TRANSITIONS,
     gateMeasurementOnClientSignature: false,
+    approvalMode: "any_one",
   },
   GENERAL: {
     kind: "GENERAL",
@@ -197,6 +204,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowDocKind, WorkflowDefinition> =
       { from: "approved", action: "lock", to: "locked" },
     ],
     gateMeasurementOnClientSignature: false,
+    approvalMode: "any_one",
   },
 };
 

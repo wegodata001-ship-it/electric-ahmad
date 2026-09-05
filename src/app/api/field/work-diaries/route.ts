@@ -29,10 +29,16 @@ export async function POST(req: NextRequest) {
   try {
     const session = await requireFieldManager();
     const body = await req.json();
-    if (!body.projectId) return apiError("יש לבחור פרויקט");
+    const customSiteName = body.customSiteName
+      ? String(body.customSiteName).trim()
+      : null;
+    if (!body.projectId && !customSiteName) {
+      return apiError("יש לבחור פרויקט או להזין אתר תחת ״אחר״");
+    }
 
     const diary = await WorkDiariesRepository.create({
-      projectId: String(body.projectId),
+      projectId: body.projectId ? String(body.projectId) : null,
+      customSiteName,
       foremanId: session.foremanId,
       workDate: body.workDate ? new Date(body.workDate) : new Date(),
       workTime: body.workTime,
@@ -53,6 +59,7 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess(diary, 201);
   } catch (error) {
+    if (error instanceof Error) return apiError(error.message, 400);
     return handleApiError(error);
   }
 }

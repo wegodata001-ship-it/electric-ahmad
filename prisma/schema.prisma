@@ -594,6 +594,9 @@ model Document {
   reportId     String?
   partialInvoiceId String?
   partialInvoice   PartialInvoice? @relation(fields: [partialInvoiceId], references: [id], onDelete: SetNull)
+  /** Optional link to Clients module for signed-copy filing */
+  clientId     String?
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
   uploadedById String
   uploadedBy   User         @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
   ownerId      String
@@ -611,6 +614,7 @@ model Document {
   @@index([type])
   @@index([folderPath])
   @@index([partialInvoiceId])
+  @@index([clientId])
   @@index([sourceType, sourceId])
 }
 
@@ -767,6 +771,7 @@ model Client {
   updatedAt      DateTime @updatedAt
 
   deliveryNotes DeliveryNote[]
+  documents     Document[]
 
   @@index([name])
   @@index([phone])
@@ -1041,15 +1046,20 @@ model FieldCrewTimeEntry {
 }
 
 model FieldAttendance {
-  id           String    @id @default(cuid())
-  foremanId    String
-  foreman      Employee  @relation(fields: [foremanId], references: [id])
-  projectId    String?
-  project      Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  checkedInAt  DateTime
-  checkedOutAt DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  foremanId      String
+  foreman        Employee  @relation(fields: [foremanId], references: [id])
+  projectId      String?
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  checkedInAt    DateTime
+  checkedOutAt   DateTime?
+  latitude       Float?
+  longitude      Float?
+  accuracyMeters Float?
+  deviceLabel    String?
+  userAgent      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([foremanId])
   @@index([projectId])
@@ -1406,6 +1416,8 @@ model WorkDiary {
   status         WorkDiaryStatus @default(draft)
   projectId      String
   project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /** Free-text site when user chose "אחר" (temporary / unlisted site) */
+  customSiteName String?
   clientName     String?
   address        String?
   foremanId      String
@@ -1488,6 +1500,7 @@ model WorkDiaryWorker {
   startTime    String?
   endTime      String?
   hours        Float            @default(0)
+  notes        String?
   sortOrder    Int              @default(0)
 
   @@index([workDiaryId])
@@ -1611,9 +1624,15 @@ model OpsDeliveryNote {
   foremanId      String
   foreman        Employee             @relation("OpsDnForeman", fields: [foremanId], references: [id])
   noteDate       DateTime             @db.Date
+  /** Optional clock time HH:mm for driver deliveries */
+  noteTime       String?
   vehicleNumber  String?
   driverName     String?
   notes          String?
+  /** Optional pricing (driver portal) */
+  price          Decimal?             @db.Decimal(14, 2)
+  transportCost  Decimal?             @db.Decimal(14, 2)
+  financialNotes String?
 
   foremanSignatureUrl String?
   foremanSignedAt     DateTime?

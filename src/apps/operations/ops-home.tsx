@@ -58,8 +58,8 @@ export function OpsHome() {
         <HomeCard
           href="/operations/approvals"
           icon={CheckSquare}
-          title="אישורים"
-          subtitle="יומן · תעודה · שינוי עבודה"
+          title={`🔔 ממתין לאישור (${approvals})`}
+          subtitle="יומני עבודה · תעודות משלוח"
           badge={approvals > 0 ? approvals : undefined}
           hot={approvals > 0}
         />

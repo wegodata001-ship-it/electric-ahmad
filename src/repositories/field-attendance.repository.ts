@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { AuditRepository } from "@/repositories/audit.repository";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -28,12 +29,24 @@ function hoursBetween(from: Date, to: Date) {
   return Math.round((ms / 3_600_000) * 100) / 100;
 }
 
+export type FieldGpsMeta = {
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number | null;
+  deviceLabel?: string | null;
+  userAgent?: string | null;
+};
+
 function mapAttendance(row: {
   id: string;
   foremanId: string;
   projectId: string | null;
   checkedInAt: Date;
   checkedOutAt: Date | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracyMeters?: number | null;
+  deviceLabel?: string | null;
 }) {
   const date = localDateKey(row.checkedInAt);
   const checkIn = formatTime(row.checkedInAt);
@@ -52,10 +65,24 @@ function mapAttendance(row: {
     checkIn,
     checkOut,
     hours,
+    latitude: row.latitude ?? null,
+    longitude: row.longitude ?? null,
+    accuracyMeters: row.accuracyMeters ?? null,
+    deviceLabel: row.deviceLabel ?? null,
   };
 }
 
 export type AttendancePeriod = "today" | "week" | "month" | "range" | "all";
+
+function requireGps(meta?: FieldGpsMeta | null) {
+  if (
+    !meta ||
+    !Number.isFinite(meta.latitude) ||
+    !Number.isFinite(meta.longitude)
+  ) {
+    throw new Error("יש לאשר GPS לפני דיווח נוכחות");
+  }
+}
 
 export class FieldAttendanceRepository {
   static async getOpen(foremanId: string) {
@@ -70,46 +97,111 @@ export class FieldAttendanceRepository {
       projectId: row.projectId,
       checkedInAt: row.checkedInAt.toISOString(),
       checkedOutAt: null as string | null,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      deviceLabel: row.deviceLabel,
     };
   }
 
-  static async checkIn(foremanId: string, projectId?: string) {
+  static async checkIn(
+    foremanId: string,
+    opts?: { projectId?: string; gps?: FieldGpsMeta; userId?: string }
+  ) {
+    requireGps(opts?.gps);
     const open = await this.getOpen(foremanId);
     if (open) return open;
 
+    const gps = opts!.gps!;
     const row = await prisma.fieldAttendance.create({
       data: {
         foremanId,
-        projectId: projectId || null,
+        projectId: opts?.projectId || null,
         checkedInAt: new Date(),
+        latitude: gps.latitude,
+        longitude: gps.longitude,
+        accuracyMeters: gps.accuracyMeters ?? null,
+        deviceLabel: gps.deviceLabel ?? null,
+        userAgent: gps.userAgent ?? null,
       },
     });
+
+    if (opts?.userId) {
+      await AuditRepository.log({
+        action: "CREATE",
+        entityType: "FieldAttendance",
+        entityId: row.id,
+        userId: opts.userId,
+        metadata: {
+          action: "check_in",
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          accuracyMeters: gps.accuracyMeters ?? null,
+          deviceLabel: gps.deviceLabel ?? null,
+        },
+      });
+    }
+
     return {
       id: row.id,
       foremanId: row.foremanId,
       projectId: row.projectId,
       checkedInAt: row.checkedInAt.toISOString(),
       checkedOutAt: null as string | null,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      deviceLabel: row.deviceLabel,
     };
   }
 
-  static async checkOut(foremanId: string) {
+  static async checkOut(
+    foremanId: string,
+    opts?: { gps?: FieldGpsMeta; userId?: string }
+  ) {
+    requireGps(opts?.gps);
     const open = await prisma.fieldAttendance.findFirst({
       where: { foremanId, checkedOutAt: null },
       orderBy: { checkedInAt: "desc" },
     });
     if (!open) throw new Error("אין כניסה פתוחה");
 
+    const gps = opts!.gps!;
     const row = await prisma.fieldAttendance.update({
       where: { id: open.id },
-      data: { checkedOutAt: new Date() },
+      data: {
+        checkedOutAt: new Date(),
+        latitude: gps.latitude,
+        longitude: gps.longitude,
+        accuracyMeters: gps.accuracyMeters ?? null,
+        deviceLabel: gps.deviceLabel ?? open.deviceLabel,
+        userAgent: gps.userAgent ?? open.userAgent,
+      },
     });
+
+    if (opts?.userId) {
+      await AuditRepository.log({
+        action: "UPDATE",
+        entityType: "FieldAttendance",
+        entityId: row.id,
+        userId: opts.userId,
+        metadata: {
+          action: "check_out",
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          accuracyMeters: gps.accuracyMeters ?? null,
+          deviceLabel: gps.deviceLabel ?? null,
+        },
+      });
+    }
+
     return {
       id: row.id,
       foremanId: row.foremanId,
       projectId: row.projectId,
       checkedInAt: row.checkedInAt.toISOString(),
       checkedOutAt: row.checkedOutAt!.toISOString(),
+      latitude: row.latitude,
+      longitude: row.longitude,
+      deviceLabel: row.deviceLabel,
     };
   }
 
@@ -141,7 +233,6 @@ export class FieldAttendanceRepository {
       }
       return { from: fromD, to: toD };
     }
-    // all — last 2 years for safety
     return { from: addDays(today, -730), to: endExclusive };
   }
 

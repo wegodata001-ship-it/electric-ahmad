@@ -1,18 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageCircle } from "lucide-react";
+import { Link2 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { approvalsService } from "@/features/work-diaries/services/work-diaries.service";
+import { SendClientLinkModal } from "@/features/signatures/send-client-link-modal";
+import { fetchClientMe } from "@/lib/auth/client-me";
+import { hasDocumentPermission } from "@/lib/auth/document-permissions";
+import { SIGNED_STATUS_LABEL } from "@/lib/signatures";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "טיוטה",
-  revision: "טיוטה לתיקון",
-  pending_approval: "ממתין לאישור",
+  revision: "נדחה",
+  pending_approval: "נשלח לאישור",
   in_approval: "בתהליך אישור",
-  approved: "אושר",
+  approved: "מאושר",
   sent_to_client: "נשלח ללקוח",
-  signed: "נחתם",
+  signed: SIGNED_STATUS_LABEL,
   completed: "הושלם",
   closed: "נסגר",
 };
@@ -25,7 +29,24 @@ export function DocumentsArchivePage() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [sendResult, setSendResult] = useState<{ url: string; whatsappUrl: string } | null>(null);
+  const [canSend, setCanSend] = useState(false);
+  const [sendResult, setSendResult] = useState<{
+    url: string;
+    documentNumber: string;
+    kind: "delivery_note" | "work_diary";
+  } | null>(null);
+
+  useEffect(() => {
+    fetchClientMe("/api/auth/me")
+      .then((json) => {
+        if (json.success) {
+          setCanSend(
+            hasDocumentPermission(json.data?.role as string, "send_to_client")
+          );
+        }
+      })
+      .catch(() => setCanSend(false));
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -58,7 +79,11 @@ export function DocumentsArchivePage() {
         item.kind === "work_diary"
           ? await approvalsService.sendWorkDiaryToClient(item.id)
           : await approvalsService.sendDeliveryNoteToClient(item.id);
-      setSendResult({ url: res.url, whatsappUrl: res.whatsappUrl });
+      setSendResult({
+        url: res.url,
+        documentNumber: item.documentNumber,
+        kind: item.kind === "work_diary" ? "work_diary" : "delivery_note",
+      });
       await load();
     } catch (e: any) {
       setError(e.message);
@@ -69,7 +94,9 @@ export function DocumentsArchivePage() {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#03142F]">ארכיון מסמכים</h1>
-        <p className="text-sm text-gray-500 mt-1">יומני עבודה ותעודות משלוח</p>
+        <p className="text-sm text-gray-500 mt-1">
+          יומני עבודה ותעודות משלוח · שליחה ללקוח לחתימה דיגיטלית
+        </p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -115,7 +142,11 @@ export function DocumentsArchivePage() {
         סנן
       </button>
 
-      {error && <div className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">{error}</div>}
+      {error && (
+        <div className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">
+          {error}
+        </div>
+      )}
       {loading && <p className="text-sm text-gray-500">טוען…</p>}
 
       <div className="space-y-3">
@@ -136,44 +167,29 @@ export function DocumentsArchivePage() {
                 {STATUS_LABEL[item.status] ?? item.status} · {item.workDate}
               </p>
             </div>
-            {(item.status === "approved" || item.status === "sent_to_client") && (
-              <button
-                type="button"
-                onClick={() => sendToClient(item)}
-                className="inline-flex items-center gap-2 rounded-xl border border-[#25D366] px-3 py-2 text-sm font-semibold text-[#128C7E]"
-              >
-                <MessageCircle className="h-4 w-4" />
-                שלח ללקוח
-              </button>
-            )}
+            {canSend &&
+              (item.status === "approved" ||
+                item.status === "sent_to_client") && (
+                <button
+                  type="button"
+                  onClick={() => void sendToClient(item)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white"
+                >
+                  <Link2 className="h-4 w-4" />
+                  שלח ללקוח
+                </button>
+              )}
           </div>
         ))}
       </div>
 
-      {sendResult && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
-            <h3 className="font-bold text-lg">קישור מאובטח ללקוח</h3>
-            <p className="text-xs break-all bg-gray-50 p-3 rounded-xl">{sendResult.url}</p>
-            <a
-              href={sendResult.whatsappUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3 text-sm font-bold text-white"
-            >
-              <MessageCircle className="h-4 w-4" />
-              שלח ב־WhatsApp
-            </a>
-            <button
-              type="button"
-              onClick={() => setSendResult(null)}
-              className="w-full rounded-xl border py-2.5 text-sm font-semibold"
-            >
-              סגור
-            </button>
-          </div>
-        </div>
-      )}
+      <SendClientLinkModal
+        open={!!sendResult}
+        onClose={() => setSendResult(null)}
+        url={sendResult?.url || ""}
+        documentNumber={sendResult?.documentNumber || ""}
+        kind={sendResult?.kind || "delivery_note"}
+      />
     </div>
   );
 }

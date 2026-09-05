@@ -6,6 +6,8 @@ export const ADMIN_ROLE = "ADMIN" as const;
 export const SYSTEM_MANAGER_ROLE = "SYSTEM_MANAGER" as const;
 /** מזכירה — ניהול נוכחות QR */
 export const SECRETARY_ROLE = "SECRETARY" as const;
+/** נהג משאית / שליח — פורטל ביצוע תעודות משלוח בלבד */
+export const TRUCK_DRIVER_ROLE = "TRUCK_DRIVER" as const;
 /** Seed / legacy office admin role (Hebrew label kept for BC) */
 export const LEGACY_SYSTEM_ADMIN_ROLE = "מנהל מערכת" as const;
 
@@ -23,6 +25,8 @@ export function isOfficeRole(role?: string | null): boolean {
     role === SYSTEM_MANAGER_ROLE ||
     role === SECRETARY_ROLE ||
     role === "מזכירה" ||
+    role === TRUCK_DRIVER_ROLE ||
+    role === "נהג" ||
     role === LEGACY_SYSTEM_ADMIN_ROLE ||
     role === "admin"
   );
@@ -33,6 +37,7 @@ export function officeRoleLabel(role?: string | null): string {
   if (role === OPERATIONS_MANAGER_ROLE) return "מנהל תפעול";
   if (role === FIELD_MANAGER_ROLE) return "מנהל עבודה";
   if (role === SECRETARY_ROLE || role === "מזכירה") return "מזכירה";
+  if (role === TRUCK_DRIVER_ROLE || role === "נהג") return "נהג משאית";
   if (
     role === ADMIN_ROLE ||
     role === SYSTEM_MANAGER_ROLE ||

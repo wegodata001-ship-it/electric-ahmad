@@ -80,7 +80,7 @@ export function statusUi(status: string): {
     case "client_signed":
     case "signed":
     case "receiver_signed":
-      return { label: "נחתם", tone: "signed" };
+      return { label: "נחתם על ידי הלקוח", tone: "signed" };
     case "draft":
     case "in_progress":
       return { label: "טיוטה", tone: "gray" };

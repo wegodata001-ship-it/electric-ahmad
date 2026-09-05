@@ -90,7 +90,7 @@ const STATUS_LABEL: Record<string, string> = {
   approved: "מאושר",
   revision: "הוחזר לתיקון",
   sent_to_client: "ממתין לחתימת לקוח",
-  signed: "נחתם",
+  signed: "נחתם על ידי הלקוח",
   completed: "הושלם",
   locked: "מאושר",
   in_progress: "בביצוע",
@@ -112,8 +112,8 @@ function eventLabel(action: string): string | null {
     revision: "הוחזר לתיקון",
     resubmit: "נשלח מחדש",
     sent_to_client: "נשלח ללקוח לחתימה",
-    client_signed: "נחתם ע״י לקוח",
-    signed: "נחתם ע״י לקוח",
+    client_signed: "נחתם על ידי הלקוח",
+    signed: "נחתם על ידי הלקוח",
   };
   return map[action] || null;
 }

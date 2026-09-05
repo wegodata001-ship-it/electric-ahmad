@@ -2,22 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  BookOpen,
-  CheckSquare,
-  ClipboardList,
-  Home,
-  Package,
-} from "lucide-react";
+import { Clock, Home, User } from "lucide-react";
 import { usePortalSession } from "@/apps/shared/use-portal-session";
 import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "/field", label: "בית", icon: Home, exact: true },
-  { href: "/field/work-orders", label: "סידורים", icon: ClipboardList },
-  { href: "/field/work-diaries", label: "יומן", icon: BookOpen },
-  { href: "/field/delivery-notes", label: "תעודות", icon: Package },
-  { href: "/field/approvals", label: "אישורים", icon: CheckSquare },
+  { href: "/field/attendance", label: "נוכחות", icon: Clock },
+  { href: "/field/profile", label: "פרופיל", icon: User },
 ] as const;
 
 export function FieldAppShell({ children }: { children: React.ReactNode }) {
@@ -42,7 +34,7 @@ export function FieldAppShell({ children }: { children: React.ReactNode }) {
     >
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[#E5E7EB] bg-white/95 px-4 backdrop-blur">
         <div>
-          <p className="text-xs font-semibold text-blue-600">עבודה בשטח</p>
+          <p className="text-xs font-semibold text-blue-600">מנהל עבודה</p>
           <p className="truncate text-sm font-bold text-[#111827]">
             {userName || "מנהל עבודה"}
           </p>

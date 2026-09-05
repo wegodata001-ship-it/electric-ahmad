@@ -86,7 +86,7 @@ export function FieldDiariesList() {
                       {item.documentNumber}
                     </p>
                     <p className="mt-2 text-base text-[#6B7280]">
-                      {item.project?.name || "פרויקט"}
+                      {item.siteLabel || item.project?.name || "פרויקט"}
                     </p>
                     <p className="mt-1 text-base text-[#9CA3AF]">
                       {new Date(item.workDate).toLocaleDateString("he-IL")}

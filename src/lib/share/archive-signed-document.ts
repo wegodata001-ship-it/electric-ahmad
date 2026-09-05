@@ -1,23 +1,15 @@
-import { prisma } from "@/lib/prisma";
-import { AuditRepository } from "@/repositories/audit.repository";
+import {
+  archiveSignedDocumentCopies,
+  resolveClientForArchive,
+} from "@/lib/signatures/archive";
+import type { SignableDocumentKind } from "@/lib/signatures";
 
 export type SignedDocKind = "work_diary" | "delivery_note" | "measurement_sheet";
 
-const FOLDER: Record<SignedDocKind, string> = {
-  work_diary: "יומני עבודה/חתומים ע״י לקוח",
-  delivery_note: "תעודות משלוח/חתומים ע״י לקוח",
-  measurement_sheet: "מדידות/מאושרות",
-};
-
-const KIND_LABEL: Record<SignedDocKind, string> = {
-  work_diary: "יומן עבודה",
-  delivery_note: "תעודת משלוח",
-  measurement_sheet: "דף מדידה",
-};
-
 /**
- * Creates a NEW Documents Hub entry for the client-signed version.
- * Does not overwrite prior draft/approval versions.
+ * Creates Documents Hub entries for the client-signed version:
+ * 1) Project folder (e.g. תעודות משלוח)
+ * 2) Client folder (לקוחות / {name} / תעודות משלוח)
  */
 export async function archiveClientSignedDocument(input: {
   kind: SignedDocKind;
@@ -33,72 +25,31 @@ export async function archiveClientSignedDocument(input: {
   device?: string | null;
   linkPublicId?: string | null;
   verificationId: string;
+  clientName?: string | null;
+  clientPhone?: string | null;
+  clientEmail?: string | null;
+  clientAddress?: string | null;
 }) {
-  const label = KIND_LABEL[input.kind];
-  const name = `${label} ${input.documentNumber} (חתום ע"י לקוח).pdf`;
-  const folderPath = FOLDER[input.kind];
-  const path = `signed/${input.kind}/${input.entityId}/${input.verificationId}`;
-  const url = input.signedViewPath;
-
-  const doc = await prisma.document.create({
-    data: {
-      projectId: input.projectId,
-      name,
-      type: "pdf",
-      extension: "pdf",
-      size: 0,
-      bucket: "documents",
-      path,
-      url,
-      folderPath,
-      sourceType: `${input.kind}_signed`,
-      sourceId: input.entityId,
-      uploadedById: input.userId,
-      ownerId: input.userId,
-      createdById: input.userId,
-      updatedById: input.userId,
-      versions: {
-        create: {
-          version: 1,
-          size: 0,
-          bucket: "documents",
-          path,
-          url,
-          uploadedById: input.userId,
-        },
-      },
-    },
+  const result = await archiveSignedDocumentCopies({
+    kind: input.kind as SignableDocumentKind,
+    projectId: input.projectId,
+    entityId: input.entityId,
+    documentNumber: input.documentNumber,
+    userId: input.userId,
+    signedViewPath: input.signedViewPath,
+    signerName: input.signerName,
+    signedAt: input.signedAt,
+    clientName: input.clientName,
+    clientPhone: input.clientPhone,
+    clientEmail: input.clientEmail,
+    clientAddress: input.clientAddress,
+    ip: input.ip,
+    device: input.device,
+    linkPublicId: input.linkPublicId,
+    verificationId: input.verificationId,
   });
-
-  try {
-    await AuditRepository.log({
-      action: "UPDATE",
-      entityType: input.kind,
-      entityId: input.entityId,
-      userId: input.userId,
-      metadata: {
-        event: "client_signed",
-        signerName: input.signerName,
-        signedAt: input.signedAt.toISOString(),
-        ip: input.ip ?? null,
-        device: input.device ?? null,
-        linkPublicId: input.linkPublicId ?? null,
-        verificationId: input.verificationId,
-        documentId: doc.id,
-        signedViewPath: input.signedViewPath,
-      },
-    });
-  } catch {
-    /* audit must not block signature */
-  }
-
-  return doc;
+  return result.projectDoc;
 }
 
-export function buildVerificationId(
-  documentNumber: string,
-  publicId: string
-): string {
-  const short = publicId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase();
-  return `${documentNumber}-SIG-${short || "OK"}`;
-}
+export { buildVerificationId } from "@/lib/signatures/verification";
+export { resolveClientForArchive };

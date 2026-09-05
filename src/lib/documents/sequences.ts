@@ -71,12 +71,12 @@ export function workDiaryStatusLabel(status: string): string {
 export function opsDnStatusLabel(status: string): string {
   const map: Record<string, string> = {
     draft: "טיוטה",
-    pending_approval: "ממתין לאישור",
-    approved: "אושר",
+    pending_approval: "נשלח לאישור",
+    approved: "מאושר",
     sent_to_client: "נשלח ללקוח",
-    signed: "נחתם",
+    signed: "נחתם על ידי הלקוח",
     closed: "נסגר",
-    revision: "טיוטה לתיקון",
+    revision: "נדחה",
   };
   return map[status] ?? status;
 }

@@ -10,6 +10,7 @@ import {
 import { portalHomeForRole } from "@/lib/portals/config";
 import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import { isSecretaryRole } from "@/lib/auth/attendance-permissions";
+import { isTruckDriverRole } from "@/lib/auth/driver-permissions";
 
 function isPublicFieldPath(pathname: string): boolean {
   return (
@@ -265,6 +266,26 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       return NextResponse.redirect(
         new URL("/system/attendance-qr", request.url)
       );
+    }
+  }
+
+  // Truck driver — execution portal only
+  if (isTruckDriverRole(session.role)) {
+    const onDriver =
+      pathname === "/driver" ||
+      pathname.startsWith("/driver/") ||
+      pathname.startsWith("/api/driver/") ||
+      pathname.startsWith("/api/auth/");
+    if (!onDriver) {
+      if (
+        pathname.startsWith("/project") ||
+        pathname.startsWith("/operations") ||
+        pathname.startsWith("/system") ||
+        pathname.startsWith("/field") ||
+        pathname.startsWith("/dashboard")
+      ) {
+        return NextResponse.redirect(new URL("/driver", request.url));
+      }
     }
   }
 

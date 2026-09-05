@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { fieldService } from "@/features/field/services/field.service";
 import { apiClient } from "@/lib/api/client";
+import { detectDeviceMeta } from "@/lib/attendance/device-client";
+import { readGps } from "@/lib/attendance/gps-client";
 import type { AttendancePolicy } from "@/lib/settings/attendance-policy";
 import { field } from "@/apps/field/field-ui";
 
@@ -32,7 +34,15 @@ export function FieldAttendanceGate({
     setBusy(true);
     setError("");
     try {
-      await fieldService.checkIn();
+      const gps = await readGps();
+      const device = detectDeviceMeta();
+      await fieldService.checkIn({
+        latitude: gps.latitude,
+        longitude: gps.longitude,
+        accuracyMeters: gps.accuracy,
+        deviceLabel: `${device.deviceType} · ${device.osName}`,
+        userAgent: device.userAgent,
+      });
       onCheckedIn();
     } catch (e) {
       setError(e instanceof Error ? e.message : "שגיאה בכניסה");

@@ -7,6 +7,8 @@ export type WorkDiaryListItem = {
   workDate: string;
   workType: string | null;
   clientName: string | null;
+  customSiteName?: string | null;
+  siteLabel?: string | null;
   project: { id: string; name: string } | null;
   foreman: { id: string; name: string } | null;
   createdAt: string;
@@ -42,10 +44,17 @@ export const workDiariesService = {
     return apiClient.post<any>(`/api/field/work-diaries/${id}/submit`, { approverIds });
   },
 
-  listApprovers() {
+  listApprovers(projectId?: string | null) {
+    const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
     return apiClient.get<{
-      items: { id: string; name: string; roleLabel: string }[];
-    }>("/api/field/approvers");
+      items: {
+        id: string;
+        name: string;
+        roleLabel: string;
+        role?: string;
+        group?: string;
+      }[];
+    }>(`/api/field/approvers${q}`);
   },
 };
 
@@ -127,10 +136,14 @@ export const approvalsService = {
   },
 
   sendDeliveryNoteToClient(id: string, phone?: string) {
-    return apiClient.post<{ url: string; whatsappUrl: string; message: string }>(
-      `/api/ops-delivery-notes/${id}/send-client`,
-      { phone }
-    );
+    return apiClient.post<{
+      url: string;
+      whatsappUrl: string;
+      smsUrl?: string;
+      emailUrl?: string;
+      message: string;
+      documentNumber: string;
+    }>(`/api/ops-delivery-notes/${id}/send-client`, { phone });
   },
 
   sendMeasurementSheetToClient(id: string, phone?: string) {

@@ -89,16 +89,30 @@ export const fieldService = {
     return apiClient.delete<{ ok: boolean }>(`/api/field/crew/${id}`);
   },
 
-  checkIn(projectId?: string) {
+  checkIn(meta: {
+    projectId?: string;
+    latitude: number;
+    longitude: number;
+    accuracyMeters?: number | null;
+    deviceLabel?: string | null;
+    userAgent?: string | null;
+  }) {
     return apiClient.post<{ checkedIn: boolean }>("/api/field/attendance", {
       action: "check_in",
-      projectId,
+      ...meta,
     });
   },
 
-  checkOut() {
+  checkOut(meta: {
+    latitude: number;
+    longitude: number;
+    accuracyMeters?: number | null;
+    deviceLabel?: string | null;
+    userAgent?: string | null;
+  }) {
     return apiClient.post<{ checkedIn: boolean }>("/api/field/attendance", {
       action: "check_out",
+      ...meta,
     });
   },
 

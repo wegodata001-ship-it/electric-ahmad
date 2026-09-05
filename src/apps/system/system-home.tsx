@@ -7,6 +7,7 @@ import { apiClient } from "@/lib/api/client";
 export function SystemHome() {
   const [stats, setStats] = useState({
     projects: 0,
+    approvalsPending: 0,
     workflowPending: 0,
     notifications: 0,
     shareLinks: 0,
@@ -15,10 +16,11 @@ export function SystemHome() {
   useEffect(() => {
     Promise.allSettled([
       fetch("/api/projects").then((r) => r.json()),
+      apiClient.get<{ items: unknown[] }>("/api/approvals/pending"),
       apiClient.get<{ items: unknown[] }>("/api/workflow/pending"),
       apiClient.get<unknown[]>("/api/notifications"),
       apiClient.get<{ items: unknown[] }>("/api/share-links"),
-    ]).then(([p, w, n, s]) => {
+    ]).then(([p, a, w, n, s]) => {
       setStats((prev) => {
         const next = { ...prev };
         if (p.status === "fulfilled") {
@@ -30,6 +32,7 @@ export function SystemHome() {
               : [];
           next.projects = list.length;
         }
+        if (a.status === "fulfilled") next.approvalsPending = a.value.items.length;
         if (w.status === "fulfilled") next.workflowPending = w.value.items.length;
         if (n.status === "fulfilled") {
           const rows = Array.isArray(n.value) ? n.value : [];
@@ -52,6 +55,23 @@ export function SystemHome() {
         </p>
       </div>
 
+      <Link
+        href="/system/approvals"
+        className={
+          stats.approvalsPending > 0
+            ? "block rounded-3xl bg-amber-500 px-5 py-6 text-slate-900 shadow-sm"
+            : "block rounded-3xl border-2 border-slate-200 bg-white px-5 py-6 shadow-sm"
+        }
+      >
+        <p className="text-sm font-bold">מרכז אישורים</p>
+        <p className="mt-1 text-3xl font-black">
+          🔔 ממתין לאישור ({stats.approvalsPending})
+        </p>
+        <p className="mt-2 text-sm opacity-80">
+          יומני עבודה · תעודות משלוח · מסמכים נוספים
+        </p>
+      </Link>
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Tile label="פרויקטים / חברות" value={stats.projects} href="/system/companies" />
         <Tile label="תהליכים ממתינים" value={stats.workflowPending} href="/system/workflow" hot />
@@ -60,6 +80,7 @@ export function SystemHome() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <Panel href="/system/approvals" title="מרכז אישורים" desc="אשר / דחה יומנים ותעודות" />
         <Panel href="/system/users" title="משתמשים והרשאות" desc="משתמשים, מנהלי עבודה, עובדים" />
         <Panel href="/system/workflow" title="מנוע תהליכים" desc="תור אישורים ומעברי סטטוס" />
         <Panel href="/system/documents" title="מרכז מסמכים" desc="ארכיון מסמכים ארגוני" />

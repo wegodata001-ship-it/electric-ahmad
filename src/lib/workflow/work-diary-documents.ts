@@ -1,6 +1,6 @@
-import { prisma } from "@/lib/prisma";
 import type { WorkflowStatus } from "@/lib/workflow/types";
 import { WORKFLOW_STATUS_LABELS } from "@/lib/workflow/types";
+import { upsertOfficialArchiveDocument } from "@/lib/documents/official-document";
 
 /** תיקיות ארכיון יומן — מסמך אחד, רק folderPath משתנה */
 export function workDiaryArchiveFolder(status: WorkflowStatus): string {
@@ -29,7 +29,7 @@ export function workDiaryArchiveFolder(status: WorkflowStatus): string {
 
 /**
  * מסמך אחד ב־Documents Hub לכל יומן.
- * מעדכן folderPath לפי סטטוס המנוע — בלי עותקים.
+ * מעדכן folderPath לפי סטטוס המנוע + גרסת PDF ב־Audit.
  */
 export async function syncWorkDiaryArchiveDocument(input: {
   workflowDocumentId: string;
@@ -40,68 +40,26 @@ export async function syncWorkDiaryArchiveDocument(input: {
   status: WorkflowStatus;
   userId: string;
   printBaseUrl?: string;
+  bumpVersion?: boolean;
 }) {
   const folderPath = workDiaryArchiveFolder(input.status);
-  const name = `${input.title || `יומן עבודה ${input.documentNumber}`}.pdf`;
-  const path = `print/work-diaries/${input.workDiaryId}`;
   const printPath = `/print/work-diaries/${input.workDiaryId}`;
-  const url = input.printBaseUrl
+  const absolutePrint = input.printBaseUrl
     ? `${input.printBaseUrl.replace(/\/$/, "")}${printPath}`
     : printPath;
 
-  const existing = await prisma.document.findFirst({
-    where: {
-      OR: [
-        { workflowDocumentId: input.workflowDocumentId },
-        { sourceType: "work_diary", sourceId: input.workDiaryId },
-      ],
-    },
-  });
-
-  if (existing) {
-    return prisma.document.update({
-      where: { id: existing.id },
-      data: {
-        name,
-        folderPath,
-        url,
-        workflowDocumentId: input.workflowDocumentId,
-        sourceType: "work_diary",
-        sourceId: input.workDiaryId,
-        updatedById: input.userId,
-      },
-    });
-  }
-
-  return prisma.document.create({
-    data: {
-      projectId: input.projectId,
-      name,
-      type: "pdf",
-      extension: "pdf",
-      size: 0,
-      bucket: "documents",
-      path,
-      url,
-      folderPath,
-      sourceType: "work_diary",
-      sourceId: input.workDiaryId,
-      workflowDocumentId: input.workflowDocumentId,
-      uploadedById: input.userId,
-      ownerId: input.userId,
-      createdById: input.userId,
-      updatedById: input.userId,
-      versions: {
-        create: {
-          version: 1,
-          size: 0,
-          bucket: "documents",
-          path,
-          url,
-          uploadedById: input.userId,
-        },
-      },
-    },
+  return upsertOfficialArchiveDocument({
+    projectId: input.projectId,
+    sourceType: "work_diary",
+    sourceId: input.workDiaryId,
+    documentNumber: input.documentNumber,
+    title: input.title || `יומן עבודה ${input.documentNumber}`,
+    folderPath,
+    printPath: absolutePrint.startsWith("http") ? printPath : absolutePrint,
+    userId: input.userId,
+    workflowDocumentId: input.workflowDocumentId,
+    statusLabel: WORKFLOW_STATUS_LABELS[input.status] ?? input.status,
+    bumpVersion: input.bumpVersion ?? true,
   });
 }
 

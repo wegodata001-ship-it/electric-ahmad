@@ -505,6 +505,12 @@ export function ClientDocumentPortal({ apiBase }: Props) {
           <p className="mb-3 text-sm text-slate-500">
             לאחר שעיינתם בכל המידע — חתמו למטה
           </p>
+          <p className="mb-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            תאריך ושעת החתימה יירשמו אוטומטית בעת האישור:{" "}
+            <span className="font-bold text-slate-700">
+              {new Date().toLocaleString("he-IL")}
+            </span>
+          </p>
           <label className="mb-3 block text-sm">
             <span className="font-semibold">שם מלא *</span>
             <input
@@ -561,7 +567,11 @@ export function ClientDocumentPortal({ apiBase }: Props) {
             onClick={() => void submit()}
             className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-emerald-600 text-lg font-black text-white disabled:opacity-60"
           >
-            {submitting ? "שומר…" : "אשר וחתום"}
+            {submitting
+              ? "שומר…"
+              : portal.document.kind === "delivery_note"
+                ? "אני מאשר את קבלת המשלוח"
+                : "אשר וחתום"}
           </button>
         </Section>
       </main>

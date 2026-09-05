@@ -9,11 +9,11 @@ import { opsDeliveryNotesService, workDiariesService } from "@/features/work-dia
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "טיוטה",
-  revision: "טיוטה לתיקון",
-  pending_approval: "ממתין לאישור",
-  approved: "אושר",
+  revision: "נדחה",
+  pending_approval: "נשלח לאישור",
+  approved: "מאושר",
   sent_to_client: "נשלח ללקוח",
-  signed: "נחתם",
+  signed: "נחתם על ידי הלקוח",
   closed: "נסגר",
 };
 

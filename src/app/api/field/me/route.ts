@@ -8,9 +8,13 @@ export async function GET() {
   try {
     const session = await requireFieldManager();
 
-    // Company-wide projects — manager is not locked to one project
+    // Company-wide projects — manager is not locked to one project.
+    // Hide internal "אחר" bucket used for unlisted temporary sites.
     const projects = await prisma.project.findMany({
-      where: { status: { in: ["active", "planning"] } },
+      where: {
+        status: { in: ["active", "planning"] },
+        contractNumber: { not: "__OTHER_SITES__" },
+      },
       select: {
         id: true,
         name: true,

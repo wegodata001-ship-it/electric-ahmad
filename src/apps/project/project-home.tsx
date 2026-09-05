@@ -37,6 +37,18 @@ export function ProjectHome() {
         </p>
       </div>
 
+      <Link
+        href="/project/approvals"
+        className={
+          pending > 0
+            ? "block rounded-3xl bg-amber-500 px-5 py-5 text-slate-900 shadow-sm"
+            : "block rounded-3xl border-2 border-slate-200 bg-white px-5 py-5 shadow-sm"
+        }
+      >
+        <p className="text-sm font-bold">מרכז אישורים</p>
+        <p className="mt-1 text-2xl font-black">🔔 ממתין לאישור ({pending})</p>
+      </Link>
+
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="פרויקטים פעילים" value={projects.length} />
         <Stat label="ממתינים לאישור / חריגות" value={pending} hot />

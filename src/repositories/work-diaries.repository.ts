@@ -20,6 +20,7 @@ import {
 } from "@/lib/workflow/work-diary-documents";
 import { WORKFLOW_STATUS_LABELS } from "@/lib/workflow/types";
 import type { WorkflowStatus } from "@/lib/workflow/types";
+import { ensureMiscSitesProject } from "@/lib/field/misc-sites-project";
 
 export type WorkItemInput = {
   description: string;
@@ -35,6 +36,7 @@ export type DiaryWorkerInput = {
   startTime?: string | null;
   endTime?: string | null;
   hours?: number;
+  notes?: string | null;
 };
 
 export type NamedQtyInput = {
@@ -45,7 +47,9 @@ export type NamedQtyInput = {
 };
 
 export type CreateWorkDiaryInput = {
-  projectId: string;
+  projectId?: string | null;
+  /** When set, diary is for an unlisted/"אחר" site */
+  customSiteName?: string | null;
   foremanId: string;
   workDate: Date;
   workTime?: string | null;
@@ -194,6 +198,8 @@ function mapDiary(row: any) {
     statusLabel: WORKFLOW_STATUS_LABELS[wfStatus] ?? wfStatus,
     workflowDocumentId: row.workflowDocumentId ?? row.workflowDocument?.id ?? null,
     projectId: row.projectId,
+    customSiteName: row.customSiteName ?? null,
+    siteLabel: row.customSiteName || row.project?.name || "—",
     clientName: row.clientName,
     address: row.address,
     foremanId: row.foremanId,
@@ -248,6 +254,7 @@ function mapDiary(row: any) {
       startTime: w.startTime,
       endTime: w.endTime,
       hours: w.hours,
+      notes: w.notes ?? null,
     })),
     equipment: (row.equipment ?? []).map((e: any) => ({
       id: e.id,
@@ -365,6 +372,8 @@ export const WorkDiariesRepository = {
         workDate: row.workDate.toISOString().slice(0, 10),
         workType: row.workType,
         clientName: row.clientName,
+        customSiteName: row.customSiteName ?? null,
+        siteLabel: row.customSiteName || row.project?.name || "—",
         project: row.project,
         foreman: row.foreman
           ? {
@@ -450,7 +459,16 @@ export const WorkDiariesRepository = {
   },
 
   async create(input: CreateWorkDiaryInput) {
-    const project = await prisma.project.findUnique({ where: { id: input.projectId } });
+    const customSite = input.customSiteName?.trim() || null;
+    let projectId = input.projectId?.trim() || null;
+
+    if (customSite) {
+      projectId = await ensureMiscSitesProject(input.createdById);
+    } else if (!projectId) {
+      throw new Error("יש לבחור פרויקט או להזין אתר תחת ״אחר״");
+    }
+
+    const project = await prisma.project.findUnique({ where: { id: projectId! } });
     if (!project) throw new Error("פרויקט לא נמצא");
 
     const { documentNumber, sequenceNumber } = await allocateDocumentNumber("work_diary");
@@ -459,15 +477,16 @@ export const WorkDiariesRepository = {
       data: {
         documentNumber,
         sequenceNumber,
-        projectId: input.projectId,
+        projectId: projectId!,
+        customSiteName: customSite,
         foremanId: input.foremanId,
         workDate: input.workDate,
         workTime: input.workTime ?? null,
         weather: input.weather ?? null,
         workType: input.workType ?? null,
         workSummary: input.workSummary ?? null,
-        clientName: input.clientName ?? project.contractor,
-        address: input.address ?? project.location,
+        clientName: input.clientName ?? (customSite || project.contractor),
+        address: input.address ?? customSite ?? project.location,
         notes: input.notes ?? null,
         foremanSignatureUrl: input.foremanSignatureUrl ?? null,
         foremanSignedName: input.foremanSignedName ?? null,
@@ -492,6 +511,7 @@ export const WorkDiariesRepository = {
             startTime: w.startTime ?? null,
             endTime: w.endTime ?? null,
             hours: w.hours ?? hoursBetween(w.startTime, w.endTime),
+            notes: w.notes ?? null,
             sortOrder: i,
           })),
         },
@@ -519,8 +539,10 @@ export const WorkDiariesRepository = {
     const actor = await actorFromUserId(input.createdById);
     const wf = await WorkflowRepository.create({
       kind: "WORK_DIARY",
-      projectId: input.projectId,
-      title: `יומן עבודה ${documentNumber}`,
+      projectId: projectId!,
+      title: customSite
+        ? `יומן עבודה ${documentNumber} · ${customSite}`
+        : `יומן עבודה ${documentNumber}`,
       documentNumber,
       legacyEntityType: "WorkDiary",
       legacyEntityId: row.id,
@@ -541,7 +563,7 @@ export const WorkDiariesRepository = {
     await syncWorkDiaryArchiveDocument({
       workflowDocumentId: wf.id,
       workDiaryId: row.id,
-      projectId: input.projectId,
+      projectId: projectId!,
       documentNumber,
       title: wf.title,
       status: "draft",
@@ -553,7 +575,7 @@ export const WorkDiariesRepository = {
       "יומן עבודה חדש",
       `נוצר יומן ${documentNumber}`,
       `/field/work-diaries/${row.id}`,
-      input.projectId
+      projectId!
     );
 
     return this.getById(row.id);
@@ -574,6 +596,16 @@ export const WorkDiariesRepository = {
       throw new Error("לא ניתן לערוך מסמך לאחר שליחה לאישור — יש להחזיר לתיקון");
     }
     if (existing.lockedAt) throw new Error("המסמך נעול");
+
+    let nextProjectId = input.projectId;
+    let nextCustomSite =
+      input.customSiteName !== undefined
+        ? input.customSiteName?.trim() || null
+        : undefined;
+
+    if (nextCustomSite) {
+      nextProjectId = await ensureMiscSitesProject(input.updatedById);
+    }
 
     await prisma.$transaction(async (tx) => {
       if (input.workItems) {
@@ -601,6 +633,7 @@ export const WorkDiariesRepository = {
             startTime: w.startTime ?? null,
             endTime: w.endTime ?? null,
             hours: w.hours ?? hoursBetween(w.startTime, w.endTime),
+            notes: w.notes ?? null,
             sortOrder: i,
           })),
         });
@@ -634,7 +667,10 @@ export const WorkDiariesRepository = {
       await tx.workDiary.update({
         where: { id },
         data: {
-          projectId: input.projectId,
+          ...(nextProjectId ? { projectId: nextProjectId } : {}),
+          ...(nextCustomSite !== undefined
+            ? { customSiteName: nextCustomSite }
+            : {}),
           workDate: input.workDate,
           workTime: input.workTime,
           weather: input.weather,
@@ -768,22 +804,13 @@ export const WorkDiariesRepository = {
       actor,
     });
 
-    const stillPending = await prisma.workflowApproval.count({
-      where: {
-        documentId: existing.workflowDocumentId,
-        status: "pending",
-      },
-    });
-
     const wfStatus = (wf?.status as WorkflowStatus) ?? "approved";
     const diaryStatus: WorkDiaryStatus =
       decision === "rejected" || wfStatus === "revision"
         ? "revision"
-        : stillPending > 0
-          ? "in_approval"
-          : wfStatus === "approved"
-            ? "approved"
-            : "pending_approval";
+        : wfStatus === "approved"
+          ? "approved"
+          : "pending_approval";
 
     await prisma.workDiary.update({
       where: { id },
@@ -799,12 +826,11 @@ export const WorkDiariesRepository = {
         decidedAt: new Date(),
       },
     });
-    if (decision === "rejected") {
-      await prisma.workDiaryApproval.updateMany({
-        where: { workDiaryId: id, status: "pending" },
-        data: { status: "cancelled" },
-      });
-    }
+    // Any-one / reject: close remaining pending requests
+    await prisma.workDiaryApproval.updateMany({
+      where: { workDiaryId: id, status: "pending" },
+      data: { status: "cancelled" },
+    });
 
     await syncWorkDiaryArchiveDocument({
       workflowDocumentId: existing.workflowDocumentId,
@@ -824,7 +850,7 @@ export const WorkDiariesRepository = {
         `/field/work-diaries/${id}`,
         existing.projectId
       );
-    } else if (wfStatus === "approved" && stillPending === 0) {
+    } else if (wfStatus === "approved") {
       await notifyUsers(
         [existing.createdById],
         "יומן עבודה אושר",
@@ -837,8 +863,8 @@ export const WorkDiariesRepository = {
     const diary = await this.getById(id);
     return {
       ...diary,
-      approvalComplete: decision === "approved" && stillPending === 0,
-      awaitingOtherApprovers: decision === "approved" && stillPending > 0,
+      approvalComplete: decision === "approved" && wfStatus === "approved",
+      awaitingOtherApprovers: false,
     };
   },
 
@@ -1125,7 +1151,11 @@ export const WorkDiariesRepository = {
       include: {
         project: { select: { id: true, name: true } },
         foreman: { select: { firstName: true, lastName: true } },
-        workflowDocument: true,
+        workflowDocument: {
+          include: {
+            attachments: { select: { id: true, fileType: true }, take: 12 },
+          },
+        },
       },
     });
 
@@ -1139,16 +1169,22 @@ export const WorkDiariesRepository = {
       .map((p) => {
         const diary = byWf.get(p.documentId);
         if (!diary) return null;
+        const attachments = diary.workflowDocument?.attachments ?? [];
+        const photoCount = attachments.filter((a) =>
+          String(a.fileType || "").startsWith("image/")
+        ).length;
         return {
           approvalId: p.approvalId,
           kind: "work_diary" as const,
           documentId: diary.id,
           documentNumber: diary.documentNumber,
           project: diary.project,
-          projectName: diary.project.name,
+          projectName: diary.customSiteName || diary.project.name,
           projectId: diary.projectId,
           foremanName: `${diary.foreman.firstName} ${diary.foreman.lastName}`,
           workDate: diary.workDate.toISOString().slice(0, 10),
+          workSummary: diary.workSummary,
+          photoCount,
           sentAt: p.sentAt,
           status: p.status,
           version: diary.workflowDocument?.version,
@@ -1201,6 +1237,29 @@ export const WorkDiariesRepository = {
       },
       actor
     );
+
+    await prisma.workDiaryMedia.create({
+      data: {
+        workDiaryId: id,
+        name: media.name,
+        url: media.url,
+        path: media.path ?? null,
+        bucket: media.bucket ?? null,
+        size: media.size ?? 0,
+        stage: media.stage ?? "other",
+      },
+    });
+
+    // Regenerate official PDF archive entry after media change
+    await syncWorkDiaryArchiveDocument({
+      workflowDocumentId: existing.workflowDocumentId,
+      workDiaryId: id,
+      projectId: existing.projectId,
+      documentNumber: existing.documentNumber,
+      status: wfStatus,
+      userId: actorId,
+      bumpVersion: true,
+    }).catch(() => undefined);
 
     const diary = await this.getById(id);
     return (

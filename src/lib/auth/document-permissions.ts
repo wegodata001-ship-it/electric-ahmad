@@ -4,9 +4,11 @@ import {
   LEGACY_SYSTEM_ADMIN_ROLE,
   PROJECT_MANAGER_ROLE,
   SYSTEM_MANAGER_ROLE,
+  TRUCK_DRIVER_ROLE,
   isFieldManagerRole,
   isOfficeRole,
 } from "@/lib/auth/roles";
+import { isTruckDriverRole } from "@/lib/auth/driver-permissions";
 
 /** דרגה 1 — מנהלי מערכת (אחמד / פאדי) */
 export const SYSTEM_ADMIN_ROLE = ADMIN_ROLE;
@@ -104,6 +106,15 @@ export function permissionsForRole(role?: string | null): DocumentPermission[] {
     return PROJECT_OPS_PERMS;
   }
   if (isFieldManagerRole(role)) return FIELD_PERMS;
+  if (isTruckDriverRole(role) || role === TRUCK_DRIVER_ROLE) {
+    return [
+      "view_own",
+      "create",
+      "edit_draft",
+      "send_for_approval",
+      "add_comments",
+    ];
+  }
   if (isOfficeRole(role)) return PROJECT_OPS_PERMS;
   return [];
 }

@@ -1450,10 +1450,8 @@ export class DocumentsHubRepository {
               ? "תעודות משלוח/מאושרים"
               : "תעודות משלוח/ממתין לאישור";
 
-      const path = `ops-delivery-notes/${note.id}`;
-      const url = input.baseUrl
-        ? `${input.baseUrl.replace(/\/$/, "")}/field/delivery-notes/${note.id}`
-        : `/field/delivery-notes/${note.id}`;
+      const path = `print/ops-delivery-notes/${note.id}`;
+      const url = `/print/ops-delivery-notes/${note.id}`;
 
       const doc = await prisma.document.create({
         data: {

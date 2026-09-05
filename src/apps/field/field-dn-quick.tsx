@@ -9,14 +9,17 @@ import { STATUS_LABELS } from "@/features/work-management/types";
 import { RevisionFeedbackBanner } from "@/features/approvals/components/revision-feedback-banner";
 import {
   opsDeliveryNotesService,
-  workDiariesService,
 } from "@/features/work-diaries/services/work-diaries.service";
 import { SignaturePad } from "@/features/delivery-notes/components/signature-pad";
 import {
   FieldAttendanceGate,
   requireAttendanceForAction,
 } from "@/apps/field/field-attendance-gate";
-import { pickDefaultApproverIds } from "@/lib/approvers/default-approvers";
+import { FieldApproverPicker } from "@/apps/field/field-approver-picker";
+import {
+  DN_PHOTO_STAGES,
+  FieldMediaCapture,
+} from "@/apps/shared/field-media-capture";
 import { field } from "@/apps/field/field-ui";
 import { cn } from "@/lib/utils";
 
@@ -46,10 +49,13 @@ export function FieldDnQuick() {
     { description: "", quantity: "1", unit: "יח'" },
   ]);
   const [signature, setSignature] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoStage, setPhotoStage] = useState("cargo");
   const [revisionNote, setRevisionNote] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [gateOpen, setGateOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingMode, setPendingMode] = useState<"draft" | "submit" | null>(
     null
   );
@@ -171,11 +177,13 @@ export function FieldDnQuick() {
       } catch {
         /* continue */
       }
+      setPickerOpen(true);
+      return;
     }
     await doSave(mode);
   }
 
-  async function doSave(mode: "draft" | "submit") {
+  async function doSave(mode: "draft" | "submit", approverIds?: string[]) {
     setBusy(true);
     setError("");
     try {
@@ -203,12 +211,26 @@ export function FieldDnQuick() {
 
       if (!noteId) throw new Error("שגיאה ביצירת תעודה");
 
+      if (!reviseId && photos.length) {
+        for (const file of photos.slice(0, 12)) {
+          try {
+            const form = new FormData();
+            form.append("file", file);
+            form.append("stage", photoStage);
+            await fetch(`/api/field/ops-delivery-notes/${noteId}/media`, {
+              method: "POST",
+              body: form,
+            });
+          } catch {
+            /* optional */
+          }
+        }
+      }
+
       if (mode === "submit") {
-        const approvers = await workDiariesService.listApprovers();
-        const approverIds = pickDefaultApproverIds(approvers.items);
-        if (!approverIds.length) throw new Error("אין מאשרים במערכת");
+        if (!approverIds?.length) throw new Error("יש לבחור לפחות מאשר אחד");
         await opsDeliveryNotesService.submit(noteId, approverIds);
-        router.replace("/field/approvals");
+        router.replace("/field/delivery-notes");
       } else {
         router.replace("/field/delivery-notes");
       }
@@ -217,6 +239,7 @@ export function FieldDnQuick() {
     } finally {
       setBusy(false);
       setPendingMode(null);
+      setPickerOpen(false);
     }
   }
 
@@ -387,8 +410,24 @@ export function FieldDnQuick() {
           />
         </label>
 
+        {!reviseId && (
+          <FieldMediaCapture
+            label="תמונות"
+            files={photos}
+            onChange={setPhotos}
+            stage={photoStage}
+            onStageChange={setPhotoStage}
+            stages={DN_PHOTO_STAGES}
+          />
+        )}
+
         <div className={cn(field.card, "p-3")}>
-          <p className="mb-2 text-lg font-bold text-[#111827]">חתימה</p>
+          <p className="mb-2 text-lg font-bold text-[#111827]">
+            חתימת יוצר המסמך
+          </p>
+          <p className="mb-2 text-sm text-slate-500">
+            חובה לפני שליחה לאישור
+          </p>
           <SignaturePad value={signature} onChange={setSignature} height={160} />
         </div>
 
@@ -423,12 +462,20 @@ export function FieldDnQuick() {
         }}
         onSkip={() => {
           setGateOpen(false);
-          if (pendingMode) void doSave(pendingMode);
+          setPickerOpen(true);
         }}
         onCheckedIn={() => {
           setGateOpen(false);
-          if (pendingMode) void doSave(pendingMode);
+          setPickerOpen(true);
         }}
+      />
+
+      <FieldApproverPicker
+        open={pickerOpen}
+        projectId={projectId || null}
+        busy={busy}
+        onCancel={() => setPickerOpen(false)}
+        onConfirm={(ids) => void doSave("submit", ids)}
       />
     </div>
   );

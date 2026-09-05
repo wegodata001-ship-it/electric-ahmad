@@ -73,6 +73,11 @@ export type WorkflowDefinition = {
   transitions: WorkflowTransition[];
   /** האם נדרשת חתימת לקוח לפני מדידה/חשבון */
   gateMeasurementOnClientSignature: boolean;
+  /**
+   * any_one — אישור אחד מספיק; שאר הבקשות נסגרות.
+   * all_must — כל המאשרים חייבים לאשר (למסלולים עתידיים).
+   */
+  approvalMode: "any_one" | "all_must";
 };
 
 export type WorkflowActor = {

@@ -302,6 +302,7 @@ export class WorkflowRepository {
 
     const kind = existing.kind as WorkflowDocKind;
     const from = existing.status as WorkflowStatus;
+    const definition = getWorkflowDefinition(kind);
     const transition = assertTransition({
       kind,
       from,
@@ -311,7 +312,7 @@ export class WorkflowRepository {
       approverIds: input.approverIds,
     });
 
-    // אישור חלקי — אם יש כמה מאשרים
+    // אישור — any_one (ברירת מחדל) או all_must לפי הגדרת המסמך
     if (input.action === "approve") {
       const mine = existing.approvals.find(
         (a) => a.approverId === input.actor.userId && a.status === "pending"
@@ -327,17 +328,25 @@ export class WorkflowRepository {
           decidedAt: new Date(),
         },
       });
-      const pending = await prisma.workflowApproval.count({
-        where: { documentId: input.documentId, status: "pending" },
-      });
-      if (pending > 0) {
-        await this.addEvent(input.documentId, {
-          type: "partial_approved",
-          message: "אישור חלקי התקבל",
-          fromStatus: from,
-          actorId: input.actor.userId,
+
+      if (definition.approvalMode === "any_one") {
+        await prisma.workflowApproval.updateMany({
+          where: { documentId: input.documentId, status: "pending" },
+          data: { status: "cancelled" },
         });
-        return this.getById(input.documentId);
+      } else {
+        const pending = await prisma.workflowApproval.count({
+          where: { documentId: input.documentId, status: "pending" },
+        });
+        if (pending > 0) {
+          await this.addEvent(input.documentId, {
+            type: "partial_approved",
+            message: "אישור חלקי התקבל",
+            fromStatus: from,
+            actorId: input.actor.userId,
+          });
+          return this.getById(input.documentId);
+        }
       }
     }
 

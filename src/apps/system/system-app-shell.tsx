@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { usePortalSession } from "@/apps/shared/use-portal-session";
+import { usePendingApprovalsCount } from "@/apps/shared/use-pending-approvals-count";
 import { canManageAttendance, isSecretaryRole } from "@/lib/auth/attendance-permissions";
 import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import { cn } from "@/lib/utils";
 
 const FULL_NAV = [
+  { href: "/system/approvals", label: "אישורים", badge: true },
   { href: "/system/accounts", label: "עץ פרויקט", exact: false },
   { href: "/system/attendance-qr", label: "QR לנוכחות" },
+  { href: "/documents-archive", label: "ארכיון לחתימה" },
   { href: "/system/users", label: "משתמשים" },
   { href: "/system/workflow", label: "תהליכי עבודה" },
   { href: "/system/documents", label: "מסמכים" },
@@ -31,6 +34,9 @@ export function SystemAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { userName, role, ready, loggingOut, logout } = usePortalSession("system");
+  const pendingCount = usePendingApprovalsCount(
+    ready && !isSecretaryRole(role)
+  );
 
   const nav = useMemo(() => {
     if (isSecretaryRole(role)) return SECRETARY_NAV;
@@ -93,18 +99,35 @@ export function SystemAppShell({ children }: { children: React.ReactNode }) {
                 "exact" in item && item.exact
                   ? pathname === item.href
                   : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const showBadge = Boolean(
+                "badge" in item &&
+                  (item as { badge?: boolean }).badge &&
+                  pendingCount > 0
+              );
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "block rounded-lg px-3 py-2 text-sm font-semibold",
+                    "flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-semibold",
                     active
                       ? "bg-slate-900 text-white"
                       : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   )}
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {showBadge && (
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-black",
+                        active
+                          ? "bg-amber-400 text-slate-900"
+                          : "bg-amber-500 text-white"
+                      )}
+                    >
+                      {pendingCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}

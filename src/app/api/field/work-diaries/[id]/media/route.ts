@@ -19,6 +19,7 @@ export async function POST(req: NextRequest, context: Ctx) {
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) return apiError("לא נבחר קובץ");
+    const stage = form.get("stage") ? String(form.get("stage")) : "other";
 
     const isImage = (file.type || "").startsWith("image/");
     const uploaded = await uploadToStorage({
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest, context: Ctx) {
           path: uploaded.path,
           bucket: uploaded.bucket,
           size: uploaded.size,
-          stage: "during",
+          stage,
         },
         session.userId
       );

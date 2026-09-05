@@ -20,7 +20,7 @@ import {
   User,
 } from "lucide-react";
 
-export type PortalId = "system" | "project" | "operations" | "field";
+export type PortalId = "system" | "project" | "operations" | "field" | "driver";
 
 export type PortalNavItem = {
   label: string;
@@ -73,6 +73,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       { label: "משתמשים", href: "/system/users", icon: Users, mode: "live" },
       { label: "Workflow", href: "/system/workflow", icon: GitBranch, mode: "live" },
       { label: "מסמכים", href: "/system/documents", icon: FolderOpen, mode: "live" },
+      { label: "ארכיון לחתימה", href: "/documents-archive", icon: FileText, mode: "live" },
       { label: "התראות", href: "/system/notifications", icon: Bell, mode: "live" },
       { label: "WhatsApp", href: "/system/whatsapp", icon: MessageSquare, mode: "live" },
       { label: "Share Links", href: "/system/share-links", icon: Share2, mode: "live" },
@@ -183,6 +184,39 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       },
     ],
   },
+  driver: {
+    id: "driver",
+    name: "Driver Portal",
+    shortName: "נהג",
+    headerTitle: "נהג משאית",
+    home: "/driver",
+    description: "תעודות משלוח בלבד",
+    accent: "#1e3a5f",
+    theme: {
+      accent: "#1e3a5f",
+      accentSoft: "#e8eef5",
+      accentMuted: "#334e68",
+      sidebarBg: "#f7fafc",
+      headerTint: "#edf2f7",
+      badge: "DRV",
+    },
+    nav: [
+      { label: "בית", href: "/driver", icon: LayoutDashboard, mode: "live" },
+      {
+        label: "תעודה חדשה",
+        href: "/driver/delivery-notes/new",
+        icon: Truck,
+        mode: "live",
+      },
+      {
+        label: "התעודות שלי",
+        href: "/driver/delivery-notes",
+        icon: FileText,
+        mode: "live",
+      },
+      { label: "פרופיל", href: "/driver/profile", icon: User, mode: "live" },
+    ],
+  },
 };
 
 export const FUTURE_PORTAL_IDS = [
@@ -208,6 +242,9 @@ export function portalHomeForRole(role?: string | null): string {
       return PORTALS.operations.home;
     case "FIELD_MANAGER":
       return PORTALS.field.home;
+    case "TRUCK_DRIVER":
+    case "נהג":
+      return PORTALS.driver.home;
     default:
       return "/login";
   }
@@ -219,6 +256,7 @@ export function portalIdForRole(role?: string | null): PortalId | null {
   if (home === "/project" || home.startsWith("/project/")) return "project";
   if (home === "/operations" || home.startsWith("/operations/")) return "operations";
   if (home === "/field" || home.startsWith("/field/")) return "field";
+  if (home === "/driver" || home.startsWith("/driver/")) return "driver";
   return null;
 }
 
@@ -231,7 +269,9 @@ export function isPortalPath(pathname: string): boolean {
     pathname === "/operations" ||
     pathname.startsWith("/operations/") ||
     pathname === "/field" ||
-    pathname.startsWith("/field/")
+    pathname.startsWith("/field/") ||
+    pathname === "/driver" ||
+    pathname.startsWith("/driver/")
   );
 }
 
@@ -250,4 +290,5 @@ export const PORTAL_DASHBOARD_MOCKS: Record<
   project: [],
   operations: [],
   field: [],
+  driver: [],
 };

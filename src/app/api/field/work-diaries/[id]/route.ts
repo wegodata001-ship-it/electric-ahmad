@@ -31,8 +31,15 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     }
 
     const body = await req.json();
+    const customSiteName =
+      body.customSiteName !== undefined
+        ? body.customSiteName
+          ? String(body.customSiteName).trim()
+          : null
+        : undefined;
     const diary = await WorkDiariesRepository.update(id, {
       projectId: body.projectId,
+      customSiteName,
       workDate: body.workDate ? new Date(body.workDate) : undefined,
       workTime: body.workTime,
       weather: body.weather,
