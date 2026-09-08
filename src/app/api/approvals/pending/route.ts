@@ -67,13 +67,16 @@ export async function POST(req: NextRequest) {
     const kind = body.kind as string | undefined;
     const documentId = body.documentId;
     const decision = body.decision;
+    const correctionMode = body.correctionMode;
     let comment = body.comment;
     const reviewNotes = body.reviewNotes;
     const rejectReasonId = body.rejectReasonId;
     const rejectAttachments = body.rejectAttachments ?? [];
     const approveOptions = body.approveOptions ?? {};
 
-    if (decision === "rejected" && rejectReasonId) {
+    if (decision === "rejected" && correctionMode === "manual") {
+      comment = "תיקון ידני על ידי המאשר";
+    } else if (decision === "rejected" && rejectReasonId) {
       const { formatRejectComment } = await import(
         "@/lib/approvals/reject-reasons"
       );
@@ -85,6 +88,12 @@ export async function POST(req: NextRequest) {
         notes: comment,
         attachmentUrls: rejectAttachments,
       });
+    } else if (
+      decision === "rejected" &&
+      correctionMode === "note" &&
+      rejectAttachments.length
+    ) {
+      comment = `${comment?.trim() || ""}\n\nקבצים מצורפים:\n${rejectAttachments.join("\n")}`;
     }
 
     if (session.isField || isFieldManagerRole(session.role)) {
@@ -96,6 +105,7 @@ export async function POST(req: NextRequest) {
         session.userId,
         decision,
         comment,
+        correctionMode,
         reviewNotes,
         req.nextUrl.origin
       );
@@ -119,14 +129,16 @@ export async function POST(req: NextRequest) {
         documentId,
         session.userId,
         decision,
-        comment
+        comment,
+        correctionMode
       );
     } else if (kind === "delivery_note") {
       result = await OpsDeliveryNotesRepository.decideApproval(
         documentId,
         session.userId,
         decision,
-        comment
+        comment,
+        correctionMode
       );
     } else if (kind === "measurement_sheet") {
       result = await MeasurementSheetsRepository.decideApproval(
@@ -134,6 +146,7 @@ export async function POST(req: NextRequest) {
         session.userId,
         decision,
         comment,
+        correctionMode,
         reviewNotes,
         req.nextUrl.origin
       );

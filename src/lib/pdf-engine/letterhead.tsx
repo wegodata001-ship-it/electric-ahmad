@@ -1,14 +1,33 @@
 import { COMPANY_PROFILE } from "@/config/company";
 
+export type PdfCompanyProfile = {
+  name: string;
+  legalName: string;
+  activity: string;
+  address: string;
+  phone: string;
+  email: string;
+  website: string;
+  vatId: string;
+  logoUrl: string;
+  logoText: string;
+  brandBlue: string;
+  brandBlueDark: string;
+  brandBlueLight: string;
+};
+
 /** Shared company letterhead for all PDF templates */
 export function PdfLetterhead({
   documentTitle,
   meta,
+  companyProfile,
 }: {
   documentTitle: string;
   meta?: { label: string; value: string }[];
+  companyProfile?: Partial<PdfCompanyProfile>;
 }) {
-  const blue = COMPANY_PROFILE.brandBlue;
+  const company: PdfCompanyProfile = { ...COMPANY_PROFILE, ...companyProfile };
+  const blue = company.brandBlue;
 
   return (
     <header
@@ -16,11 +35,11 @@ export function PdfLetterhead({
       style={{ borderBottom: `2.5px solid ${blue}` }}
     >
       <div className="flex items-start gap-3">
-        {COMPANY_PROFILE.logoUrl ? (
+        {company.logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={COMPANY_PROFILE.logoUrl}
-            alt={COMPANY_PROFILE.name}
+            src={company.logoUrl}
+            alt={company.name}
             className="h-[68px] w-[68px] object-contain"
           />
         ) : (
@@ -28,23 +47,23 @@ export function PdfLetterhead({
             className="flex h-[68px] w-[68px] items-center justify-center text-sm font-bold text-white"
             style={{ background: blue }}
           >
-            {COMPANY_PROFILE.logoText}
+            {company.logoText}
           </div>
         )}
         <div className="text-[10.5px] leading-relaxed text-gray-700">
           <p className="text-[16px] font-bold" style={{ color: blue }}>
-            {COMPANY_PROFILE.name}
+            {company.name}
           </p>
-          {COMPANY_PROFILE.legalName &&
-            COMPANY_PROFILE.legalName !== COMPANY_PROFILE.name && (
-              <p>{COMPANY_PROFILE.legalName}</p>
+          {company.legalName &&
+            company.legalName !== company.name && (
+              <p>{company.legalName}</p>
             )}
-          {COMPANY_PROFILE.activity && <p>{COMPANY_PROFILE.activity}</p>}
-          {COMPANY_PROFILE.vatId && <p>ע.מ / ח.פ: {COMPANY_PROFILE.vatId}</p>}
-          {COMPANY_PROFILE.address && <p>{COMPANY_PROFILE.address}</p>}
+          {company.activity && <p>{company.activity}</p>}
+          {company.vatId && <p>ע.מ / ח.פ: {company.vatId}</p>}
+          {company.address && <p>{company.address}</p>}
           <div className="mt-0.5 flex flex-wrap gap-x-3">
-            {COMPANY_PROFILE.phone && <span dir="ltr">{COMPANY_PROFILE.phone}</span>}
-            {COMPANY_PROFILE.email && <span dir="ltr">{COMPANY_PROFILE.email}</span>}
+            {company.phone && <span dir="ltr">{company.phone}</span>}
+            {company.email && <span dir="ltr">{company.email}</span>}
           </div>
         </div>
       </div>
@@ -58,7 +77,7 @@ export function PdfLetterhead({
             className="mt-2 space-y-0.5 rounded border px-2.5 py-2 text-[11px]"
             style={{
               borderColor: `${blue}55`,
-              background: COMPANY_PROFILE.brandBlueLight,
+              background: company.brandBlueLight,
             }}
           >
             {meta.map((m) => (

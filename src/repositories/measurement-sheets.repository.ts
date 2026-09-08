@@ -2369,6 +2369,7 @@ export class MeasurementSheetsRepository {
     approverId: string,
     decision: "approved" | "rejected",
     comment?: string | null,
+    correctionMode?: "manual" | "note",
     reviewNotes?: { rowId?: string | null; boqItemId?: string | null; comment: string }[],
     printBaseUrl?: string
   ) {
@@ -2421,7 +2422,10 @@ export class MeasurementSheetsRepository {
       if (!comment?.trim() && !(reviewNotes?.length)) {
         throw new Error("חובה לרשום הערות מנהל להחזרה לתיקון");
       }
-      const summary = comment?.trim() || "הוחזר לתיקון עם הערות על שורות";
+      const summary =
+        correctionMode === "manual"
+          ? "תיקון ידני על ידי המאשר"
+          : comment?.trim() || "הוחזר לתיקון עם הערות על שורות";
 
       await prisma.$transaction(async (tx) => {
         await tx.measurementSheetApproval.update({
@@ -2473,9 +2477,15 @@ export class MeasurementSheetsRepository {
       });
 
       await this.ensureDocument(sheetId, approverId, "revision", printBaseUrl);
-      await this.addEvent(sheetId, "returned", `הוחזר לתיקון: ${summary}`, approverId, {
-        reviewNotes,
-      });
+      await this.addEvent(
+        sheetId,
+        "returned",
+        correctionMode === "manual"
+          ? "המאשר ביצע החזרה לתיקון ידני"
+          : `הוחזר לתיקון לפי הערה: ${summary}`,
+        approverId,
+        { reviewNotes, correctionMode }
+      );
       const fixLink = `/system/accounts?projectId=${sheet.projectId}&module=performance&sheetId=${sheetId}`;
       await this.notify(
         [sheet.createdById],

@@ -13,6 +13,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
+    "db:backfill-invoice-snapshots": "tsx scripts/backfill-partial-invoice-snapshots.ts",
     "db:seed": "prisma db seed",
     "db:clear": "npx tsx scripts/clear-demo-data.ts",
     "db:studio": "prisma studio",

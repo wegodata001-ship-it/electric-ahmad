@@ -296,6 +296,22 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Work-diary print uses the same protected document for both office and
+  // field users. The page itself performs project/foreman authorization.
+  if (pathname.startsWith("/print/work-diaries/")) {
+    const officeSession = await verifyOfficeSession(
+      request.cookies.get(OFFICE_SESSION_COOKIE)?.value
+    );
+    if (officeSession) return NextResponse.next();
+    const fieldSession = await verifyFieldSession(
+      request.cookies.get(FIELD_SESSION_COOKIE)?.value
+    );
+    if (fieldSession) return NextResponse.next();
+    const login = new URL("/login", request.url);
+    login.searchParams.set("next", pathname);
+    return NextResponse.redirect(login);
+  }
+
   // Field system first — never falls through to office session checks
   if (isFieldPath(pathname)) {
     return handleFieldAuth(request, pathname);

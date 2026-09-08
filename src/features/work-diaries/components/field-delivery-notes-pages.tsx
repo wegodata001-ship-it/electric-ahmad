@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Plus, Save, Send, Trash2 } from "lucide-react";
 import { fieldService } from "@/features/field/services/field.service";
 import { opsDeliveryNotesService, workDiariesService } from "@/features/work-diaries/services/work-diaries.service";
+import { RevisionFeedbackBanner } from "@/features/approvals/components/revision-feedback-banner";
+import { ManualCorrectionEditor } from "@/features/approvals/components/manual-correction-editor";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "טיוטה",
@@ -263,12 +265,15 @@ export function FieldDeliveryNoteDetailPage({ id }: { id: string }) {
   const [approvers, setApprovers] = useState<any[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [showCorrection, setShowCorrection] = useState(false);
+
+  function reload() {
+    return opsDeliveryNotesService.get(id).then(setNote);
+  }
 
   useEffect(() => {
-    opsDeliveryNotesService
-      .get(id)
-      .then(setNote)
-      .catch((e) => setError(e.message));
+    reload().catch((e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function openSubmit() {
@@ -290,6 +295,34 @@ export function FieldDeliveryNoteDetailPage({ id }: { id: string }) {
     }
   }
 
+  async function resubmitPreviousCycle() {
+    const rows = note.approvals || [];
+    const latest = Math.max(
+      ...rows.map((approval: any) =>
+        new Date(approval.sentAt || approval.createdAt || 0).getTime()
+      )
+    );
+    const ids = [
+      ...new Set(
+        rows
+          .filter(
+            (approval: any) =>
+              latest -
+                new Date(
+                  approval.sentAt || approval.createdAt || 0
+                ).getTime() <
+              5_000
+          )
+          .map((approval: any) => approval.approver?.id)
+          .filter(Boolean)
+      ),
+    ] as string[];
+    if (!ids.length) throw new Error("לא נמצאו מאשרים מהסבב הקודם");
+    const updated = await opsDeliveryNotesService.submit(id, ids);
+    setNote(updated);
+    setShowCorrection(false);
+  }
+
   if (!note && !error) return <p className="text-sm text-gray-500">טוען…</p>;
   if (!note) return <p className="text-red-600">{error}</p>;
 
@@ -307,7 +340,28 @@ export function FieldDeliveryNoteDetailPage({ id }: { id: string }) {
         </div>
       </div>
       {error && <div className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">{error}</div>}
-      {editable && (
+      {note.status === "revision" && (
+        <RevisionFeedbackBanner comment={note.rejectionComment} />
+      )}
+      {note.status === "revision" && !showCorrection && (
+        <button
+          type="button"
+          onClick={() => setShowCorrection(true)}
+          className="rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white"
+        >
+          ערוך ותקן
+        </button>
+      )}
+      {showCorrection && note.status === "revision" && (
+        <ManualCorrectionEditor
+          kind="delivery_note"
+          document={note}
+          creatorMode
+          onSaved={reload}
+          onResubmit={resubmitPreviousCycle}
+        />
+      )}
+      {editable && note.status !== "revision" && (
         <button
           type="button"
           onClick={openSubmit}

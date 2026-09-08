@@ -673,6 +673,16 @@ model PartialInvoice {
   vatPercent     Decimal?      @db.Decimal(5, 2)
   vatAmount      Decimal?      @db.Decimal(14, 2)
   totalWithVat   Decimal?      @db.Decimal(14, 2)
+  /** Immutable account-header snapshots; populated at creation/backfill. */
+  projectNameSnapshot           String?
+  projectContractNumberSnapshot String?
+  projectLocationSnapshot       String?
+  projectForemanNameSnapshot    String?
+  companySnapshotJson           String?
+  approverNameSnapshot          String?
+  previousTotal                 Decimal       @default(0) @db.Decimal(14, 2)
+  cumulativeTotal               Decimal       @default(0) @db.Decimal(14, 2)
+  snapshotLockedAt              DateTime?
   status         InvoiceStatus @default(draft)
   date           DateTime
   dueDate        DateTime
@@ -747,6 +757,7 @@ model InvoiceItem {
   cumulativeQuantity Decimal        @default(0) @db.Decimal(12, 4)
   quantityPercent    Float          @default(0)
   unitPrice          Decimal        @db.Decimal(12, 2)
+  previousAmount     Decimal        @default(0) @db.Decimal(14, 2)
   total              Decimal        @db.Decimal(14, 2) // current amount
   cumulativeAmount   Decimal        @default(0) @db.Decimal(14, 2)
   financialPercent   Float          @default(0)

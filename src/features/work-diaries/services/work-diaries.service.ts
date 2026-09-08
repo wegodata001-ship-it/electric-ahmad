@@ -105,6 +105,7 @@ export const approvalsService = {
     kind: "work_diary" | "delivery_note" | "measurement_sheet";
     documentId: string;
     decision: "approved" | "rejected";
+    correctionMode?: "manual" | "note";
     comment?: string;
     reviewNotes?: {
       rowId?: string | null;

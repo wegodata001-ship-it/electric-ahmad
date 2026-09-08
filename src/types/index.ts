@@ -295,6 +295,29 @@ export interface PartialInvoice {
   vatPercent?: number | null;
   vatAmount?: number | null;
   totalWithVat?: number | null;
+  previousTotal: number;
+  cumulativeTotal: number;
+  projectNameSnapshot?: string;
+  projectContractNumberSnapshot?: string;
+  projectLocationSnapshot?: string;
+  projectForemanNameSnapshot?: string;
+  companySnapshot?: {
+    name: string;
+    legalName?: string;
+    activity?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    website?: string;
+    vatId?: string;
+    logoUrl?: string;
+    logoText?: string;
+    brandBlue?: string;
+    brandBlueDark?: string;
+    brandBlueLight?: string;
+  };
+  approverNameSnapshot?: string;
+  snapshotLockedAt?: string;
   status: InvoiceStatus;
   date: string;
   dueDate: string;
@@ -316,6 +339,7 @@ export interface InvoiceItem {
   cumulativeQuantity: number;
   quantityPercent: number;
   unitPrice: number;
+  previousAmount: number;
   total: number;
   cumulativeAmount: number;
   financialPercent: number;

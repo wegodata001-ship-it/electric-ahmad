@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { invoiceService } from "@/features/partial-invoices/services/invoice.service";
 import type { PartialInvoice, ProjectInvoiceApproval } from "@/types";
-import { Badge, Button, Card, Progress } from "@/components/ui";
+import { Badge, Button, Card, Progress, useToast } from "@/components/ui";
 import {
   formatCurrency,
   formatDate,
@@ -35,6 +35,7 @@ const CAN_SEND_FOR_APPROVAL = new Set([
 
 export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   const router = useRouter();
+  const toast = useToast();
   const [invoice, setInvoice] = useState<PartialInvoice | null>(null);
   const [approvals, setApprovals] = useState<ProjectInvoiceApproval[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +95,7 @@ export function PartialInvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
     emailUrl: string | null;
   }) {
     setActionError(null);
+    toast.success("נשלח לאישור בהצלחה");
     if (channels.whatsappUrl) window.open(channels.whatsappUrl, "_blank");
     if (channels.emailUrl) window.open(channels.emailUrl, "_blank");
     void reload();

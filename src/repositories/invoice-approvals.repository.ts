@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth/financial-permissions";
 import { FIELD_MANAGER_ROLE } from "@/lib/auth/roles";
 import type { InvoiceStatus } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 
 const SENDABLE: InvoiceStatus[] = [
   "draft",
@@ -43,6 +44,19 @@ export type SendForApprovalOptions = {
   sendWhatsApp?: boolean;
   sendEmail?: boolean;
 };
+
+export class ApprovalSendError extends Error {
+  constructor(
+    public readonly code:
+      | "APPROVAL_SAVE_FAILED"
+      | "APPROVAL_ALREADY_PENDING"
+      | "APPROVER_VALIDATION_FAILED",
+    message: string
+  ) {
+    super(message);
+    this.name = "ApprovalSendError";
+  }
+}
 
 function departmentForRole(role?: string | null): string {
   const label = roleGradeLabel(role);
@@ -238,8 +252,10 @@ export class InvoiceApprovalsRepository {
   static async sendForApproval(
     invoiceId: string,
     userId: string,
-    options: SendForApprovalOptions
+    options: SendForApprovalOptions,
+    scheduleAfterResponse?: (task: () => Promise<void>) => void
   ) {
+    const startedAt = performance.now();
     const ids = [
       ...new Set(
         [
@@ -251,163 +267,150 @@ export class InvoiceApprovalsRepository {
       ),
     ];
     if (!ids.length) {
-      throw new Error("יש לבחור מנהל לאישור החשבון");
+      throw new ApprovalSendError(
+        "APPROVER_VALIDATION_FAILED",
+        "יש לבחור מנהל לאישור החשבון"
+      );
     }
 
-    const invoice = await prisma.partialInvoice.findUnique({
-      where: { id: invoiceId },
-      include: {
-        project: { select: { id: true, name: true, foremanId: true } },
-      },
-    });
+    const validationStartedAt = performance.now();
+    const [invoice, approverRows] = await Promise.all([
+      prisma.partialInvoice.findUnique({
+        where: { id: invoiceId },
+        select: {
+          id: true,
+          projectId: true,
+          invoiceNumber: true,
+          sequenceNumber: true,
+          amount: true,
+          status: true,
+          project: { select: { id: true, name: true, foremanId: true } },
+        },
+      }),
+      prisma.user.findMany({
+        where: { id: { in: ids } },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          employee: {
+            select: { id: true, phone: true, email: true, isDeleted: true },
+          },
+        },
+      }),
+    ]);
     if (!invoice) throw new Error("חשבון לא נמצא");
 
-    if (!SENDABLE.includes(invoice.status)) {
-      throw new Error(
+    if (
+      !SENDABLE.includes(invoice.status) &&
+      invoice.status !== "pending_foreman_approval"
+    ) {
+      throw new ApprovalSendError(
+        "APPROVAL_SAVE_FAILED",
         "ניתן לשלוח לאישור רק חשבון בטיוטה או שנדחה על ידי מנהל עבודה"
       );
     }
 
-    const approvers = await prisma.user.findMany({
-      where: { id: { in: ids } },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        employee: {
-          select: { id: true, phone: true, email: true, isDeleted: true },
-        },
-      },
-    });
-    if (approvers.length !== ids.length) {
-      throw new Error("אחד או יותר מהמנהלים שנבחרו לא נמצאו");
+    if (approverRows.length !== ids.length) {
+      throw new ApprovalSendError(
+        "APPROVER_VALIDATION_FAILED",
+        "אחד או יותר מהמנהלים שנבחרו לא נמצאו"
+      );
     }
+    const approverById = new Map(approverRows.map((row) => [row.id, row]));
+    const approvers = ids.map((id) => approverById.get(id)!);
     for (const a of approvers) {
       if (!canApproveDocuments(a.role)) {
-        throw new Error(`המשתמש ${a.name} אינו מורשה לאשר חשבונות`);
+        throw new ApprovalSendError(
+          "APPROVER_VALIDATION_FAILED",
+          `המשתמש ${a.name} אינו מורשה לאשר חשבונות`
+        );
       }
     }
+    const validationMs = performance.now() - validationStartedAt;
 
     const now = new Date();
     const createTask = options.createTask !== false;
     const notifyInApp = options.notifyInApp !== false;
     const sendWhatsApp = Boolean(options.sendWhatsApp);
     const sendEmail = Boolean(options.sendEmail);
+    const requestedApprovals = approvers.map((approver) => ({
+      id: randomUUID(),
+      invoiceId,
+      projectId: invoice.projectId,
+      managerId:
+        approver.employee && !approver.employee.isDeleted
+          ? approver.employee.id
+          : null,
+      approverUserId: approver.id,
+      status: "pending" as const,
+      sentAt: now,
+      approvedAt: null,
+      rejectedAt: null,
+      comment: null,
+      createdById: userId,
+      createdAt: now,
+      updatedAt: now,
+    }));
 
-    const approvals = await prisma.$transaction(async (tx) => {
-      await tx.projectInvoiceApproval.updateMany({
-        where: { invoiceId, status: "pending" },
-        data: { status: "cancelled", updatedAt: now },
-      });
-
-      const created = [];
-      for (const approver of approvers) {
-        const managerId =
-          approver.employee && !approver.employee.isDeleted
-            ? approver.employee.id
-            : null;
-
-        const approval = await tx.projectInvoiceApproval.create({
-          data: {
-            invoiceId,
-            projectId: invoice.projectId,
-            managerId,
-            approverUserId: approver.id,
-            status: "pending",
-            sentAt: now,
-            createdById: userId,
-          },
-          include: approvalInclude,
-        });
-        created.push(approval);
-
-        if (createTask) {
-          await tx.activity.create({
-            data: {
-              projectId: invoice.projectId,
-              type: "status_changed",
-              title: "משימת אישור חשבון",
-              description: `חשבון ${invoice.invoiceNumber} ממתין לאישור של ${approver.name}`,
-              userId: approver.id,
-              metadata: JSON.stringify({
-                kind: "invoice_approval_task",
-                invoiceId,
-                approvalId: approval.id,
-                approverUserId: approver.id,
-                sentByUserId: userId,
-                sentAt: now.toISOString(),
-              }),
-            },
-          });
-        }
-
-        if (notifyInApp) {
-          await tx.notification.create({
-            data: {
-              userId: approver.id,
-              projectId: invoice.projectId,
-              type: "invoice",
-              title: "חשבון ממתין לאישורך",
-              message: `חשבון ${invoice.invoiceNumber} בפרויקט ${invoice.project.name} נשלח לאישורך`,
-              link: `/invoices/${invoiceId}`,
-            },
-          });
-        }
-      }
-
-      await tx.partialInvoice.update({
-        where: { id: invoiceId },
+    const transactionStartedAt = performance.now();
+    const core = await prisma.$transaction(async (tx) => {
+      // Atomic claim: only one request may move this invoice into a pending
+      // cycle. A concurrent retry observes the committed pending approvals.
+      const claimed = await tx.partialInvoice.updateMany({
+        where: { id: invoiceId, status: { in: SENDABLE } },
         data: {
           status: "pending_foreman_approval",
           updatedById: userId,
         },
       });
 
-      const names = approvers.map((a) => a.name).join(", ");
-      await tx.activity.create({
-        data: {
-          projectId: invoice.projectId,
-          type: "status_changed",
-          title: "חשבון נשלח לאישור",
-          description: `חשבון ${invoice.sequenceNumber} נשלח לאישור של: ${names}`,
-          userId,
-          metadata: JSON.stringify({
-            invoiceId,
-            approvalIds: created.map((a) => a.id),
-            approverUserIds: approvers.map((a) => a.id),
-            createTask,
-            notifyInApp,
-            sendWhatsApp,
-            sendEmail,
-          }),
-        },
+      if (claimed.count === 0) {
+        const existing = await tx.projectInvoiceApproval.findMany({
+          where: { invoiceId, status: "pending" },
+          orderBy: { createdAt: "asc" },
+        });
+        const existingIds = existing
+          .map((row) => row.approverUserId)
+          .filter((id): id is string => Boolean(id))
+          .sort();
+        const requestedIds = [...ids].sort();
+        if (
+          existingIds.length === requestedIds.length &&
+          existingIds.every((id, index) => id === requestedIds[index])
+        ) {
+          return { approvals: existing, idempotent: true };
+        }
+        throw new ApprovalSendError(
+          "APPROVAL_ALREADY_PENDING",
+          "החשבון כבר נשלח למחזור אישור אחר"
+        );
+      }
+
+      await tx.projectInvoiceApproval.updateMany({
+        where: { invoiceId, status: "pending" },
+        data: { status: "cancelled", updatedAt: now },
+      });
+      await tx.projectInvoiceApproval.createMany({
+        data: requestedApprovals.map((approval) => ({
+          id: approval.id,
+          invoiceId: approval.invoiceId,
+          projectId: approval.projectId,
+          managerId: approval.managerId,
+          approverUserId: approval.approverUserId,
+          status: approval.status,
+          sentAt: approval.sentAt,
+          approvedAt: approval.approvedAt,
+          rejectedAt: approval.rejectedAt,
+          comment: approval.comment,
+          createdById: approval.createdById,
+        })),
       });
 
-      return created;
+      return { approvals: requestedApprovals, idempotent: false };
     });
-
-    await AuditRepository.log({
-      action: "UPDATE",
-      entityType: "ProjectInvoiceApproval",
-      entityId: approvals[0]!.id,
-      userId,
-      metadata: {
-        action: "send_for_approval",
-        invoiceId,
-        approverUserIds: approvers.map((a) => a.id),
-      },
-    });
-
-    emitDomainEvent("invoice.sent_for_foreman_approval", {
-      invoiceId,
-      projectId: invoice.projectId,
-      approvalId: approvals[0]!.id,
-      managerId: approvals[0]!.managerId ?? undefined,
-      sequenceNumber: invoice.sequenceNumber,
-      amount: Number(invoice.amount),
-      actorUserId: userId,
-    });
+    const transactionMs = performance.now() - transactionStartedAt;
 
     const first = approvers[0]!;
     const phone = (first.employee?.phone || "").replace(/\D/g, "");
@@ -417,9 +420,51 @@ export class InvoiceApprovalsRepository {
       `שלום,\nחשבון ${invoice.invoiceNumber} בפרויקט ${invoice.project.name} ממתין לאישור (${names}) במערכת.`
     );
 
+    const approvalDtos = core.approvals.map((approval) => {
+      const approver = approverById.get(approval.approverUserId || "");
+      return {
+        id: approval.id,
+        invoiceId,
+        projectId: invoice.projectId,
+        managerId: approval.managerId ?? "",
+        approverUserId: approval.approverUserId,
+        managerName: approver?.name,
+        status: "pending" as const,
+        sentAt: approval.sentAt?.toISOString() ?? now.toISOString(),
+        approvedAt: null,
+        rejectedAt: null,
+        comment: approval.comment,
+        createdById: userId,
+        createdAt: approval.createdAt.toISOString(),
+        updatedAt: approval.updatedAt.toISOString(),
+        invoiceSequence: invoice.sequenceNumber,
+        invoiceNumber: invoice.invoiceNumber,
+        amount: Number(invoice.amount),
+      };
+    });
+
+    if (!core.idempotent) {
+      const task = () =>
+        this.runSendForApprovalSideEffects({
+          invoice,
+          approvals: requestedApprovals,
+          approvers,
+          actorUserId: userId,
+          createTask,
+          notifyInApp,
+          sendWhatsApp,
+          sendEmail,
+        });
+      if (scheduleAfterResponse) scheduleAfterResponse(task);
+      else void task();
+    }
+
+    const totalMs = performance.now() - startedAt;
+
     return {
-      approval: mapApproval(approvals[0]!),
-      approvals: approvals.map(mapApproval),
+      approval: approvalDtos[0]!,
+      approvals: approvalDtos,
+      idempotent: core.idempotent,
       channels: {
         whatsappUrl:
           sendWhatsApp && phone
@@ -430,7 +475,157 @@ export class InvoiceApprovalsRepository {
             ? `mailto:${email}?subject=${encodeURIComponent(`אישור חשבון ${invoice.invoiceNumber}`)}&body=${message}`
             : null,
       },
+      performance: {
+        validationMs: Math.round(validationMs),
+        transactionMs: Math.round(transactionMs),
+        totalMs: Math.round(totalMs),
+      },
     };
+  }
+
+  private static async runSendForApprovalSideEffects(input: {
+    invoice: {
+      id: string;
+      projectId: string;
+      invoiceNumber: string;
+      sequenceNumber: number;
+      amount: unknown;
+      project: { name: string };
+    };
+    approvals: {
+      id: string;
+      managerId: string | null;
+      approverUserId: string | null;
+    }[];
+    approvers: {
+      id: string;
+      name: string;
+    }[];
+    actorUserId: string;
+    createTask: boolean;
+    notifyInApp: boolean;
+    sendWhatsApp: boolean;
+    sendEmail: boolean;
+  }) {
+    const startedAt = performance.now();
+    const failures: { stage: string; error: string }[] = [];
+    const run = async (stage: string, operation: () => Promise<unknown>) => {
+      try {
+        await operation();
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown side-effect error";
+        failures.push({ stage, error: message });
+        console.error(`[send-for-approval] ${stage} failed`, error);
+      }
+    };
+
+    if (input.createTask) {
+      await run("TASK_NOTIFICATION_FAILED", () =>
+        prisma.activity.createMany({
+          data: input.approvals.map((approval) => {
+            const approver = input.approvers.find(
+              (candidate) => candidate.id === approval.approverUserId
+            )!;
+            return {
+              projectId: input.invoice.projectId,
+              type: "status_changed",
+              title: "משימת אישור חשבון",
+              description: `חשבון ${input.invoice.invoiceNumber} ממתין לאישור של ${approver.name}`,
+              userId: approver.id,
+              metadata: JSON.stringify({
+                kind: "invoice_approval_task",
+                invoiceId: input.invoice.id,
+                approvalId: approval.id,
+                approverUserId: approver.id,
+                sentByUserId: input.actorUserId,
+              }),
+            };
+          }),
+        })
+      );
+    }
+
+    if (input.notifyInApp) {
+      await run("NOTIFICATION_FAILED", () =>
+        prisma.notification.createMany({
+          data: input.approvers.map((approver) => ({
+            userId: approver.id,
+            projectId: input.invoice.projectId,
+            type: "invoice",
+            title: "חשבון ממתין לאישורך",
+            message: `חשבון ${input.invoice.invoiceNumber} בפרויקט ${input.invoice.project.name} נשלח לאישורך`,
+            link: `/invoices/${input.invoice.id}`,
+          })),
+        })
+      );
+    }
+
+    const names = input.approvers.map((approver) => approver.name).join(", ");
+    await run("ACTIVITY_FAILED", () =>
+      prisma.activity.create({
+        data: {
+          projectId: input.invoice.projectId,
+          type: "status_changed",
+          title: "חשבון נשלח לאישור",
+          description: `חשבון ${input.invoice.sequenceNumber} נשלח לאישור של: ${names}`,
+          userId: input.actorUserId,
+          metadata: JSON.stringify({
+            invoiceId: input.invoice.id,
+            approvalIds: input.approvals.map((approval) => approval.id),
+            approverUserIds: input.approvers.map((approver) => approver.id),
+            createTask: input.createTask,
+            notifyInApp: input.notifyInApp,
+            sendWhatsApp: input.sendWhatsApp,
+            sendEmail: input.sendEmail,
+          }),
+        },
+      })
+    );
+
+    await run("AUDIT_FAILED", () =>
+      AuditRepository.log({
+        action: "UPDATE",
+        entityType: "ProjectInvoiceApproval",
+        entityId: input.approvals[0]!.id,
+        userId: input.actorUserId,
+        metadata: {
+          action: "send_for_approval",
+          invoiceId: input.invoice.id,
+          approverUserIds: input.approvers.map((approver) => approver.id),
+        },
+      })
+    );
+
+    emitDomainEvent("invoice.sent_for_foreman_approval", {
+      invoiceId: input.invoice.id,
+      projectId: input.invoice.projectId,
+      approvalId: input.approvals[0]!.id,
+      managerId: input.approvals[0]!.managerId ?? undefined,
+      sequenceNumber: input.invoice.sequenceNumber,
+      amount: Number(input.invoice.amount),
+      actorUserId: input.actorUserId,
+    });
+
+    if (failures.length) {
+      await AuditRepository.log({
+        action: "UPDATE",
+        entityType: "ProjectInvoiceApproval",
+        entityId: input.approvals[0]!.id,
+        userId: input.actorUserId,
+        metadata: {
+          action: "send_for_approval_side_effect_failure",
+          failures,
+        },
+      }).catch((error) =>
+        console.error("[send-for-approval] failure audit failed", error)
+      );
+    }
+
+    console.info("[send-for-approval] background completed", {
+      durationMs: Math.round(performance.now() - startedAt),
+      failures,
+    });
   }
 
   static async saveInvoiceDocument(
@@ -513,6 +708,12 @@ export class InvoiceApprovalsRepository {
       throw new Error("ניתן לאשר רק בקשה במצב ממתין");
     }
 
+    const actor = await prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: { name: true },
+    });
+    if (!actor) throw new Error("המשתמש המאשר לא נמצא");
+
     const now = new Date();
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -530,6 +731,8 @@ export class InvoiceApprovalsRepository {
         where: { id: approval.invoiceId },
         data: {
           status: "approved_by_foreman",
+          approverNameSnapshot: actor.name,
+          snapshotLockedAt: now,
           updatedById: actorUserId,
         },
       });

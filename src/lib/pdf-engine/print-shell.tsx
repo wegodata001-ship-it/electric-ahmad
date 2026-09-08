@@ -6,7 +6,6 @@ import { COMPANY_PROFILE } from "@/config/company";
 import type { PdfPageSize } from "./types";
 
 const PRINT_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Heebo:wght@400;600;700&display=swap');
   .pdf-engine-root { font-family: 'Assistant', 'Heebo', Arial, sans-serif; color: #111827; }
   @media print {
     body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -35,9 +34,42 @@ export function PdfPrintShell({
   const blue = COMPANY_PROFILE.brandBlue;
 
   useEffect(() => {
-    if (search.get("download") || search.get("autoprint")) {
-      window.setTimeout(() => window.print(), 400);
-    }
+    const previousTitle = document.title;
+    document.title = title;
+    return () => {
+      document.title = previousTitle;
+    };
+  }, [title]);
+
+  useEffect(() => {
+    if (!search.get("download") && !search.get("autoprint")) return;
+
+    let cancelled = false;
+    const images = Array.from(document.images);
+    const imagesReady = Promise.all(
+      images.map((image) =>
+        image.complete
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              image.addEventListener("load", () => resolve(), { once: true });
+              image.addEventListener("error", () => resolve(), { once: true });
+            })
+      )
+    );
+    const fontsReady = document.fonts?.ready ?? Promise.resolve();
+    const timeout = new Promise<void>((resolve) =>
+      window.setTimeout(resolve, 1500)
+    );
+
+    void Promise.race([Promise.all([imagesReady, fontsReady]), timeout]).then(
+      () => {
+        if (!cancelled) window.setTimeout(() => window.print(), 50);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
   }, [search]);
 
   const sizeCss =

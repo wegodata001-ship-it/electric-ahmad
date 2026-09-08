@@ -293,6 +293,7 @@ export class WorkflowRepository {
     actor: WorkflowActor;
     comment?: string | null;
     approverIds?: string[];
+    correctionMode?: "manual" | "note";
   }) {
     const existing = await prisma.workflowDocument.findUnique({
       where: { id: input.documentId },
@@ -421,13 +422,28 @@ export class WorkflowRepository {
       `${input.action}: ${WORKFLOW_STATUS_LABELS[transition.to]}`
     );
 
+    const eventMessage =
+      input.action === "reject"
+        ? input.correctionMode === "manual"
+          ? `${input.actor.name || "המאשר"} ביצע החזרה לתיקון ידני`
+          : `${input.actor.name || "המאשר"} החזיר לתיקון לפי הערה: ${
+              input.comment?.trim() || "ללא פירוט"
+            }`
+        : input.action === "resubmit"
+          ? "נשלח מחדש לאישור"
+        : `${WORKFLOW_STATUS_LABELS[from]} → ${WORKFLOW_STATUS_LABELS[transition.to]}`;
+
     await this.addEvent(input.documentId, {
       type: input.action,
-      message: `${WORKFLOW_STATUS_LABELS[from]} → ${WORKFLOW_STATUS_LABELS[transition.to]}`,
+      message: eventMessage,
       fromStatus: from,
       toStatus: transition.to,
       actorId: input.actor.userId,
-      metadata: { comment: input.comment, approverIds: input.approverIds },
+      metadata: {
+        comment: input.comment,
+        approverIds: input.approverIds,
+        correctionMode: input.correctionMode,
+      },
     });
 
     if (input.action === "reject" && existing.createdById) {

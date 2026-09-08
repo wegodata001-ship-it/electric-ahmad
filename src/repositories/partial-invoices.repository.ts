@@ -11,6 +11,7 @@ import {
   assertDocumentMutable,
   INVOICE_EDITABLE_STATUSES,
 } from "@/lib/workflow/document-guards";
+import { COMPANY_PROFILE } from "@/config/company";
 
 export type CreatePartialInvoiceInput = {
   projectId: string;
@@ -116,6 +117,9 @@ export class PartialInvoicesRepository {
 
     const project = await prisma.project.findFirst({
       where: { id: input.projectId, deletedAt: null },
+      include: {
+        foreman: { select: { firstName: true, lastName: true } },
+      },
     });
     if (!project) throw new Error("פרויקט לא נמצא");
 
@@ -155,6 +159,11 @@ export class PartialInvoicesRepository {
     const billingMonth =
       input.billingMonth?.trim() || formatBillingMonth(invoiceDate);
     const invoiceNumber = `${project.contractNumber}-חשבון-${sequenceNumber}`;
+    const previousTotalRow = await prisma.partialInvoice.aggregate({
+      where: { projectId: input.projectId },
+      _sum: { amount: true },
+    });
+    const previousTotal = Number(previousTotalRow._sum.amount ?? 0);
 
     const lineData = input.items.map((line) => {
       const boq = boqById.get(line.boqItemId)!;
@@ -180,6 +189,7 @@ export class PartialInvoicesRepository {
         cumulativeQuantity: calc.cumulativeQuantity,
         quantityPercent: calc.quantityPercent,
         unitPrice,
+        previousAmount: Math.round(previousQuantity * unitPrice * 100) / 100,
         total: calc.currentAmount,
         cumulativeAmount: calc.cumulativeAmount,
         financialPercent: calc.financialPercent,
@@ -246,6 +256,14 @@ export class PartialInvoicesRepository {
             vatPercent,
             vatAmount,
             totalWithVat,
+            projectNameSnapshot: project.name,
+            projectContractNumberSnapshot: project.contractNumber,
+            projectLocationSnapshot: project.location,
+            projectForemanNameSnapshot:
+              `${project.foreman.firstName} ${project.foreman.lastName}`.trim(),
+            companySnapshotJson: JSON.stringify(COMPANY_PROFILE),
+            previousTotal,
+            cumulativeTotal: previousTotal + amount,
             status: input.status ?? "draft",
             date: invoiceDate,
             dueDate,
@@ -477,6 +495,7 @@ export class PartialInvoicesRepository {
           cumulativeQuantity: calc.cumulativeQuantity,
           quantityPercent: calc.quantityPercent,
           unitPrice,
+          previousAmount: Math.round(previousQuantity * unitPrice * 100) / 100,
           total: calc.currentAmount,
           cumulativeAmount: calc.cumulativeAmount,
           financialPercent: calc.financialPercent,
@@ -486,7 +505,7 @@ export class PartialInvoicesRepository {
       const amount = lineData.reduce((s, l) => s + l.total, 0);
       const vatPercent =
         project.vatPercent != null ? Number(project.vatPercent) : null;
-      let subtotal: number | null = amount;
+      const subtotal: number | null = amount;
       let vatAmount: number | null = null;
       let totalWithVat: number | null = amount;
       if (vatPercent != null && Number.isFinite(vatPercent)) {
@@ -514,6 +533,7 @@ export class PartialInvoicesRepository {
           vatPercent,
           vatAmount,
           totalWithVat,
+          cumulativeTotal: Number(existing.previousTotal) + amount,
           // status is intentionally NOT taken from input — status changes must
           // go through approval / send / sign endpoints so workflow gates hold.
           status: existing.status,

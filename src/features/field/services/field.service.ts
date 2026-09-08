@@ -7,6 +7,21 @@ import type {
   FieldCrewTimeEntry,
 } from "@/types";
 
+export type FieldAttendanceState = {
+  id: string;
+  checkedInAt: string;
+  checkedOutAt: string | null;
+  checkIn?: string;
+  checkOut?: string;
+  hours?: number;
+};
+
+export type FieldAttendanceStatus = {
+  attendance: FieldAttendanceState | null;
+  todayAttendance: FieldAttendanceState | null;
+  checkedIn: boolean;
+};
+
 export type FieldDashboard = {
   foreman: {
     id: string;
@@ -23,11 +38,8 @@ export type FieldDashboard = {
   }[];
   crewCount: number;
   openJournal: null; // removed WorkJournal
-  attendance: {
-    id: string;
-    checkedInAt: string;
-    checkedOutAt: string | null;
-  } | null;
+  attendance: FieldAttendanceState | null;
+  todayAttendance: FieldAttendanceState | null;
   checkedIn: boolean;
 };
 
@@ -56,6 +68,10 @@ export type JournalSaveBody = {
 export const fieldService = {
   getDashboard() {
     return apiClient.get<FieldDashboard>("/api/field/me");
+  },
+
+  getAttendanceState() {
+    return apiClient.get<FieldAttendanceStatus>("/api/field/attendance");
   },
 
   getCrew() {

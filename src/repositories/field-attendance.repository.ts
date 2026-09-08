@@ -74,6 +74,15 @@ function mapAttendance(row: {
 
 export type AttendancePeriod = "today" | "week" | "month" | "range" | "all";
 
+export class FieldAttendanceStateError extends Error {
+  readonly status = 409;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "FieldAttendanceStateError";
+  }
+}
+
 function requireGps(meta?: FieldGpsMeta | null) {
   if (
     !meta ||
@@ -103,27 +112,52 @@ export class FieldAttendanceRepository {
     };
   }
 
+  static async getLatestToday(foremanId: string) {
+    const from = startOfLocalDay();
+    const to = addDays(from, 1);
+    const row = await prisma.fieldAttendance.findFirst({
+      where: {
+        foremanId,
+        checkedInAt: { gte: from, lt: to },
+      },
+      orderBy: { checkedInAt: "desc" },
+    });
+    return row ? mapAttendance(row) : null;
+  }
+
   static async checkIn(
     foremanId: string,
     opts?: { projectId?: string; gps?: FieldGpsMeta; userId?: string }
   ) {
     requireGps(opts?.gps);
-    const open = await this.getOpen(foremanId);
-    if (open) return open;
-
     const gps = opts!.gps!;
-    const row = await prisma.fieldAttendance.create({
-      data: {
-        foremanId,
-        projectId: opts?.projectId || null,
-        checkedInAt: new Date(),
-        latitude: gps.latitude,
-        longitude: gps.longitude,
-        accuracyMeters: gps.accuracyMeters ?? null,
-        deviceLabel: gps.deviceLabel ?? null,
-        userAgent: gps.userAgent ?? null,
+    const row = await prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${foremanId})) IS NULL AS locked`;
+        const open = await tx.fieldAttendance.findFirst({
+          where: { foremanId, checkedOutAt: null },
+          select: { id: true },
+        });
+        if (open) {
+          throw new FieldAttendanceStateError(
+            "כבר קיימת כניסה פתוחה. יש לבצע יציאה לפני כניסה נוספת."
+          );
+        }
+        return tx.fieldAttendance.create({
+          data: {
+            foremanId,
+            projectId: opts?.projectId || null,
+            checkedInAt: new Date(),
+            latitude: gps.latitude,
+            longitude: gps.longitude,
+            accuracyMeters: gps.accuracyMeters ?? null,
+            deviceLabel: gps.deviceLabel ?? null,
+            userAgent: gps.userAgent ?? null,
+          },
+        });
       },
-    });
+      { isolationLevel: "Serializable" }
+    );
 
     if (opts?.userId) {
       await AuditRepository.log({
@@ -158,24 +192,40 @@ export class FieldAttendanceRepository {
     opts?: { gps?: FieldGpsMeta; userId?: string }
   ) {
     requireGps(opts?.gps);
-    const open = await prisma.fieldAttendance.findFirst({
-      where: { foremanId, checkedOutAt: null },
-      orderBy: { checkedInAt: "desc" },
-    });
-    if (!open) throw new Error("אין כניסה פתוחה");
-
     const gps = opts!.gps!;
-    const row = await prisma.fieldAttendance.update({
-      where: { id: open.id },
-      data: {
-        checkedOutAt: new Date(),
-        latitude: gps.latitude,
-        longitude: gps.longitude,
-        accuracyMeters: gps.accuracyMeters ?? null,
-        deviceLabel: gps.deviceLabel ?? open.deviceLabel,
-        userAgent: gps.userAgent ?? open.userAgent,
+    const row = await prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${foremanId})) IS NULL AS locked`;
+        const open = await tx.fieldAttendance.findFirst({
+          where: { foremanId, checkedOutAt: null },
+          orderBy: { checkedInAt: "desc" },
+        });
+        if (!open) {
+          throw new FieldAttendanceStateError("אין כניסה פתוחה");
+        }
+        const checkedOutAt = new Date();
+        const result = await tx.fieldAttendance.updateMany({
+          where: { id: open.id, checkedOutAt: null },
+          data: {
+            checkedOutAt,
+            latitude: gps.latitude,
+            longitude: gps.longitude,
+            accuracyMeters: gps.accuracyMeters ?? null,
+            deviceLabel: gps.deviceLabel ?? open.deviceLabel,
+            userAgent: gps.userAgent ?? open.userAgent,
+          },
+        });
+        if (result.count !== 1) {
+          throw new FieldAttendanceStateError(
+            "היציאה כבר נשמרה עבור רשומת נוכחות זו"
+          );
+        }
+        return tx.fieldAttendance.findUniqueOrThrow({
+          where: { id: open.id },
+        });
       },
-    });
+      { isolationLevel: "Serializable" }
+    );
 
     if (opts?.userId) {
       await AuditRepository.log({

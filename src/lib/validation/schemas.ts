@@ -227,6 +227,7 @@ export const approvalsDecisionSchema = z.object({
     .optional(),
   documentId: idString,
   decision: z.enum(["approved", "rejected"]),
+  correctionMode: z.enum(["manual", "note"]).optional(),
   comment: optionalTrimmedString,
   reviewNotes: z.array(z.any()).optional(),
   rejectReasonId: optionalTrimmedString,

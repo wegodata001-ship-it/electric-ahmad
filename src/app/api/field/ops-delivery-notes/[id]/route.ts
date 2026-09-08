@@ -27,6 +27,15 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (existing.foremanId !== session.foremanId) return apiError("אין הרשאה", 403);
 
     const body = await req.json();
+    if (
+      body.expectedVersion != null &&
+      Number(body.expectedVersion) !== existing.currentVersion
+    ) {
+      return apiError(
+        "המסמך עודכן מאז שפתחת אותו. יש לרענן לפני שמירת השינויים.",
+        409
+      );
+    }
     const note = await OpsDeliveryNotesRepository.update(id, {
       projectId: body.projectId,
       noteDate: body.noteDate ? new Date(body.noteDate) : undefined,

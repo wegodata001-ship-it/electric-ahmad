@@ -77,11 +77,24 @@ type InvoiceWithRelations = PrismaPartialInvoice & {
     cumulativeQuantity: Prisma.Decimal;
     quantityPercent: number;
     unitPrice: Prisma.Decimal;
+    previousAmount: Prisma.Decimal;
     total: Prisma.Decimal;
     cumulativeAmount: Prisma.Decimal;
     financialPercent: number;
   }[];
 };
+
+function parseInvoiceCompanySnapshot(
+  value: string | null
+): PartialInvoice["companySnapshot"] {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as PartialInvoice["companySnapshot"];
+    return parsed && typeof parsed.name === "string" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
 type GalleryWithRelations = PrismaGalleryItem & {
   project: { name: string };
   uploadedBy: { name: string };
@@ -242,12 +255,15 @@ export function mapPartialInvoice(row: InvoiceWithRelations): PartialInvoice {
   return {
     id: row.id,
     projectId: row.projectId,
-    projectName: row.project.name,
-    projectContractNumber: row.project.contractNumber,
-    projectLocation: row.project.location,
-    projectForemanName: row.project.foreman
-      ? `${row.project.foreman.firstName} ${row.project.foreman.lastName}`
-      : undefined,
+    projectName: row.projectNameSnapshot || row.project.name,
+    projectContractNumber:
+      row.projectContractNumberSnapshot || row.project.contractNumber,
+    projectLocation: row.projectLocationSnapshot || row.project.location,
+    projectForemanName:
+      row.projectForemanNameSnapshot ||
+      (row.project.foreman
+        ? `${row.project.foreman.firstName} ${row.project.foreman.lastName}`
+        : undefined),
     invoiceNumber: row.invoiceNumber,
     sequenceNumber: row.sequenceNumber ?? 0,
     billingMonth: row.billingMonth ?? "",
@@ -259,6 +275,19 @@ export function mapPartialInvoice(row: InvoiceWithRelations): PartialInvoice {
     vatAmount: row.vatAmount != null ? decimalToNumber(row.vatAmount) : null,
     totalWithVat:
       row.totalWithVat != null ? decimalToNumber(row.totalWithVat) : null,
+    previousTotal: decimalToNumber(row.previousTotal ?? 0),
+    cumulativeTotal: decimalToNumber(
+      row.cumulativeTotal ?? row.amount
+    ),
+    projectNameSnapshot: row.projectNameSnapshot ?? undefined,
+    projectContractNumberSnapshot:
+      row.projectContractNumberSnapshot ?? undefined,
+    projectLocationSnapshot: row.projectLocationSnapshot ?? undefined,
+    projectForemanNameSnapshot:
+      row.projectForemanNameSnapshot ?? undefined,
+    companySnapshot: parseInvoiceCompanySnapshot(row.companySnapshotJson),
+    approverNameSnapshot: row.approverNameSnapshot ?? undefined,
+    snapshotLockedAt: row.snapshotLockedAt?.toISOString(),
     status: row.status,
     date: row.date.toISOString(),
     dueDate: row.dueDate.toISOString(),
@@ -276,6 +305,7 @@ export function mapPartialInvoice(row: InvoiceWithRelations): PartialInvoice {
       ),
       quantityPercent: item.quantityPercent ?? 0,
       unitPrice: decimalToNumber(item.unitPrice),
+      previousAmount: decimalToNumber(item.previousAmount ?? 0),
       total: decimalToNumber(item.total),
       cumulativeAmount: decimalToNumber(
         item.cumulativeAmount ?? item.total

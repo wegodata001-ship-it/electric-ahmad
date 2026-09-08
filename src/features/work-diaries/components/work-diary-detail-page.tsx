@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, Send, X } from "lucide-react";
+import { ArrowRight, Check, Download, Send, X } from "lucide-react";
 import { RevisionFeedbackBanner } from "@/features/approvals/components/revision-feedback-banner";
 import { workDiariesService } from "../services/work-diaries.service";
 import { COMPANY_PROFILE } from "@/config/company";
+import { approvalStatusLabel } from "@/lib/workflow/approval-status-labels";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "טיוטה",
@@ -118,6 +119,15 @@ export function WorkDiaryDetailPage({ id }: { id: string }) {
       )}
 
       <div className="flex flex-wrap gap-2">
+        <Link
+          href={`/print/work-diaries/${id}?download=1`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-xl border border-[#1e40af] bg-white px-4 py-2.5 text-sm font-semibold text-[#1e40af]"
+        >
+          <Download className="h-4 w-4" />
+          הורדת PDF
+        </Link>
         {editable && (
           <>
             <Link
@@ -257,13 +267,10 @@ export function WorkDiaryDetailPage({ id }: { id: string }) {
               <li key={a.id} className="flex justify-between gap-2">
                 <span>{a.approver?.name}</span>
                 <span className="text-gray-500">
-                  {a.status === "pending"
-                    ? "ממתין"
-                    : a.status === "approved"
-                      ? "אושר"
-                      : a.status === "rejected"
-                        ? `הוחזר: ${a.comment}`
-                        : a.status}
+                  {approvalStatusLabel(a.status)}
+                  {a.status === "rejected" && a.comment
+                    ? `: ${a.comment}`
+                    : ""}
                 </span>
               </li>
             ))}

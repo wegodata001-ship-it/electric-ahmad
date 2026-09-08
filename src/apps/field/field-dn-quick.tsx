@@ -211,7 +211,7 @@ export function FieldDnQuick() {
 
       if (!noteId) throw new Error("שגיאה ביצירת תעודה");
 
-      if (!reviseId && photos.length) {
+      if (photos.length) {
         for (const file of photos.slice(0, 12)) {
           try {
             const form = new FormData();
@@ -410,16 +410,14 @@ export function FieldDnQuick() {
           />
         </label>
 
-        {!reviseId && (
-          <FieldMediaCapture
-            label="תמונות"
-            files={photos}
-            onChange={setPhotos}
-            stage={photoStage}
-            onStageChange={setPhotoStage}
-            stages={DN_PHOTO_STAGES}
-          />
-        )}
+        <FieldMediaCapture
+          label={reviseId ? "הוספת תמונות לתיקון" : "תמונות"}
+          files={photos}
+          onChange={setPhotos}
+          stage={photoStage}
+          onStageChange={setPhotoStage}
+          stages={DN_PHOTO_STAGES}
+        />
 
         <div className={cn(field.card, "p-3")}>
           <p className="mb-2 text-lg font-bold text-[#111827]">

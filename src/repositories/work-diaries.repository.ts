@@ -787,7 +787,8 @@ export const WorkDiariesRepository = {
     id: string,
     approverId: string,
     decision: "approved" | "rejected",
-    comment?: string | null
+    comment?: string | null,
+    correctionMode?: "manual" | "note"
   ) {
     const existing = await prisma.workDiary.findFirst({
       where: { id, deletedAt: null },
@@ -803,6 +804,7 @@ export const WorkDiariesRepository = {
       documentId: existing.workflowDocumentId,
       action: decision === "approved" ? "approve" : "reject",
       comment,
+      correctionMode,
       actor,
     });
 

@@ -25,10 +25,11 @@ export async function GET() {
       orderBy: { name: "asc" },
     });
 
-    const attendance = await FieldAttendanceRepository.getOpen(
-      session.foremanId
-    );
-    const crew = await FieldCrewRepository.listActive(session.foremanId);
+    const [attendance, todayAttendance, crew] = await Promise.all([
+      FieldAttendanceRepository.getOpen(session.foremanId),
+      FieldAttendanceRepository.getLatestToday(session.foremanId),
+      FieldCrewRepository.listActive(session.foremanId),
+    ]);
 
     return apiSuccess({
       foreman: {
@@ -47,6 +48,7 @@ export async function GET() {
       crewCount: crew.length,
       openJournal: null, // removed WorkJournal
       attendance,
+      todayAttendance,
       checkedIn: !!attendance,
     });
   } catch (error) {

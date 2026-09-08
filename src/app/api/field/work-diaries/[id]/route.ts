@@ -31,6 +31,15 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     }
 
     const body = await req.json();
+    if (
+      body.expectedVersion != null &&
+      Number(body.expectedVersion) !== existing.currentVersion
+    ) {
+      return apiError(
+        "המסמך עודכן מאז שפתחת אותו. יש לרענן לפני שמירת השינויים.",
+        409
+      );
+    }
     const customSiteName =
       body.customSiteName !== undefined
         ? body.customSiteName

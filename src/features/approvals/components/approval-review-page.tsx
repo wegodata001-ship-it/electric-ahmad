@@ -15,14 +15,13 @@ import {
   X,
 } from "lucide-react";
 import { approvalsService } from "@/features/work-diaries/services/work-diaries.service";
-import { REJECT_REASONS } from "@/lib/approvals/reject-reasons";
 import { formatNumber } from "@/utils/format";
-import { cn } from "@/lib/utils";
 import { fetchClientMe } from "@/lib/auth/client-me";
 import {
   isSystemAdminRole,
 } from "@/lib/auth/document-permissions";
 import { PROJECT_MANAGER_ROLE } from "@/lib/auth/roles";
+import { ManualCorrectionEditor } from "./manual-correction-editor";
 
 type Kind = "work_diary" | "delivery_note" | "measurement_sheet";
 
@@ -62,12 +61,13 @@ export function ApprovalReviewPage({
   );
 
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [reasonId, setReasonId] = useState("missing_data");
+  const [rejectStep, setRejectStep] = useState<"choice" | "note">("choice");
   const [rejectNotes, setRejectNotes] = useState("");
   const [rejectFiles, setRejectFiles] = useState<
     { name: string; url: string }[]
   >([]);
   const [uploading, setUploading] = useState(false);
+  const [manualEdit, setManualEdit] = useState(false);
 
   const [approveOpen, setApproveOpen] = useState(false);
   const [optSaveDocs, setOptSaveDocs] = useState(true);
@@ -229,8 +229,8 @@ export function ApprovalReviewPage({
         kind,
         documentId,
         decision: "rejected",
+        correctionMode: "note",
         comment: rejectNotes.trim(),
-        rejectReasonId: reasonId,
         rejectAttachments: rejectFiles.map((f) => f.url),
       });
       setRejectOpen(false);
@@ -241,6 +241,79 @@ export function ApprovalReviewPage({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function startManualCorrection() {
+    setBusy(true);
+    setError("");
+    try {
+      await approvalsService.decide({
+        kind,
+        documentId,
+        decision: "rejected",
+        correctionMode: "manual",
+      });
+      setRejectOpen(false);
+      if (kind === "measurement_sheet" && doc?.projectId) {
+        router.push(
+          `${base}/accounts?projectId=${doc.projectId}&module=performance&sheetId=${documentId}&correction=1`
+        );
+        return;
+      }
+      await reload();
+      setManualEdit(true);
+    } catch (e: any) {
+      setError(e.message || "לא ניתן לפתוח תיקון ידני");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resubmitManualCorrection() {
+    const approvals = doc?.approvals || [];
+    const latestSentAt = Math.max(
+      ...approvals.map((approval: any) =>
+        new Date(approval.sentAt || approval.createdAt || 0).getTime()
+      )
+    );
+    const approverIds = [
+      ...new Set(
+        approvals
+          .filter(
+            (approval: any) =>
+              latestSentAt -
+                new Date(
+                  approval.sentAt || approval.createdAt || 0
+                ).getTime() <
+              5_000
+          )
+          .map(
+            (approval: any) =>
+              approval.approverId || approval.approver?.id
+          )
+          .filter(Boolean)
+      ),
+    ] as string[];
+    if (!approverIds.length) {
+      throw new Error("לא נמצאו מאשרים מהסבב הקודם");
+    }
+    const endpoint =
+      kind === "work_diary"
+        ? `/api/work-diaries/${documentId}/submit`
+        : `/api/ops-delivery-notes/${documentId}/submit`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approverIds }),
+    });
+    const json = await response.json();
+    if (!response.ok || !json.success) {
+      throw new Error(json.error || "השליחה מחדש נכשלה");
+    }
+    setInfo("התיקון נשלח מחדש לאישור");
+    setManualEdit(false);
+    router.push(backHref);
+    router.refresh();
   }
 
   async function sendConversation() {
@@ -349,6 +422,7 @@ export function ApprovalReviewPage({
               type="button"
               disabled={busy}
               onClick={() => {
+                setRejectStep("choice");
                 setRejectOpen(true);
                 setError("");
               }}
@@ -380,6 +454,17 @@ export function ApprovalReviewPage({
           {info}
         </p>
       )}
+
+      {manualEdit &&
+        isRevision &&
+        (kind === "work_diary" || kind === "delivery_note") && (
+          <ManualCorrectionEditor
+            kind={kind}
+            document={doc}
+            onSaved={reload}
+            onResubmit={resubmitManualCorrection}
+          />
+        )}
 
       {isApproved && (
         <div className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
@@ -709,7 +794,10 @@ export function ApprovalReviewPage({
             )}
             <button
               type="button"
-              onClick={() => setRejectOpen(true)}
+              onClick={() => {
+                setRejectStep("choice");
+                setRejectOpen(true);
+              }}
               className="flex min-h-12 flex-1 items-center justify-center rounded-2xl bg-red-50 font-black text-red-700"
             >
               תיקון
@@ -728,81 +816,117 @@ export function ApprovalReviewPage({
       {/* Reject modal */}
       {rejectOpen && (
         <Modal title="החזרה לתיקון" onClose={() => setRejectOpen(false)}>
-          <p className="mb-3 text-sm text-stone-500">סיבת ההחזרה (חובה)</p>
-          <div className="mb-4 space-y-2">
-            {REJECT_REASONS.map((r) => (
-              <label
-                key={r.id}
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm",
-                  reasonId === r.id
-                    ? "border-amber-500 bg-amber-50"
-                    : "border-stone-200"
-                )}
+          {rejectStep === "choice" ? (
+            <>
+              <p className="mb-4 text-sm text-stone-600">
+                איך תרצה לבצע את התיקון?
+              </p>
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void startManualCorrection()}
+                  className="flex w-full items-start gap-3 rounded-2xl border-2 border-sky-200 bg-sky-50 p-4 text-right"
+                >
+                  <Pencil className="mt-0.5 h-5 w-5 text-sky-800" />
+                  <span>
+                    <span className="block font-black text-sky-950">
+                      תיקון ידני
+                    </span>
+                    <span className="mt-1 block text-sm text-sky-800">
+                      פתיחת המסמך המקורי לעריכה ותיקון הנתונים ישירות.
+                    </span>
+                  </span>
+                  {busy && (
+                    <Loader2 className="mr-auto h-5 w-5 animate-spin" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setRejectStep("note")}
+                  className="flex w-full items-start gap-3 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 text-right"
+                >
+                  <MessageSquare className="mt-0.5 h-5 w-5 text-amber-800" />
+                  <span>
+                    <span className="block font-black text-amber-950">
+                      תיקון לפי הערה
+                    </span>
+                    <span className="mt-1 block text-sm text-amber-800">
+                      כתיבת הערה ליוצר המסמך, שיתקן וישלח מחדש.
+                    </span>
+                  </span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectOpen(false)}
+                className="mt-4 w-full rounded-xl border py-3 text-sm font-bold"
               >
-                <input
-                  type="radio"
-                  name="reason"
-                  checked={reasonId === r.id}
-                  onChange={() => setReasonId(r.id)}
+                ביטול
+              </button>
+            </>
+          ) : (
+            <>
+              <label className="mb-3 block text-sm">
+                <span className="font-bold">הערה לתיקון *</span>
+                <textarea
+                  value={rejectNotes}
+                  onChange={(e) => setRejectNotes(e.target.value)}
+                  rows={4}
+                  className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2"
+                  placeholder="לדוגמה: יש לתקן את הכמות בסעיף 3 מ־10 ל־12"
                 />
-                {r.label}
               </label>
-            ))}
-          </div>
-          <label className="mb-3 block text-sm">
-            <span className="font-bold">הערות (חובה)</span>
-            <textarea
-              value={rejectNotes}
-              onChange={(e) => setRejectNotes(e.target.value)}
-              rows={4}
-              className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2"
-              placeholder="לדוגמה: יש לעדכן כמויות חדר 103 · חסרה תמונה של לוח החשמל"
-            />
-          </label>
-          <div className="mb-4">
-            <p className="mb-2 text-sm font-bold">קבצים מצורפים לתיקון</p>
-            <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-stone-300 text-sm font-bold text-stone-600">
-              <Paperclip className="h-4 w-4" />
-              {uploading ? "מעלה…" : "צרף PDF / תמונה / Excel / DWG"}
-              <input
-                type="file"
-                className="hidden"
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void uploadRejectFile(f);
-                }}
-              />
-            </label>
-            <ul className="mt-2 space-y-1 text-xs text-stone-600">
-              {rejectFiles.map((f) => (
-                <li key={f.url}>
-                  <a href={f.url} target="_blank" rel="noreferrer" className="underline">
-                    {f.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setRejectOpen(false)}
-              className="flex-1 rounded-xl border py-3 text-sm font-bold"
-            >
-              ביטול
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void confirmReject()}
-              className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-red-600 py-3 text-sm font-black text-white"
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              שלח לתיקון
-            </button>
-          </div>
+              <div className="mb-4">
+                <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-stone-300 text-sm font-bold text-stone-600">
+                  <Paperclip className="h-4 w-4" />
+                  {uploading ? "מעלה…" : "צרף קובץ / תמונה / PDF"}
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void uploadRejectFile(f);
+                    }}
+                  />
+                </label>
+                <ul className="mt-2 space-y-1 text-xs text-stone-600">
+                  {rejectFiles.map((f) => (
+                    <li key={f.url}>
+                      <a
+                        href={f.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline"
+                      >
+                        {f.name}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectStep("choice")}
+                  className="flex-1 rounded-xl border py-3 text-sm font-bold"
+                >
+                  חזרה
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void confirmReject()}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-red-600 py-3 text-sm font-black text-white"
+                >
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  החזר לתיקון
+                </button>
+              </div>
+            </>
+          )}
         </Modal>
       )}
 

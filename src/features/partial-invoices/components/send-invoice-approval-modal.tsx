@@ -41,29 +41,23 @@ export function SendInvoiceApprovalModal({
 
   useEffect(() => {
     if (!open) return;
-    setSelectedIds([]);
-    setQuery("");
-    setRoleFilter("all");
-    setDeptFilter("all");
-    setCreateTask(true);
-    setNotifyInApp(true);
-    setSendWhatsApp(false);
-    setSendEmail(false);
-    setLoading(true);
     let cancelled = false;
-    invoiceService
-      .listApprovers()
-      .then((items) => {
+    void Promise.resolve().then(async () => {
+      if (cancelled) return;
+      setLoading(true);
+      try {
+        const items = await invoiceService.listApprovers();
         if (!cancelled) setApprovers(items);
-      })
-      .catch((e) => {
+      } catch (error) {
         if (!cancelled) {
-          onError(e instanceof Error ? e.message : "שגיאה בטעינת מנהלים");
+          onError(
+            error instanceof Error ? error.message : "שגיאה בטעינת מנהלים"
+          );
         }
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -97,11 +91,30 @@ export function SendInvoiceApprovalModal({
     () => approvers.filter((a) => selectedIds.includes(a.id)),
     [approvers, selectedIds]
   );
+  const allSelected =
+    approvers.length > 0 &&
+    approvers.every((approver) => selectedIds.includes(approver.id));
 
   function toggle(id: string) {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
+  }
+
+  function toggleAll() {
+    setSelectedIds(allSelected ? [] : approvers.map((approver) => approver.id));
+  }
+
+  function handleClose() {
+    setSelectedIds([]);
+    setQuery("");
+    setRoleFilter("all");
+    setDeptFilter("all");
+    setCreateTask(true);
+    setNotifyInApp(true);
+    setSendWhatsApp(false);
+    setSendEmail(false);
+    onClose();
   }
 
   async function handleSubmit() {
@@ -121,7 +134,7 @@ export function SendInvoiceApprovalModal({
         sendEmail: sendEmail && hasEmail,
       });
       onSent(result.channels);
-      onClose();
+      handleClose();
     } catch (e) {
       onError(e instanceof Error ? e.message : "שגיאה בשליחה לאישור");
     } finally {
@@ -132,12 +145,29 @@ export function SendInvoiceApprovalModal({
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title="בחירת מנהלים לאישור החשבון"
-      description="ניתן לבחור מנהל אחד או יותר בעלי הרשאת אישור — השליחה תתבצע לכולם"
+      description="בחרו מנהל אחד או יותר. מספיק שאישור אחד יאשר."
       size="xl"
     >
       <div className="space-y-4">
+        {!loading && approvers.length > 0 && (
+          <label className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 border-b border-gray-100 px-1 pb-3 text-sm">
+            <span className="flex items-center gap-2 font-semibold text-gray-800">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                className="h-4 w-4"
+              />
+              {allSelected ? "בטל סימון הכל" : "סמן הכל"}
+            </span>
+            <span className="text-xs font-medium text-gray-500">
+              {approvers.length} מאשרים
+            </span>
+          </label>
+        )}
+
         <div className="flex flex-wrap gap-2 items-center">
           <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -298,7 +328,7 @@ export function SendInvoiceApprovalModal({
         )}
 
         <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
+          <Button variant="outline" onClick={handleClose} disabled={submitting}>
             ביטול
           </Button>
           <Button

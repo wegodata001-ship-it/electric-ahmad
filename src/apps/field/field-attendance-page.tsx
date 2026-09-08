@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fieldService,
-  type FieldDashboard,
+  type FieldAttendanceStatus,
 } from "@/features/field/services/field.service";
 import { detectDeviceMeta } from "@/lib/attendance/device-client";
 import { readGps } from "@/lib/attendance/gps-client";
 import { field } from "@/apps/field/field-ui";
 import { cn } from "@/lib/utils";
+import type { FieldAttendanceHistoryEntry } from "@/types";
 
 function fmtTime(iso?: string | null) {
   if (!iso) return "—";
@@ -36,22 +37,29 @@ function workDuration(checkedInAt?: string | null, checkedOutAt?: string | null)
 
 /** Self attendance only — GPS required */
 export function FieldAttendancePage() {
-  const [data, setData] = useState<FieldDashboard | null>(null);
+  const [data, setData] = useState<FieldAttendanceStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [, setTick] = useState(0);
+  const [history, setHistory] = useState<FieldAttendanceHistoryEntry[]>([]);
+  const [tick, setTick] = useState(0);
 
-  const reload = useCallback(() => {
-    fieldService
-      .getDashboard()
-      .then(setData)
-      .catch((err) =>
-        setError(err instanceof Error ? err.message : "שגיאה בטעינה")
-      );
+  const reload = useCallback(async () => {
+    try {
+      const [dashboard, attendanceHistory] = await Promise.all([
+        fieldService.getAttendanceState(),
+        fieldService.getAttendanceHistory({ period: "month" }),
+      ]);
+      setData(dashboard);
+      setHistory(attendanceHistory.entries);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "שגיאה בטעינה");
+    }
   }, []);
 
   useEffect(() => {
-    reload();
+    void (async () => {
+      await reload();
+    })();
   }, [reload]);
 
   useEffect(() => {
@@ -76,7 +84,7 @@ export function FieldAttendancePage() {
       };
       if (data.checkedIn) await fieldService.checkOut(meta);
       else await fieldService.checkIn(meta);
-      reload();
+      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "שגיאה");
     } finally {
@@ -84,14 +92,20 @@ export function FieldAttendancePage() {
     }
   }
 
+  const shownAttendance = data?.attendance || data?.todayAttendance;
   const duration = useMemo(
     () =>
       workDuration(
-        data?.attendance?.checkedInAt,
-        data?.attendance?.checkedOutAt
+        shownAttendance?.checkedInAt,
+        shownAttendance?.checkedOutAt
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data?.attendance?.checkedInAt, data?.attendance?.checkedOutAt, data?.checkedIn]
+    [
+      shownAttendance?.checkedInAt,
+      shownAttendance?.checkedOutAt,
+      data?.checkedIn,
+      tick,
+    ]
   );
 
   if (!data) {
@@ -103,12 +117,16 @@ export function FieldAttendancePage() {
   }
 
   const checkedIn = data.checkedIn;
+  const completed = Boolean(shownAttendance?.checkedOutAt);
+  const previousEntries = history.filter(
+    (entry) => entry.id !== shownAttendance?.id
+  );
 
   return (
     <div className="space-y-5">
       <section>
         <h1 className={field.title}>נוכחות</h1>
-        <p className={field.subtitle}>דיווח לעצמך בלבד · נדרש GPS</p>
+        <p className={field.subtitle}>היום שלי · היסטוריית נוכחות</p>
       </section>
 
       {error && <p className={field.error}>{error}</p>}
@@ -122,23 +140,28 @@ export function FieldAttendancePage() {
         />
         <div className="p-5">
           <p className="mt-1 text-[28px] font-black text-[#111827]">
-            {checkedIn ? "🟢 בעבודה" : "⚪ לא בעבודה"}
+            {checkedIn
+              ? "✓ בעבודה עכשיו"
+              : completed
+                ? "✓ יום העבודה הסתיים"
+                : "טרם בוצעה כניסה"}
           </p>
           <p className="mt-1 text-sm text-slate-500">
-            תאריך: {fmtDate(data.attendance?.checkedInAt) || fmtDate(new Date().toISOString())}
+            תאריך:{" "}
+            {fmtDate(shownAttendance?.checkedInAt || new Date().toISOString())}
           </p>
 
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-2xl bg-[#F7F8FA] px-3 py-3">
               <p className="text-sm text-[#6B7280]">כניסה</p>
               <p className="mt-1 text-lg font-black">
-                {fmtTime(data.attendance?.checkedInAt)}
+                {fmtTime(shownAttendance?.checkedInAt)}
               </p>
             </div>
             <div className="rounded-2xl bg-[#F7F8FA] px-3 py-3">
               <p className="text-sm text-[#6B7280]">יציאה</p>
               <p className="mt-1 text-lg font-black">
-                {fmtTime(data.attendance?.checkedOutAt)}
+                {fmtTime(shownAttendance?.checkedOutAt)}
               </p>
             </div>
             <div className="rounded-2xl bg-[#F7F8FA] px-3 py-3">
@@ -163,6 +186,33 @@ export function FieldAttendancePage() {
                 ? "יציאה מהעבודה"
                 : "כניסה לעבודה"}
           </button>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="font-black text-slate-950">היסטוריית נוכחות</h2>
+        <div className="mt-3 space-y-2">
+          {previousEntries.map((entry) => (
+            <article
+              key={entry.id}
+              className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-bold text-slate-900">{entry.date}</p>
+                <p className="shrink-0 text-sm font-bold text-slate-700">
+                  {entry.hours.toFixed(2)} שעות
+                </p>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                {entry.checkIn || "—"} כניסה · {entry.checkOut || "פתוח"} יציאה
+              </p>
+            </article>
+          ))}
+          {!previousEntries.length && (
+            <p className="py-5 text-center text-sm text-slate-400">
+              אין רישומים קודמים החודש
+            </p>
+          )}
         </div>
       </section>
     </div>

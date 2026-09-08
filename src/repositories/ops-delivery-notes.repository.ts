@@ -419,7 +419,6 @@ export const OpsDeliveryNotesRepository = {
           clientSignedAt: input.clientSignatureUrl ? new Date() : undefined,
           updatedById: input.updatedById,
           currentVersion: { increment: 1 },
-          status: existing.status === "revision" ? "draft" : undefined,
         },
       });
     });
@@ -499,13 +498,22 @@ export const OpsDeliveryNotesRepository = {
       });
     });
 
-    await addEvent(id, "submitted", "נשלחה לאישור", actorId);
+    const isResubmit = existing.status === "revision";
+    await addEvent(
+      id,
+      isResubmit ? "resubmitted" : "submitted",
+      isResubmit ? "נשלחה מחדש לאישור" : "נשלחה לאישור",
+      actorId
+    );
     await AuditRepository.log({
       action: "UPDATE",
       entityType: "OpsDeliveryNote",
       entityId: id,
       userId: actorId,
-      metadata: { action: "submitted", approverIds },
+      metadata: {
+        action: isResubmit ? "resubmitted" : "submitted",
+        approverIds,
+      },
     });
     await notifyUsers(
       approverIds,
@@ -531,7 +539,8 @@ export const OpsDeliveryNotesRepository = {
     id: string,
     approverId: string,
     decision: "approved" | "rejected",
-    comment?: string | null
+    comment?: string | null,
+    correctionMode?: "manual" | "note"
   ) {
     const existing = await prisma.opsDeliveryNote.findFirst({
       where: { id, deletedAt: null },
@@ -562,13 +571,20 @@ export const OpsDeliveryNotesRepository = {
           data: { status: "revision", updatedById: approverId },
         });
       });
-      await addEvent(id, "returned", `הוחזרה לתיקון: ${comment}`, approverId);
+      await addEvent(
+        id,
+        "returned",
+        correctionMode === "manual"
+          ? "המאשר ביצע החזרה לתיקון ידני"
+          : `הוחזרה לתיקון לפי הערה: ${comment}`,
+        approverId
+      );
       await AuditRepository.log({
         action: "UPDATE",
         entityType: "OpsDeliveryNote",
         entityId: id,
         userId: approverId,
-        metadata: { action: "rejected", comment },
+        metadata: { action: "rejected", correctionMode, comment },
       });
       await notifyUsers(
         [existing.createdById],

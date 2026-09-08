@@ -335,10 +335,10 @@ export function FieldDiaryQuick() {
       } else {
         const diary = await workDiariesService.create(payload);
         diaryId = diary.id;
-        await uploadMedia(diaryId);
       }
 
       if (!diaryId) throw new Error("שגיאה ביצירת יומן");
+      if (photos.length || files.length) await uploadMedia(diaryId);
 
       if (mode === "submit") {
         if (!approverIds?.length) throw new Error("יש לבחור לפחות מאשר אחד");
@@ -588,16 +588,15 @@ export function FieldDiaryQuick() {
           />
         </label>
 
-        {!reviseId && (
-          <>
-            <FieldMediaCapture
-              label="תמונות"
-              files={photos}
-              onChange={setPhotos}
-              stage={photoStage}
-              onStageChange={setPhotoStage}
-              stages={DIARY_PHOTO_STAGES}
-            />
+        <>
+          <FieldMediaCapture
+            label={reviseId ? "הוספת תמונות לתיקון" : "תמונות"}
+            files={photos}
+            onChange={setPhotos}
+            stage={photoStage}
+            onStageChange={setPhotoStage}
+            stages={DIARY_PHOTO_STAGES}
+          />
 
             <label className="block space-y-2">
               <span className="text-lg font-bold text-[#111827]">קבצים</span>
@@ -614,7 +613,6 @@ export function FieldDiaryQuick() {
               )}
             </label>
           </>
-        )}
 
         <div className="space-y-2">
           <span className="text-lg font-bold text-[#111827]">

@@ -1,11 +1,43 @@
 import { Suspense } from "react";
-import { prisma } from "@/lib/prisma";
-import { WORKFLOW_STATUS_LABELS } from "@/lib/workflow/types";
-import { mapLegacyDiaryStatusToWorkflow } from "@/lib/workflow/work-diary-documents";
+import { notFound } from "next/navigation";
 import {
   PdfPrintShell,
   WorkDiaryTemplate,
 } from "@/lib/pdf-engine";
+import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
+import { requireOfficeUser } from "@/lib/auth/office-session";
+import { requireFieldManager } from "@/lib/auth/field-session";
+import { userCanAccessProject } from "@/lib/auth/project-access";
+import { roleGradeLabel } from "@/lib/auth/document-permissions";
+import { approvalStatusLabel } from "@/lib/workflow/approval-status-labels";
+
+type DiaryApproval = {
+  status: string;
+  sentAt: string;
+  decidedAt: string | null;
+  approver: { name: string; role?: string | null } | null;
+};
+
+type DiaryWorkItem = {
+  lineNumber: number;
+  description: string;
+  quantity: number;
+  unit: string;
+};
+
+type DiaryWorker = {
+  name: string;
+  startTime: string | null;
+  endTime: string | null;
+  hours: number;
+  notes: string | null;
+};
+
+type DiaryEvent = {
+  createdAt: string;
+  message: string;
+  actor: { name: string } | null;
+};
 
 export default async function Page({
   params,
@@ -13,87 +45,88 @@ export default async function Page({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const row = await prisma.workDiary.findFirst({
-    where: { id, deletedAt: null },
-    include: {
-      project: { select: { name: true } },
-      foreman: { select: { firstName: true, lastName: true } },
-      workers: { orderBy: { sortOrder: "asc" } },
-      media: { orderBy: { createdAt: "desc" } },
-      workflowDocument: {
-        include: {
-          attachments: true,
-          approvals: {
-            where: { status: "approved" },
-            include: { approver: { select: { name: true } } },
-            take: 1,
-            orderBy: { decidedAt: "desc" },
-          },
-        },
-      },
-    },
-  });
+  const diary = await WorkDiariesRepository.getById(id);
 
-  if (!row) {
-    return (
-      <p className="p-10 text-center text-red-600" dir="rtl">
-        יומן לא נמצא
-      </p>
-    );
+  if (!diary) notFound();
+
+  let authorized = false;
+  try {
+    const office = await requireOfficeUser();
+    authorized = await userCanAccessProject({
+      userId: office.userId,
+      role: office.role,
+      projectId: diary.projectId,
+      scope: "operational",
+    });
+  } catch {
+    try {
+      const field = await requireFieldManager();
+      authorized = diary.foremanId === field.foremanId;
+    } catch {
+      authorized = false;
+    }
   }
+  if (!authorized) notFound();
 
-  const status = (row.workflowDocument?.status ||
-    mapLegacyDiaryStatusToWorkflow(row.status)) as string;
-
-  const wfPhotos = (row.workflowDocument?.attachments || [])
-    .filter((a) => String(a.fileType || "").startsWith("image"))
-    .map((a) => ({ url: a.url, name: a.name, stage: null as string | null }));
-
-  const legacyPhotos = row.media.map((m) => ({
-    url: m.url,
-    name: m.name,
-    stage: m.stage,
-  }));
-
-  const photos = legacyPhotos.length ? legacyPhotos : wfPhotos;
-  const approval = row.workflowDocument?.approvals?.[0];
+  const approved = diary.approvals?.find(
+    (approval: DiaryApproval) => approval.status === "approved"
+  );
+  const generatedAt = new Date().toISOString();
 
   return (
     <Suspense fallback={<p className="p-8 text-center">טוען…</p>}>
-      <PdfPrintShell title="יומן עבודה">
+      <PdfPrintShell title={`Work-Diary-${diary.documentNumber}`}>
         <WorkDiaryTemplate
           model={{
-            documentNumber: row.documentNumber,
-            status,
-            statusLabel:
-              WORKFLOW_STATUS_LABELS[
-                status as keyof typeof WORKFLOW_STATUS_LABELS
-              ] || status,
-            workDate: row.workDate.toISOString().slice(0, 10),
-            weather: row.weather,
-            workType: row.workType,
-            workSummary: row.workSummary,
-            notes: row.notes,
-            siteLabel: row.customSiteName || row.project.name,
-            clientName: row.clientName,
-            address: row.address,
-            foremanName: `${row.foreman.firstName} ${row.foreman.lastName}`,
-            foremanSignatureUrl: row.foremanSignatureUrl,
-            foremanSignedName: row.foremanSignedName,
-            clientSignatureUrl: row.clientSignatureUrl,
-            clientSignedName: row.clientSignedName,
-            approvedByName: approval?.approver?.name,
-            approvedAt: approval?.decidedAt
-              ? approval.decidedAt.toLocaleString("he-IL")
-              : null,
-            workers: row.workers.map((w) => ({
+            documentNumber: diary.documentNumber,
+            status: diary.status,
+            statusLabel: diary.statusLabel,
+            workDate: diary.workDate,
+            generatedAt,
+            weather: diary.weather,
+            workType: diary.workType,
+            workSummary: diary.workSummary,
+            notes: diary.notes,
+            projectName: diary.project?.name || "—",
+            siteLabel: diary.siteLabel,
+            clientName: diary.clientName,
+            address: diary.address,
+            foremanName: diary.foreman?.name,
+            foremanSignatureUrl: diary.foremanSignatureUrl,
+            foremanSignedName: diary.foremanSignedName,
+            foremanSignedAt: diary.foremanSignedAt,
+            clientSignatureUrl: diary.clientSignatureUrl,
+            clientSignedName: diary.clientSignedName,
+            approvedByName: approved?.approver?.name,
+            approvedAt: approved?.decidedAt,
+            workItems: (diary.workItems || []).map((item: DiaryWorkItem) => ({
+              lineNumber: item.lineNumber,
+              description: item.description,
+              quantity: item.quantity,
+              unit: item.unit,
+            })),
+            workers: diary.workers.map((w: DiaryWorker) => ({
               name: w.name,
               startTime: w.startTime,
               endTime: w.endTime,
               hours: w.hours,
               notes: w.notes,
             })),
-            photos,
+            approvals: (diary.approvals || []).map((approval: DiaryApproval) => ({
+              approverName: approval.approver?.name || "—",
+              roleLabel: roleGradeLabel(approval.approver?.role),
+              statusLabel: approvalStatusLabel(approval.status),
+              date: approval.decidedAt || approval.sentAt,
+            })),
+            events: (diary.events || []).map((event: DiaryEvent) => ({
+              date: event.createdAt,
+              actorName: event.actor?.name || "מערכת",
+              action: event.message,
+            })),
+            attachments: (diary.attachments || []).map((attachment) => ({
+              name: attachment.name,
+            })),
+            photos: diary.media || [],
           }}
         />
       </PdfPrintShell>

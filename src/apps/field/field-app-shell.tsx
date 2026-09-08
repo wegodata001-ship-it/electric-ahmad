@@ -14,7 +14,7 @@ const TABS = [
 
 export function FieldAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { userName, ready, loggingOut, logout } = usePortalSession("field");
+  const { userName, ready } = usePortalSession("field");
 
   if (!ready) {
     return (
@@ -32,21 +32,13 @@ export function FieldAppShell({ children }: { children: React.ReactNode }) {
       data-layout="portal"
       data-theme="light"
     >
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[#E5E7EB] bg-white/95 px-4 backdrop-blur">
+      <header className="sticky top-0 z-30 flex h-14 items-center border-b border-[#E5E7EB] bg-white/95 px-4 backdrop-blur">
         <div>
           <p className="text-xs font-semibold text-blue-600">מנהל עבודה</p>
           <p className="truncate text-sm font-bold text-[#111827]">
             {userName || "מנהל עבודה"}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void logout()}
-          disabled={loggingOut}
-          className="min-h-10 rounded-xl border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#6B7280]"
-        >
-          יציאה
-        </button>
       </header>
 
       <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-32 pt-5">
