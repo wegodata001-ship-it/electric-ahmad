@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * Differences: assigned projects only + no send-to-client (RBAC).
  */
 const NAV = [
-  { href: "/project/approvals", label: "אישורים", badge: true },
+  { href: "/project/approvals", label: "תיקונים", badge: true },
   { href: "/project/accounts", label: "עץ פרויקט" },
   { href: "/project/work-diaries", label: "יומני עבודה" },
   { href: "/project/delivery-notes", label: "תעודות" },

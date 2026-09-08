@@ -98,7 +98,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     },
     nav: [
       { label: "עץ פרויקט", href: "/project/accounts", icon: GitBranch, mode: "live" },
-      { label: "אישורים", href: "/project/approvals", icon: CheckSquare, mode: "live" },
+      { label: "תיקונים", href: "/project/approvals", icon: CheckSquare, mode: "live" },
       { label: "תעודות משלוח", href: "/project/delivery-notes", icon: Truck, mode: "live" },
       { label: "מסמכים", href: "/project/documents", icon: FileText, mode: "live" },
       { label: "התראות", href: "/project/notifications", icon: Bell, mode: "live" },
@@ -123,7 +123,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     nav: [
       { label: "עץ פרויקט", href: "/operations/accounts", icon: GitBranch, mode: "live" },
       {
-        label: "אישורים",
+        label: "תיקונים",
         href: "/operations/approvals",
         icon: CheckSquare,
         mode: "live",
@@ -177,7 +177,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
         mode: "live",
       },
       {
-        label: "אישורים",
+        label: "תיקונים",
         href: "/field/approvals",
         icon: CheckSquare,
         mode: "live",

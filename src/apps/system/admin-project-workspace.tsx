@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { FileText } from "lucide-react";
+import Link from "next/link";
+import { FileText, Plus } from "lucide-react";
 import { useToast } from "@/components/ui";
 import { invoicesWorkspaceService } from "@/features/partial-invoices/services/invoices-workspace.service";
 import { ProjectBoqPanel } from "@/features/projects/components/panels/project-boq-panel";
@@ -90,9 +91,18 @@ export function AdminProjectWorkspace({
 
   const effectiveOpsProjectId = opsProjectId || selectedId;
 
-  // Restore workspace state
+  // Restore workspace state — URL wins over localStorage (deep links from «תיקונים»)
   useEffect(() => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      const urlProject = params.get("projectId");
+      const urlModule = params.get("module") as AdminModuleId | null;
+      if (urlProject) setSelectedId(urlProject);
+      if (urlModule && ADMIN_PROJECT_MODULE_IDS.includes(urlModule)) {
+        setActiveModule(urlModule);
+      }
+      if (urlProject || urlModule) return;
+
       const raw = localStorage.getItem(storageKey);
       if (!raw) return;
       const saved = JSON.parse(raw) as {
@@ -106,7 +116,7 @@ export function AdminProjectWorkspace({
     }
   }, [storageKey]);
 
-  // Persist + URL sync
+  // Persist + URL sync (preserve sheetId for performance deep-link)
   useEffect(() => {
     if (!selectedId) return;
     try {
@@ -121,6 +131,10 @@ export function AdminProjectWorkspace({
       projectId: selectedId,
       module: activeModule,
     });
+    const sheetId = new URLSearchParams(window.location.search).get("sheetId");
+    if (sheetId) qs.set("sheetId", sheetId);
+    const pmEdit = new URLSearchParams(window.location.search).get("pmEdit");
+    if (pmEdit) qs.set("pmEdit", pmEdit);
     window.history.replaceState(null, "", `${basePath}?${qs.toString()}`);
   }, [selectedId, activeModule, basePath, storageKey]);
 
@@ -232,13 +246,24 @@ export function AdminProjectWorkspace({
             בחרו פרויקט ומודול מהגרף — העבודה נשארת באותו מסך
           </p>
         </div>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold md:hidden"
-          onClick={() => setMobileProjectsOpen(true)}
-        >
-          פרויקטים
-        </button>
+        <div className="flex items-center gap-2">
+          {basePath === "/system/accounts" && (
+            <Link
+              href="/projects/new"
+              className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-primary-700"
+            >
+              <Plus className="h-4 w-4" />
+              פרויקט חדש
+            </Link>
+          )}
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold md:hidden"
+            onClick={() => setMobileProjectsOpen(true)}
+          >
+            פרויקטים
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr] lg:gap-6">

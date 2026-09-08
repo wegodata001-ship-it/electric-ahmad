@@ -23,8 +23,8 @@ export function ProjectHome() {
       .catch(() => undefined);
 
     apiClient
-      .get<{ items: unknown[] }>("/api/approvals/pending")
-      .then((d) => setPending(d.items.length))
+      .get<{ items: unknown[]; count?: number }>("/api/approvals/revisions")
+      .then((d) => setPending(d.count ?? d.items?.length ?? 0))
       .catch(() => undefined);
   }, []);
 
@@ -45,13 +45,13 @@ export function ProjectHome() {
             : "block rounded-3xl border-2 border-slate-200 bg-white px-5 py-5 shadow-sm"
         }
       >
-        <p className="text-sm font-bold">מרכז אישורים</p>
-        <p className="mt-1 text-2xl font-black">🔔 ממתין לאישור ({pending})</p>
+        <p className="text-sm font-bold">מרכז תיקונים</p>
+        <p className="mt-1 text-2xl font-black">תיקונים ({pending})</p>
       </Link>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="פרויקטים פעילים" value={projects.length} />
-        <Stat label="ממתינים לאישור / חריגות" value={pending} hot />
+        <Stat label="דורשים תיקון" value={pending} hot />
         <Link
           href="/project/accounts"
           className="rounded-2xl bg-blue-600 px-4 py-4 text-white"
@@ -92,7 +92,7 @@ export function ProjectHome() {
         <Quick href="/project/boq" title="כתב כמויות" />
         <Quick href="/project/documents" title="מסמכים" />
         <Quick href="/project/delivery-notes" title="תעודות משלוח" />
-        <Quick href="/project/approvals" title="חריגות / אישורים" />
+        <Quick href="/project/approvals" title="תיקונים" />
       </div>
     </div>
   );

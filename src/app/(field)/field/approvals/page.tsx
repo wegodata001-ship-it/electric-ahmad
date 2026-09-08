@@ -1,5 +1,5 @@
-import { FieldApprovals } from "@/apps/field/field-approvals";
+import { ApprovalsInboxPage } from "@/features/work-diaries/components/approvals-inbox-page";
 
 export default function Page() {
-  return <FieldApprovals />;
+  return <ApprovalsInboxPage />;
 }

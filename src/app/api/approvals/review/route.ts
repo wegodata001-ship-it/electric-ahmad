@@ -3,6 +3,7 @@ import { requireOfficeUser } from "@/lib/auth/office-session";
 import { requireFieldManager } from "@/lib/auth/field-session";
 import { canApproveDocuments } from "@/lib/auth/document-permissions";
 import { isFieldManagerRole } from "@/lib/auth/roles";
+import { canProjectManagerEditPendingSheet } from "@/lib/auth/measurement-pm-approval-edit";
 import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
 import { OpsDeliveryNotesRepository } from "@/repositories/ops-delivery-notes.repository";
 import { MeasurementSheetsRepository } from "@/repositories/measurement-sheets.repository";
@@ -155,14 +156,27 @@ export async function GET(req: NextRequest) {
       const doc = await MeasurementSheetsRepository.getById(documentId);
       if (!doc) return apiError("דף מדידה לא נמצא", 404);
       const related = await loadRelated(doc.projectId || doc.project?.id);
+      const canPmEdit = await canProjectManagerEditPendingSheet({
+        userId: session.userId,
+        role: session.role,
+        sheetId: documentId,
+        projectId: doc.projectId,
+        status: doc.status,
+        pendingApproverIds: (doc.approvals || [])
+          .filter((a: any) => a.status === "pending")
+          .map((a: any) => a.approverId)
+          .filter(Boolean),
+      });
       return apiSuccess({
         kind,
-        document: doc,
+        document: { ...doc, pmApprovalEdit: canPmEdit },
+        canPmEdit,
         related,
         timeline: (doc.events || []).map((e: any) => ({
           id: e.id,
           action: e.type,
           message: e.message,
+          actorName: e.actorName,
           createdAt: e.createdAt,
         })),
         conversation: [],

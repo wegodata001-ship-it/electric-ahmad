@@ -26,9 +26,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const body = await req.json().catch(() => ({}));
     const phone = body.phone as string | undefined;
-    const message =
-      body.message ??
-      `שלום,\n\nמצורף דוח ביצוע / דף מדידה לבדיקתך.\nלצפייה בנתונים ולחתימה לחץ על הקישור:\n${url}\n\nתודה.`;
+    const custom = typeof body.message === "string" ? body.message.trim() : "";
+    const message = custom
+      ? custom.includes(url)
+        ? custom
+        : `${custom}\n${url}`
+      : `שלום,\n\nמצורף דוח ביצוע / דף מדידה מאושר לבדיקתך.\nלצפייה במסמך לחץ על הקישור:\n${url}\n\nתודה.`;
 
     return apiSuccess({
       url,

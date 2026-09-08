@@ -2,16 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CheckCircle2,
+  Copy,
+  ExternalLink,
   FileSpreadsheet,
   FileText,
   GripVertical,
+  Link2,
   Maximize2,
+  MessageCircle,
   Minimize2,
+  Pencil,
   Plus,
+  Receipt,
   Save,
   X,
 } from "lucide-react";
@@ -25,7 +31,7 @@ import { formatNumber } from "@/utils/format";
 import { invoicesWorkspaceService } from "@/features/partial-invoices/services/invoices-workspace.service";
 import { invoiceService } from "@/features/partial-invoices/services/invoice.service";
 import { SendInvoiceApprovalModal } from "@/features/partial-invoices/components/send-invoice-approval-modal";
-import { RevisionFeedbackBanner } from "@/features/approvals/components/revision-feedback-banner";
+import { SendClientLinkModal } from "@/features/signatures/send-client-link-modal";
 import { approvalsService } from "@/features/work-diaries/services/work-diaries.service";
 import { boqService } from "@/features/boq/services/boq.service";
 import { ProjectRoomsToolbar } from "@/features/projects/components/project-rooms-toolbar";
@@ -51,6 +57,14 @@ export function ProjectPerformancePage({
 }) {
   const toast = useToast();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const portalBase = pathname.startsWith("/project")
+    ? "/project"
+    : pathname.startsWith("/system")
+      ? "/system"
+      : pathname.startsWith("/field")
+        ? "/field"
+        : "/operations";
   const [sheets, setSheets] = useState<any[]>([]);
   const [sheetId, setSheetId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<any>(null);
@@ -86,14 +100,29 @@ export function ProjectPerformancePage({
   const [gridEnsuredFor, setGridEnsuredFor] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [versionPreview, setVersionPreview] = useState<any | null>(null);
+  const [clientLink, setClientLink] = useState<{
+    url: string;
+    documentNumber: string;
+    whatsappUrl?: string;
+  } | null>(null);
+  const [clientLinkOpen, setClientLinkOpen] = useState(false);
+  const [clientLinkBusy, setClientLinkBusy] = useState(false);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveAllRef = useRef<() => Promise<boolean>>(async () => false);
 
   const locked = sheet ? sheet.editable === false : false;
   const isRevision = sheet?.status === "revision";
   const isApproved =
-    sheet?.status === "approved" || sheet?.status === "locked";
+    sheet?.status === "approved" ||
+    sheet?.status === "locked" ||
+    sheet?.status === "invoiced";
+  const hasInvoice = Boolean(sheet?.partialInvoiceId);
+  const postApprovalStage = isApproved;
   const isPending = sheet?.status === "pending_approval";
+  const pmApprovalEdit = Boolean(sheet?.pmApprovalEdit);
+  const pmEditQuery = searchParams.get("pmEdit") === "1";
+  const approvalEditMode =
+    pmApprovalEdit || (pmEditQuery && isPending && !locked);
   const activeReviewNotes = useMemo(() => {
     const notes = sheet?.reviewNotes ?? [];
     if (!notes.length) return [];
@@ -101,26 +130,38 @@ export function ProjectPerformancePage({
     const forVersion = notes.filter((n: any) => n.version === ver);
     return forVersion.length ? forVersion : notes;
   }, [sheet]);
+  const correctionMode = isRevision;
   const revisionCount = sheets.filter((s) => s.status === "revision").length;
+  const markedRoomIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const n of activeReviewNotes) {
+      if (n.rowId) ids.add(n.rowId);
+    }
+    return ids;
+  }, [activeReviewNotes]);
+  const returnedByName =
+    sheet?.returnedByName ||
+    sheet?.approvals?.find((a: any) => a.status === "rejected")?.approverName ||
+    null;
 
   const STATUS_UI: Record<string, { label: string; className: string }> = {
     draft: { label: "טיוטה", className: "bg-gray-100 text-gray-700" },
     in_progress: { label: "טיוטה", className: "bg-sky-50 text-sky-800" },
     pending_approval: {
-      label: "מוכן לחשבון",
+      label: "ממתין לאישור",
       className: "bg-amber-50 text-amber-800",
     },
-    revision: { label: "טיוטה", className: "bg-orange-50 text-orange-800" },
+    revision: { label: "נדרש תיקון", className: "bg-orange-50 text-orange-800" },
     approved: {
-      label: "מוכן לחשבון",
+      label: "מאושר",
       className: "bg-emerald-50 text-emerald-800",
     },
     locked: {
-      label: "שויך לחשבון",
+      label: "מאושר · שויך לחשבון",
       className: "bg-indigo-50 text-indigo-800",
     },
     invoiced: {
-      label: "נכלל בחשבון מאושר",
+      label: "מאושר · הופק חשבון",
       className: "bg-violet-50 text-violet-800",
     },
   };
@@ -233,7 +274,7 @@ export function ProjectPerformancePage({
 
   /** If sheet has rooms but no BOQ columns — build the fillable grid automatically. */
   useEffect(() => {
-    if (!sheetId || !sheet || locked) return;
+    if (!sheetId || !sheet || locked || approvalEditMode) return;
     if (gridEnsuredFor === sheetId) return;
     const roomCount = sheet.rows?.length ?? 0;
     const cellCount = sheet.cells?.length ?? 0;
@@ -254,7 +295,7 @@ export function ProjectPerformancePage({
       })
       .catch((e) => toast.error(e.message))
       .finally(() => setEnsuringGrid(false));
-  }, [sheet, sheetId, locked, gridEnsuredFor, projectId, toast]);
+  }, [sheet, sheetId, locked, approvalEditMode, gridEnsuredFor, projectId, toast]);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -351,7 +392,16 @@ export function ProjectPerformancePage({
     }
     setSaving(true);
     try {
-      await invoicesWorkspaceService.saveCells(sheetId, cells);
+      const result = await invoicesWorkspaceService.saveCells(
+        sheetId,
+        cells,
+        approvalEditMode
+          ? {
+              approvalReviewEdit: true,
+              expectedVersion: sheet?.currentVersion ?? 1,
+            }
+          : undefined
+      );
       // Fast path: keep local draft as source of truth (no full sheet reload)
       const next = { ...draft };
       for (const c of cells) {
@@ -359,15 +409,27 @@ export function ProjectPerformancePage({
       }
       setDraft(next);
       setSaved({ ...next });
+      if (
+        approvalEditMode &&
+        result?.currentVersion != null &&
+        sheet
+      ) {
+        setSheet({ ...sheet, currentVersion: result.currentVersion });
+      } else if (approvalEditMode && sheetId) {
+        const s = await invoicesWorkspaceService.getSheet(sheetId);
+        applySheet(s);
+      }
       if (!opts?.silent) {
-        toast.success("דף המדידה נשמר בהצלחה");
-        // Prompt: transfer to invoice (draft stays if user declines)
+        toast.success(
+          approvalEditMode
+            ? "השינויים נשמרו — ניתן לאשר או להחזיר לתיקון"
+            : "דף המדידה נשמר בהצלחה"
+        );
+        // Invoice prompt only after approval — never from draft/pending
         if (
+          !approvalEditMode &&
           sheet &&
-          (sheet.status === "draft" ||
-            sheet.status === "in_progress" ||
-            sheet.status === "approved" ||
-            sheet.status === "pending_approval") &&
+          (sheet.status === "approved" || sheet.status === "locked") &&
           !sheet.partialInvoiceId
         ) {
           setAskInvoice(true);
@@ -384,9 +446,9 @@ export function ProjectPerformancePage({
 
   saveAllRef.current = () => saveAll({ silent: true });
 
-  /** Autosave dirty cells in the background (debounced) */
+  /** Autosave dirty cells in the background (debounced) — disabled in PM approval edit */
   useEffect(() => {
-    if (locked || !dirty || !sheetId) return;
+    if (locked || !dirty || !sheetId || approvalEditMode) return;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
       void saveAllRef.current();
@@ -394,7 +456,7 @@ export function ProjectPerformancePage({
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
-  }, [draft, dirty, locked, sheetId]);
+  }, [draft, dirty, locked, sheetId, approvalEditMode]);
 
   async function exportExcel() {
     if (!sheet || !sections.length) {
@@ -568,7 +630,11 @@ export function ProjectPerformancePage({
       applySheet(s);
       await loadSheets();
       setSubmitApproverOpen(false);
-      toast.success("הדוח נשלח לאישור — סטטוס: ממתין לאישור");
+      toast.success(
+        isRevision
+          ? "הגרסה המתוקנת נשלחה מחדש לאישור"
+          : "הדוח נשלח לאישור — סטטוס: ממתין לאישור"
+      );
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -631,6 +697,10 @@ export function ProjectPerformancePage({
 
   async function handleGenerateInvoice() {
     if (!sheetId) return;
+    if (hasInvoice && sheet?.partialInvoiceId) {
+      window.open(`/print/invoices/${sheet.partialInvoiceId}`, "_blank");
+      return;
+    }
     setGeneratingInvoice(true);
     try {
       const summary = await invoicesWorkspaceService.getSummary(projectId, [
@@ -645,11 +715,66 @@ export function ProjectPerformancePage({
       const inv = result.invoice;
       setInvoiceDraftId(inv.id);
       setAskInvoice(false);
+      const s = await invoicesWorkspaceService.getSheet(sheetId);
+      applySheet(s);
+      await loadSheets();
       toast.success("טיוטת חשבון הוכנה");
     } catch (e: any) {
       toast.error(e.message);
     } finally {
       setGeneratingInvoice(false);
+    }
+  }
+
+  async function ensureClientLink(opts?: { openWhatsApp?: boolean }) {
+    if (!sheetId) return null;
+    setClientLinkBusy(true);
+    try {
+      const phone =
+        sheet?.project?.clientPhone ||
+        sheet?.project?.phone ||
+        undefined;
+      const projectName = sheet?.project?.name || "";
+      const result = await approvalsService.sendMeasurementSheetToClient(
+        sheetId,
+        {
+          phone,
+          message: `שלום, מצורף דף המדידה המאושר עבור פרויקט ${projectName}.\nלצפייה במסמך:`,
+        }
+      );
+      // Append URL to message for WhatsApp if API didn't include it in custom message
+      const link = {
+        url: result.url,
+        documentNumber: result.documentNumber,
+        whatsappUrl: result.whatsappUrl,
+      };
+      setClientLink(link);
+      if (opts?.openWhatsApp && result.whatsappUrl) {
+        window.open(result.whatsappUrl, "_blank");
+      } else {
+        setClientLinkOpen(true);
+      }
+      return link;
+    } catch (e: any) {
+      toast.error(e.message);
+      return null;
+    } finally {
+      setClientLinkBusy(false);
+    }
+  }
+
+  async function handleCopyClientLink() {
+    const existing = clientLink;
+    const result =
+      existing ||
+      (await ensureClientLink({ openWhatsApp: false }));
+    if (!result?.url) return;
+    try {
+      await navigator.clipboard.writeText(result.url);
+      toast.success("הקישור הועתק");
+    } catch {
+      toast.error("לא ניתן להעתיק — פתחו את חלון הקישור");
+      setClientLinkOpen(true);
     }
   }
 
@@ -765,6 +890,29 @@ export function ProjectPerformancePage({
               {sheet.currentVersion ? ` · V${sheet.currentVersion}` : ""}
             </span>
           )}
+          {!locked && !postApprovalStage && !isPending && (
+            <Button
+              size="sm"
+              className={
+                isRevision
+                  ? "bg-orange-600 hover:bg-orange-700"
+                  : "bg-amber-600 hover:bg-amber-700"
+              }
+              onClick={() => void openSubmitFlow()}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {isRevision ? "שמור ושלח מחדש לאישור" : "שלח לאישור"}
+            </Button>
+          )}
+          {approvalEditMode && sheetId && (
+            <Link
+              href={`${portalBase}/approvals/review/measurement_sheet/${sheetId}`}
+              className="inline-flex h-9 items-center gap-1 rounded-md border border-sky-300 bg-sky-50 px-3 text-sm font-bold text-sky-900"
+            >
+              <ArrowRight className="h-4 w-4" />
+              חזרה לבדיקה
+            </Link>
+          )}
           {!locked && (
             <Button
               size="sm"
@@ -772,28 +920,17 @@ export function ProjectPerformancePage({
               disabled={saving || !dirty}
             >
               <Save className="h-4 w-4" />
-              {saving ? "שומר…" : "שמור"}
-            </Button>
-          )}
-          {!locked && (
-            <Button
-              size="sm"
-              className="bg-amber-600 hover:bg-amber-700"
-              onClick={() => void openSubmitFlow()}
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              שלח לאישור
-            </Button>
-          )}
-          {isApproved && (
-            <Button size="sm" onClick={() => setAskInvoice(true)}>
-              הפק חשבון
+              {saving
+                ? "שומר…"
+                : approvalEditMode
+                  ? "שמור שינויים"
+                  : "שמור"}
             </Button>
           )}
           {isPending && (
             <>
               <span className="self-center text-xs font-medium text-amber-700">
-                ממתין לאישור מנהל תפעול
+                ממתין לאישור
               </span>
               <Button
                 size="sm"
@@ -820,8 +957,134 @@ export function ProjectPerformancePage({
               </Button>
             </>
           )}
+          {postApprovalStage && (
+            <>
+              <span className="inline-flex items-center gap-1 self-center rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-black text-white">
+                מאושר ✓
+              </span>
+              {hasInvoice ? (
+                <>
+                  {sheet?.invoiceNumber && (
+                    <span className="self-center text-xs font-bold text-indigo-700">
+                      חשבון #{sheet.invoiceNumber}
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    className="bg-indigo-600 hover:bg-indigo-700"
+                    onClick={() =>
+                      window.open(
+                        `/print/invoices/${sheet!.partialInvoiceId}`,
+                        "_blank"
+                      )
+                    }
+                  >
+                    <Receipt className="h-4 w-4" />
+                    פתח חשבון
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  className="bg-emerald-700 hover:bg-emerald-800"
+                  disabled={generatingInvoice}
+                  onClick={() => setAskInvoice(true)}
+                >
+                  <Receipt className="h-4 w-4" />
+                  {generatingInvoice ? "מפיק…" : "הפק חשבון"}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={clientLinkBusy}
+                onClick={() => void ensureClientLink({ openWhatsApp: false })}
+              >
+                <Link2 className="h-4 w-4" />
+                {clientLink ? "הצג קישור" : "צור קישור ללקוח"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={clientLinkBusy}
+                onClick={() => void handleCopyClientLink()}
+              >
+                <Copy className="h-4 w-4" />
+                העתק קישור
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[#25D366] hover:bg-[#1ebe57] text-white"
+                disabled={clientLinkBusy}
+                onClick={() => void ensureClientLink({ openWhatsApp: true })}
+              >
+                <MessageCircle className="h-4 w-4" />
+                שלח WhatsApp
+              </Button>
+            </>
+          )}
         </div>
       </div>
+
+      {approvalEditMode && (
+        <section className="rounded-2xl border-2 border-sky-300 bg-sky-50/70 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-start gap-2">
+              <Pencil className="mt-0.5 h-4 w-4 text-sky-800" />
+              <div>
+                <p className="text-sm font-black text-sky-950">
+                  עריכת דף באישור מנהל פרויקט
+                </p>
+                <p className="mt-0.5 text-xs text-sky-900">
+                  שמרו שינויים ואז חזרו לבדיקה לאישור או להחזרה לתיקון. השמירה
+                  לא מאשרת ולא מחזירה אוטומטית.
+                </p>
+              </div>
+            </div>
+            {sheetId && (
+              <Link
+                href={`${portalBase}/approvals/review/measurement_sheet/${sheetId}`}
+                className="inline-flex min-h-9 items-center rounded-xl bg-sky-700 px-4 text-xs font-black text-white"
+              >
+                חזרה לבדיקה
+              </Link>
+            )}
+          </div>
+        </section>
+      )}
+
+      {postApprovalStage && (
+        <section className="rounded-2xl border-2 border-emerald-300 bg-emerald-50/60 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-black text-emerald-900">
+                שלב כספי / שליחה ללקוח
+              </p>
+              <p className="mt-0.5 text-xs text-emerald-800">
+                האישור הסתיים. ניתן להפיק חשבון, ליצור קישור חיצוני ולשלוח
+                ב־WhatsApp.
+                {hasInvoice
+                  ? sheet?.invoiceNumber
+                    ? ` · חשבון #${sheet.invoiceNumber} כבר מקושר לדף זה.`
+                    : " · חשבון כבר מקושר לדף זה."
+                  : ""}
+              </p>
+            </div>
+            {hasInvoice && (
+              <a
+                href={`/print/invoices/${sheet!.partialInvoiceId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-bold text-indigo-700"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                צפה בחשבון
+                {sheet?.invoiceNumber ? ` #${sheet.invoiceNumber}` : ""}
+              </a>
+            )}
+          </div>
+        </section>
+      )}
 
       {revisionCount > 0 && !isRevision && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800">
@@ -829,33 +1092,89 @@ export function ProjectPerformancePage({
         </div>
       )}
 
-      {isRevision && (
-        <div className="space-y-2">
-          <RevisionFeedbackBanner
-            comment={
-              sheet?.lastReturnComment ||
-              sheet?.rejectionComment ||
-              "הוחזר לתיקון"
-            }
-          />
-          {!!activeReviewNotes.length && (
-            <ul className="list-disc space-y-1 rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-2 pr-8 text-xs text-orange-900">
-              {activeReviewNotes.map((n: any) => (
-                <li key={n.id}>
-                  {n.comment}
-                  {n.authorName ? ` — ${n.authorName}` : ""}
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="text-xs text-orange-700">
-            תקנו את המבוקש ולחצו שוב «שלח לאישור»
+      {correctionMode && (
+        <section
+          className="space-y-3 rounded-2xl border-2 border-orange-400 bg-gradient-to-b from-orange-100 to-orange-50 p-4 shadow-sm"
+          data-edit-mode="correction"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-lg bg-orange-600 px-3 py-1 text-xs font-black text-white">
+                נדרש תיקון
+              </span>
+              <span className="text-sm font-bold text-orange-950">
+                מצב עריכת תיקון · V{sheet?.currentVersion ?? 1}
+              </span>
+            </div>
+            <Button
+              size="sm"
+              className="bg-orange-600 hover:bg-orange-700"
+              onClick={() => void openSubmitFlow()}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              שמור ושלח מחדש לאישור
+            </Button>
+          </div>
+
+          <div className="rounded-xl border border-orange-200 bg-white px-4 py-3">
+            <p className="text-[11px] font-black uppercase tracking-wide text-orange-700">
+              הערות לתיקון
+            </p>
+            <div className="mt-2 grid gap-1 text-sm text-orange-950 sm:grid-cols-2">
+              <p>
+                <span className="text-orange-700">מי החזיר: </span>
+                <span className="font-bold">{returnedByName || "—"}</span>
+              </p>
+              <p>
+                <span className="text-orange-700">מתי: </span>
+                <span className="font-bold">
+                  {sheet?.returnedAt
+                    ? new Date(sheet.returnedAt).toLocaleString("he-IL")
+                    : "—"}
+                </span>
+              </p>
+            </div>
+            <div className="mt-3 whitespace-pre-wrap rounded-lg bg-orange-50 px-3 py-2 text-sm font-medium text-orange-950">
+              {sheet?.lastReturnComment ||
+                sheet?.rejectionComment ||
+                "הוחזר לתיקון — תקנו את הדף ושילחו מחדש"}
+            </div>
+            {!!activeReviewNotes.length && (
+              <div className="mt-3">
+                <p className="text-[11px] font-bold text-orange-700">
+                  חדרים / סעיפים שסומנו
+                </p>
+                <ul className="mt-1 list-disc space-y-1 pr-5 text-xs text-orange-900">
+                  {activeReviewNotes.map((n: any) => (
+                    <li key={n.id}>
+                      {n.roomName ? (
+                        <span className="font-bold">{n.roomName}: </span>
+                      ) : null}
+                      {n.comment}
+                      {n.authorName ? ` — ${n.authorName}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          <p className="text-xs font-semibold text-orange-800">
+            ערכו כמויות / חדרים / הערות בטבלה למטה, ואז לחצו «שמור ושלח מחדש
+            לאישור». אין תיקון אוטומטי — רק עריכה ידנית.
           </p>
-        </div>
+        </section>
       )}
 
       {sheet && !fullscreen && (
-        <div className="grid gap-2 rounded-2xl border border-gray-200 bg-white p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div
+          className={cn(
+            "grid gap-2 rounded-2xl border bg-white p-4 text-sm sm:grid-cols-2 lg:grid-cols-4",
+            correctionMode
+              ? "border-orange-300 ring-2 ring-orange-200"
+              : "border-gray-200"
+          )}
+        >
           <InfoMeta label="פרויקט" value={sheet.project?.name} />
           <InfoMeta label="לקוח" value={sheet.project?.contractor} />
           <InfoMeta label="כתובת" value={sheet.project?.location} />
@@ -1043,10 +1362,15 @@ export function ProjectPerformancePage({
               </tr>
             </thead>
             <tbody>
-              {rooms.map((room: any) => (
+              {rooms.map((room: any) => {
+                const needsFix = correctionMode && markedRoomIds.has(room.id);
+                return (
                 <tr
                   key={room.id}
-                  className="border-b border-gray-50 hover:bg-gray-50/50"
+                  className={cn(
+                    "border-b border-gray-50 hover:bg-gray-50/50",
+                    needsFix && "bg-orange-50/80 hover:bg-orange-50"
+                  )}
                   draggable={!locked && !!room.projectRoomId}
                   onDragStart={() => setDragRoomId(room.id)}
                   onDragOver={(e) => e.preventDefault()}
@@ -1056,7 +1380,12 @@ export function ProjectPerformancePage({
                   }}
                   onDragEnd={() => setDragRoomId(null)}
                 >
-                  <td className="sticky right-0 z-10 border-l border-gray-100 bg-white px-3 py-2 font-semibold text-gray-900 whitespace-nowrap">
+                  <td
+                    className={cn(
+                      "sticky right-0 z-10 border-l border-gray-100 px-3 py-2 font-semibold text-gray-900 whitespace-nowrap",
+                      needsFix ? "bg-orange-50" : "bg-white"
+                    )}
+                  >
                     <span className="inline-flex items-center gap-1.5">
                       {!locked && room.projectRoomId && (
                         <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-gray-300" />
@@ -1088,11 +1417,9 @@ export function ProjectPerformancePage({
                           · קומה {room.floor}
                         </span>
                       ) : null}
-                      {activeReviewNotes.some(
-                        (n: any) => n.rowId === room.id
-                      ) && (
-                        <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-800">
-                          נדרש תיקון
+                      {needsFix && (
+                        <span className="rounded bg-orange-600 px-1.5 py-0.5 text-[9px] font-black text-white">
+                          תיקון
                         </span>
                       )}
                     </span>
@@ -1106,7 +1433,12 @@ export function ProjectPerformancePage({
                           min={0}
                           step="any"
                           disabled={locked}
-                          className="mx-auto block w-[88px] rounded-lg border border-gray-200 px-2 py-1.5 text-center disabled:bg-gray-50"
+                          className={cn(
+                            "mx-auto block w-[88px] rounded-lg border px-2 py-1.5 text-center disabled:bg-gray-50",
+                            needsFix
+                              ? "border-orange-300 bg-orange-50/50"
+                              : "border-gray-200"
+                          )}
                           value={draft[key] ?? "0"}
                           onChange={(e) =>
                             setDraft((d) => ({
@@ -1122,7 +1454,8 @@ export function ProjectPerformancePage({
                     {formatNumber(roomTotal(room.id))}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             <tfoot className="sticky bottom-0 bg-gray-50">
               <tr>
@@ -1183,7 +1516,13 @@ export function ProjectPerformancePage({
   );
 
   return (
-    <div className="space-y-4 pb-10">
+    <div
+      className={cn(
+        "space-y-4 pb-10",
+        correctionMode && "rounded-2xl border-2 border-orange-400 bg-orange-50/40 p-3 sm:p-4"
+      )}
+      data-edit-mode={correctionMode ? "correction" : undefined}
+    >
       {!fullscreen && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -1257,8 +1596,12 @@ export function ProjectPerformancePage({
       <Modal
         open={submitApproverOpen}
         onClose={() => setSubmitApproverOpen(false)}
-        title="שלח לאישור"
-        description="בחרו מנהל תפעול, מנהל פרויקט או מנהל עבודה לאישור דוח הביצוע"
+        title={isRevision ? "שמור ושלח מחדש לאישור" : "שלח לאישור"}
+        description={
+          isRevision
+            ? "לאחר התיקון — בחרו מאשרים לשליחה מחדש. מספיק שאישור אחד יאשר את הגרסה החדשה."
+            : "בחרו מנהל תפעול, מנהל פרויקט או מנהל עבודה לאישור דוח הביצוע. מספיק אישור אחד."
+        }
         size="lg"
       >
         <div className="space-y-4">
@@ -1311,7 +1654,7 @@ export function ProjectPerformancePage({
               disabled={completing || !selectedApproverIds.length}
               loading={completing}
             >
-              שלח לאישור
+              {isRevision ? "שמור ושלח מחדש לאישור" : "שלח לאישור"}
             </Button>
           </div>
         </div>
@@ -1388,13 +1731,26 @@ export function ProjectPerformancePage({
         open={askInvoice}
         onClose={() => setAskInvoice(false)}
         onConfirm={() => void handleGenerateInvoice()}
-        title="דף המדידה נשמר בהצלחה"
-        description="האם להעביר לחשבון? בחירת «לא» משאירה את הדף בטיוטה / מוכן לחשבון."
-        confirmLabel="כן"
-        cancelLabel="לא"
+        title="הפקת חשבון מדף מדידה מאושר"
+        description="יווצר חשבון מהכמויות המאושרות בדף זה. לא ניתן להפיק חשבון כפול מאותו דף."
+        confirmLabel="הפק חשבון"
+        cancelLabel="ביטול"
         loading={generatingInvoice}
-        loadingLabel="מכין חשבון…"
+        loadingLabel="מפיק חשבון…"
         variant="primary"
+      />
+
+      <SendClientLinkModal
+        open={clientLinkOpen && Boolean(clientLink?.url)}
+        onClose={() => setClientLinkOpen(false)}
+        url={clientLink?.url || ""}
+        documentNumber={
+          clientLink?.documentNumber ||
+          sheet?.documentNumber ||
+          `MS-${sheet?.sequenceNumber || ""}`
+        }
+        kind="measurement_sheet"
+        phone={sheet?.project?.clientPhone || sheet?.project?.phone || null}
       />
 
       <Modal

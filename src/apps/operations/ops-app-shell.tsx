@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * differences enforced by permissions only (no send-to-client).
  */
 const NAV = [
-  { href: "/operations/approvals", label: "אישורים", badge: true },
+  { href: "/operations/approvals", label: "תיקונים", badge: true },
   { href: "/operations/accounts", label: "עץ פרויקט", exact: false },
   { href: "/operations/work-orders", label: "סידורים" },
   { href: "/operations/documents", label: "מסמכים" },

@@ -12,6 +12,12 @@ import {
   assertDocumentMutable,
   MEASUREMENT_EDITABLE_STATUSES,
 } from "@/lib/workflow/document-guards";
+import {
+  assertProjectManagerPendingEdit,
+  canProjectManagerEditPendingSheet,
+  PmApprovalEditError,
+} from "@/lib/auth/measurement-pm-approval-edit";
+import { PROJECT_MANAGER_ROLE } from "@/lib/auth/roles";
 
 function num(v: unknown): number {
   return Number(v ?? 0);
@@ -31,10 +37,12 @@ export type CellSaveOfficeResult =
         boqItemId: string;
         quantity: number;
       }[];
+      currentVersion?: number;
     }
   | { status: "not_found" }
   | { status: "forbidden" }
-  | { status: "locked" };
+  | { status: "locked" }
+  | { status: "conflict"; message: string };
 
 const sheetInclude = {
   rows: {
@@ -156,6 +164,39 @@ function mapSheet(row: any) {
   const events = parseJsonArray(row.events);
   const versions = parseJsonArray(row.versions);
 
+  const mappedRows = rows
+    .filter((r: any) => {
+      if (r.projectRoom?.deletedAt) return false;
+      if (r.projectRoom?.isHidden) return false;
+      return true;
+    })
+    .sort((a: any, b: any) => {
+      const sa = a.projectRoom?.sortOrder ?? a.sortOrder ?? 0;
+      const sb = b.projectRoom?.sortOrder ?? b.sortOrder ?? 0;
+      return sa - sb;
+    })
+    .map((r: any) => ({
+      id: r.id,
+      name: r.projectRoom?.name ?? r.name,
+      sortOrder: r.projectRoom?.sortOrder ?? r.sortOrder,
+      notes: r.notes,
+      projectRoomId: r.projectRoomId ?? r.projectRoom?.id ?? null,
+      floor: r.projectRoom?.floor ?? null,
+      code: r.projectRoom?.code ?? null,
+      isHidden: r.projectRoom?.isHidden ?? false,
+    }));
+
+  const rowNameById = new Map(mappedRows.map((r) => [r.id, r.name]));
+
+  const rejectedSorted = approvals
+    .filter((a: any) => a.status === "rejected")
+    .sort(
+      (a: any, b: any) =>
+        (asDate(b.decidedAt)?.getTime() ?? 0) -
+        (asDate(a.decidedAt)?.getTime() ?? 0)
+    );
+  const lastReject = rejectedSorted[0] ?? null;
+
   return {
     id: row.id,
     projectId: row.projectId,
@@ -168,7 +209,10 @@ function mapSheet(row: any) {
     approvedAt: iso(row.approvedAt),
     returnedAt: iso(row.returnedAt),
     lastReturnComment: row.lastReturnComment ?? null,
+    returnedByName: lastReject?.approver?.name ?? null,
+    returnedById: lastReject?.approverId ?? null,
     partialInvoiceId: row.partialInvoiceId,
+    invoiceNumber: row.invoiceNumber ?? row.partialInvoice?.invoiceNumber ?? null,
     clientSignatureUrl: row.clientSignatureUrl ?? null,
     clientSignedName: row.clientSignedName ?? null,
     clientSignedAt: iso(row.clientSignedAt),
@@ -181,27 +225,11 @@ function mapSheet(row: any) {
       ? { id: row.createdBy.id, name: row.createdBy.name }
       : null,
     editable: isSheetEditable(row.status),
-    rows: rows
-      .filter((r: any) => {
-        if (r.projectRoom?.deletedAt) return false;
-        if (r.projectRoom?.isHidden) return false;
-        return true;
-      })
-      .sort((a: any, b: any) => {
-        const sa = a.projectRoom?.sortOrder ?? a.sortOrder ?? 0;
-        const sb = b.projectRoom?.sortOrder ?? b.sortOrder ?? 0;
-        return sa - sb;
-      })
-      .map((r: any) => ({
-        id: r.id,
-        name: r.projectRoom?.name ?? r.name,
-        sortOrder: r.projectRoom?.sortOrder ?? r.sortOrder,
-        notes: r.notes,
-        projectRoomId: r.projectRoomId ?? r.projectRoom?.id ?? null,
-        floor: r.projectRoom?.floor ?? null,
-        code: r.projectRoom?.code ?? null,
-        isHidden: r.projectRoom?.isHidden ?? false,
-      })),
+    /** true when PROJECT_MANAGER may edit while pending approval (set by enrich) */
+    pmApprovalEdit: Boolean(row.pmApprovalEdit),
+    /** true when sheet is in manual correction / FIX_REQUIRED (= revision) */
+    correctionMode: row.status === "revision",
+    rows: mappedRows,
     cells: cells
       .filter((c: any) => !c.boqItem?.deletedAt)
       .filter((c: any) => {
@@ -239,17 +267,11 @@ function mapSheet(row: any) {
       sentAt: iso(a.sentAt),
       decidedAt: iso(a.decidedAt),
     })),
-    rejectionComment:
-      approvals
-        .filter((a: any) => a.status === "rejected" && a.comment)
-        .sort(
-          (a: any, b: any) =>
-            (asDate(b.decidedAt)?.getTime() ?? 0) -
-            (asDate(a.decidedAt)?.getTime() ?? 0)
-        )[0]?.comment ?? null,
+    rejectionComment: lastReject?.comment ?? null,
     reviewNotes: reviewNotes.map((n: any) => ({
       id: n.id,
       rowId: n.rowId,
+      roomName: n.rowId ? rowNameById.get(n.rowId) || null : null,
       boqItemId: n.boqItemId,
       comment: n.comment,
       version: n.version,
@@ -371,7 +393,42 @@ export class MeasurementSheetsRepository {
     id: string,
     officeUserId: string
   ): Promise<MeasurementSheetGetResult> {
-    return this.fetchSheetById(id, officeUserId);
+    const result = await this.fetchSheetById(id, officeUserId);
+    if (result.status !== "ok") return result;
+    const enriched = await this.enrichPmApprovalEditFlag(
+      result.data,
+      officeUserId
+    );
+    return { status: "ok", data: enriched };
+  }
+
+  /** Unlock grid for PROJECT_MANAGER while the sheet awaits their approval. */
+  private static async enrichPmApprovalEditFlag(
+    data: ReturnType<typeof mapSheet>,
+    userId: string
+  ) {
+    if (data.status !== "pending_approval") return data;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!user || user.role !== PROJECT_MANAGER_ROLE) return data;
+
+    const pendingIds = (data.approvals ?? [])
+      .filter((a) => a.status === "pending")
+      .map((a) => a.approverId)
+      .filter(Boolean) as string[];
+
+    const ok = await canProjectManagerEditPendingSheet({
+      userId,
+      role: user.role,
+      sheetId: data.id,
+      projectId: data.projectId,
+      status: data.status,
+      pendingApproverIds: pendingIds,
+    });
+    if (!ok) return data;
+    return { ...data, editable: true, pmApprovalEdit: true };
   }
 
   private static async fetchSheetById(
@@ -876,12 +933,22 @@ export class MeasurementSheetsRepository {
         ? JSON.parse(row.createdBy)
         : row.createdBy;
 
+    let invoiceNumber: string | null = null;
+    if (row.partialInvoiceId) {
+      const inv = await prisma.partialInvoice.findUnique({
+        where: { id: row.partialInvoiceId },
+        select: { invoiceNumber: true },
+      });
+      invoiceNumber = inv?.invoiceNumber ?? null;
+    }
+
     return {
       status: "ok",
       data: mapSheet({
         ...row,
         project,
         createdBy,
+        invoiceNumber,
       }),
     };
   }
@@ -1010,15 +1077,29 @@ export class MeasurementSheetsRepository {
   static async updateMeta(
     id: string,
     input: { title?: string; notes?: string | null; status?: MeasurementSheetStatus },
-    userId: string
+    userId: string,
+    opts?: { role?: string; expectedVersion?: number }
   ) {
     const existing = await prisma.measurementSheet.findUnique({ where: { id } });
     if (!existing) throw new Error("דף מדידה לא נמצא");
 
-    assertDocumentMutable(String(existing.status), {
-      allowStatuses: MEASUREMENT_EDITABLE_STATUSES,
-      entityLabel: "דף המדידה",
-    });
+    const pmPending =
+      existing.status === "pending_approval" &&
+      opts?.role === PROJECT_MANAGER_ROLE;
+
+    if (pmPending) {
+      await assertProjectManagerPendingEdit({
+        userId,
+        role: opts!.role!,
+        sheetId: id,
+        expectedVersion: opts?.expectedVersion,
+      });
+    } else {
+      assertDocumentMutable(String(existing.status), {
+        allowStatuses: MEASUREMENT_EDITABLE_STATUSES,
+        entityLabel: "דף המדידה",
+      });
+    }
 
     // `input.status` is intentionally IGNORED. Status transitions must go
     // through submitForApproval / decideApproval / applyClientSignature so the
@@ -1027,11 +1108,96 @@ export class MeasurementSheetsRepository {
     // echo the current status back keep working.
     void input.status;
 
+    const title = input.title?.trim();
+    const notes = input.notes;
+    const titleChanged =
+      title !== undefined && title !== existing.title;
+    const notesChanged =
+      notes !== undefined && notes !== (existing.notes ?? null);
+
+    if (pmPending && (titleChanged || notesChanged)) {
+      const versionBefore = existing.currentVersion;
+      const versionAfter = versionBefore + 1;
+      await prisma.$transaction(async (tx) => {
+        const locked = await tx.measurementSheet.updateMany({
+          where: {
+            id,
+            status: "pending_approval",
+            currentVersion: versionBefore,
+          },
+          data: {
+            title: titleChanged ? title : undefined,
+            notes: notesChanged ? notes : undefined,
+            currentVersion: versionAfter,
+            updatedById: userId,
+          },
+        });
+        if (!locked.count) {
+          throw new PmApprovalEditError(
+            "המסמך עודכן מאז שפתחת אותו. יש לרענן לפני שמירת השינויים.",
+            409
+          );
+        }
+        const lastVer = await tx.measurementSheetVersion.findFirst({
+          where: { sheetId: id },
+          orderBy: { version: "desc" },
+          select: { version: true },
+        });
+        await tx.measurementSheetVersion.create({
+          data: {
+            sheetId: id,
+            version: (lastVer?.version ?? 0) + 1,
+            status: "pending_approval",
+            snapshotJson: "{}",
+            note: `V${versionAfter} נערך על ידי מנהל פרויקט (מטא־דאטה)`,
+            actorId: userId,
+          },
+        });
+        await tx.measurementSheetEvent.create({
+          data: {
+            sheetId: id,
+            type: "pm_edited",
+            message: "נערך על ידי מנהל פרויקט",
+            actorId: userId,
+            metadata: JSON.stringify({
+              documentId: id,
+              versionBefore,
+              versionAfter,
+              role: PROJECT_MANAGER_ROLE,
+              changedFields: [
+                ...(titleChanged
+                  ? [
+                      {
+                        field: "title",
+                        oldValue: existing.title,
+                        newValue: title,
+                      },
+                    ]
+                  : []),
+                ...(notesChanged
+                  ? [
+                      {
+                        field: "notes",
+                        oldValue: existing.notes,
+                        newValue: notes,
+                      },
+                    ]
+                  : []),
+              ],
+              editedBy: userId,
+              editedAt: new Date().toISOString(),
+            }),
+          },
+        });
+      });
+      return this.getById(id);
+    }
+
     await prisma.measurementSheet.update({
       where: { id },
       data: {
-        title: input.title?.trim(),
-        notes: input.notes,
+        title: title,
+        notes: notes,
         updatedById: userId,
       },
     });
@@ -1190,12 +1356,29 @@ export class MeasurementSheetsRepository {
     return this.getById(sheetId);
   }
 
-  static async addRows(sheetId: string, names: string[], userId: string) {
+  static async addRows(
+    sheetId: string,
+    names: string[],
+    userId: string,
+    opts?: { role?: string; expectedVersion?: number }
+  ) {
     const sheet = await prisma.measurementSheet.findUnique({
       where: { id: sheetId },
     });
     if (!sheet) throw new Error("דף מדידה לא נמצא");
-    if (!isSheetEditable(sheet.status)) {
+
+    const pmPending =
+      sheet.status === "pending_approval" &&
+      opts?.role === PROJECT_MANAGER_ROLE;
+
+    if (pmPending) {
+      await assertProjectManagerPendingEdit({
+        userId,
+        role: opts!.role!,
+        sheetId,
+        expectedVersion: opts?.expectedVersion,
+      });
+    } else if (!isSheetEditable(sheet.status)) {
       throw new Error("הדף נעול לעריכה");
     }
 
@@ -1209,13 +1392,50 @@ export class MeasurementSheetsRepository {
       await ProjectRoomsRepository.create(sheet.projectId, { name });
     }
 
-    await prisma.measurementSheet.update({
-      where: { id: sheetId },
-      data: {
-        updatedById: userId,
-        status: sheet.status === "revision" ? "revision" : "in_progress",
-      },
-    });
+    if (pmPending) {
+      const versionBefore = sheet.currentVersion;
+      const versionAfter = versionBefore + 1;
+      const bumped = await prisma.measurementSheet.updateMany({
+        where: {
+          id: sheetId,
+          status: "pending_approval",
+          currentVersion: versionBefore,
+        },
+        data: {
+          updatedById: userId,
+          currentVersion: versionAfter,
+        },
+      });
+      if (!bumped.count) {
+        throw new PmApprovalEditError(
+          "המסמך עודכן מאז שפתחת אותו. יש לרענן לפני שמירת השינויים.",
+          409
+        );
+      }
+      await this.addEvent(
+        sheetId,
+        "pm_edited",
+        "נערך על ידי מנהל פרויקט",
+        userId,
+        {
+          documentId: sheetId,
+          versionBefore,
+          versionAfter,
+          role: PROJECT_MANAGER_ROLE,
+          changedFields: [{ field: "rows", added: clean }],
+          editedBy: userId,
+          editedAt: new Date().toISOString(),
+        }
+      );
+    } else {
+      await prisma.measurementSheet.update({
+        where: { id: sheetId },
+        data: {
+          updatedById: userId,
+          status: sheet.status === "revision" ? "revision" : "in_progress",
+        },
+      });
+    }
 
     return this.getById(sheetId);
   }
@@ -1248,6 +1468,8 @@ export class MeasurementSheetsRepository {
     if (result.status === "not_found") throw new Error("דף מדידה לא נמצא");
     if (result.status === "locked") throw new Error("הדף נעול לעריכה");
     if (result.status === "forbidden") throw new Error("אין הרשאה");
+    if (result.status === "conflict") throw new Error(result.message);
+    if (result.status !== "ok") throw new Error("שגיאה בשמירה");
     const cell = result.cells[0];
     if (!cell) {
       return {
@@ -1276,6 +1498,8 @@ export class MeasurementSheetsRepository {
     if (result.status === "not_found") throw new Error("דף מדידה לא נמצא");
     if (result.status === "locked") throw new Error("הדף נעול לעריכה");
     if (result.status === "forbidden") throw new Error("אין הרשאה");
+    if (result.status === "conflict") throw new Error(result.message);
+    if (result.status !== "ok") throw new Error("שגיאה בשמירה");
     return { saved: result.saved };
   }
 
@@ -1328,7 +1552,10 @@ export class MeasurementSheetsRepository {
       officeUserId,
       { fuseAuth: true, note: input.note ?? null, skipUnchanged: false }
     );
-    if (result.status !== "ok") return result;
+    if (result.status !== "ok") {
+      if (result.status === "conflict") return { status: "locked" };
+      return result;
+    }
     const cell = result.cells[0] ?? {
       id: "",
       rowId: input.rowId,
@@ -1336,6 +1563,210 @@ export class MeasurementSheetsRepository {
       quantity: Math.max(0, Number(input.quantity) || 0),
     };
     return { status: "ok", cell };
+  }
+
+  /**
+   * PROJECT_MANAGER edit while the sheet is pending their approval.
+   * Preserves pending_approval status, bumps document version, writes timeline.
+   * Uses expectedVersion to block silent concurrent overwrites.
+   */
+  static async saveCellsAsPmApprovalEdit(
+    sheetId: string,
+    cells: { rowId: string; boqItemId: string; quantity: number }[],
+    opts: {
+      userId: string;
+      role: string;
+      expectedVersion: number;
+    }
+  ): Promise<CellSaveOfficeResult> {
+    try {
+      await assertProjectManagerPendingEdit({
+        userId: opts.userId,
+        role: opts.role,
+        sheetId,
+        expectedVersion: opts.expectedVersion,
+      });
+    } catch (e) {
+      if (e instanceof PmApprovalEditError) {
+        if (e.status === 404) return { status: "not_found" };
+        if (e.status === 409) return { status: "conflict", message: e.message };
+        return { status: "forbidden" };
+      }
+      throw e;
+    }
+
+    const versionBefore = opts.expectedVersion;
+    const beforeCells = await prisma.measurementCell.findMany({
+      where: { sheetId },
+      select: { rowId: true, boqItemId: true, quantity: true },
+    });
+    const beforeMap = new Map(
+      beforeCells.map((c) => [`${c.rowId}:${c.boqItemId}`, num(c.quantity)])
+    );
+
+    const changed: {
+      rowId: string;
+      boqItemId: string;
+      oldQuantity: number;
+      newQuantity: number;
+    }[] = [];
+
+    for (const c of cells) {
+      const rowId = String(c.rowId);
+      const boqItemId = String(c.boqItemId);
+      const newQuantity = Math.max(0, Number(c.quantity) || 0);
+      const key = `${rowId}:${boqItemId}`;
+      const oldQuantity = beforeMap.has(key) ? beforeMap.get(key)! : 0;
+      if (oldQuantity === newQuantity && beforeMap.has(key)) continue;
+      changed.push({ rowId, boqItemId, oldQuantity, newQuantity });
+    }
+
+    if (!changed.length) {
+      return {
+        status: "ok",
+        saved: 0,
+        cells: [],
+        currentVersion: versionBefore,
+      };
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const locked = await tx.measurementSheet.findFirst({
+          where: {
+            id: sheetId,
+            status: "pending_approval",
+            currentVersion: versionBefore,
+          },
+          select: { id: true, currentVersion: true },
+        });
+        if (!locked) {
+          throw new PmApprovalEditError(
+            "המסמך עודכן מאז שפתחת אותו. יש לרענן לפני שמירת השינויים.",
+            409
+          );
+        }
+
+        const savedCells: {
+          id: string;
+          rowId: string;
+          boqItemId: string;
+          quantity: number;
+        }[] = [];
+
+        for (const c of changed) {
+          const upserted = await tx.measurementCell.upsert({
+            where: {
+              rowId_boqItemId: { rowId: c.rowId, boqItemId: c.boqItemId },
+            },
+            create: {
+              sheetId,
+              rowId: c.rowId,
+              boqItemId: c.boqItemId,
+              quantity: c.newQuantity,
+            },
+            update: { quantity: c.newQuantity },
+            select: {
+              id: true,
+              rowId: true,
+              boqItemId: true,
+              quantity: true,
+            },
+          });
+          await tx.measurementEntry.create({
+            data: {
+              sheetId,
+              cellId: upserted.id,
+              boqItemId: c.boqItemId,
+              rowId: c.rowId,
+              oldQuantity: c.oldQuantity,
+              newQuantity: c.newQuantity,
+              note: "עריכת מנהל פרויקט באישור",
+              actorId: opts.userId,
+            },
+          });
+          savedCells.push({
+            id: upserted.id,
+            rowId: upserted.rowId,
+            boqItemId: upserted.boqItemId,
+            quantity: num(upserted.quantity),
+          });
+        }
+
+        const versionAfter = versionBefore + 1;
+        const lastVer = await tx.measurementSheetVersion.findFirst({
+          where: { sheetId },
+          orderBy: { version: "desc" },
+          select: { version: true },
+        });
+        const versionRow = (lastVer?.version ?? 0) + 1;
+
+        await tx.measurementSheet.update({
+          where: { id: sheetId },
+          data: {
+            currentVersion: versionAfter,
+            updatedById: opts.userId,
+            // keep pending_approval
+          },
+        });
+
+        const afterSheet = await tx.measurementSheet.findUnique({
+          where: { id: sheetId },
+          include: sheetInclude,
+        });
+
+        await tx.measurementSheetVersion.create({
+          data: {
+            sheetId,
+            version: versionRow,
+            status: "pending_approval",
+            snapshotJson: JSON.stringify(
+              afterSheet ? mapSheet({ ...afterSheet, pmApprovalEdit: true }) : {}
+            ),
+            note: `V${versionAfter} נערך על ידי מנהל פרויקט (מ־V${versionBefore})`,
+            actorId: opts.userId,
+          },
+        });
+
+        await tx.measurementSheetEvent.create({
+          data: {
+            sheetId,
+            type: "pm_edited",
+            message: "נערך על ידי מנהל פרויקט",
+            actorId: opts.userId,
+            metadata: JSON.stringify({
+              documentId: sheetId,
+              versionBefore,
+              versionAfter,
+              role: PROJECT_MANAGER_ROLE,
+              changedFields: changed.map((c) => ({
+                rowId: c.rowId,
+                boqItemId: c.boqItemId,
+                oldValue: c.oldQuantity,
+                newValue: c.newQuantity,
+              })),
+              editedBy: opts.userId,
+              editedAt: new Date().toISOString(),
+            }),
+          },
+        });
+
+        return {
+          status: "ok" as const,
+          saved: savedCells.length,
+          cells: savedCells,
+          currentVersion: versionAfter,
+        };
+      });
+      return result;
+    } catch (e) {
+      if (e instanceof PmApprovalEditError) {
+        if (e.status === 409) return { status: "conflict", message: e.message };
+        if (e.status === 404) return { status: "not_found" };
+        return { status: "forbidden" };
+      }
+      throw e;
+    }
   }
 
   /**
@@ -1860,7 +2291,10 @@ export class MeasurementSheetsRepository {
           version: versionRow,
           status: "pending_approval",
           snapshotJson: snapshot,
-          note: `V${docVersion} נשלח לאישור`,
+          note:
+            sheet.status === "revision"
+              ? `V${docVersion} תוקן ונשלח מחדש לאישור`
+              : `V${docVersion} נשלח לאישור`,
           actorId: userId,
         },
       });
@@ -1940,14 +2374,48 @@ export class MeasurementSheetsRepository {
   ) {
     const sheet = await prisma.measurementSheet.findUnique({
       where: { id: sheetId },
-      include: { approvals: true },
+      include: {
+        approvals: {
+          include: { approver: { select: { id: true, name: true } } },
+        },
+      },
     });
     if (!sheet) throw new Error("דף מדידה לא נמצא");
+
+    const priorApproved = sheet.approvals.find((a) => a.status === "approved");
+    if (sheet.status === "approved" || sheet.status === "locked" || sheet.status === "invoiced") {
+      const when = sheet.approvedAt
+        ? new Date(sheet.approvedAt).toLocaleString("he-IL")
+        : "";
+      const who = priorApproved?.approver?.name || "מאשר אחר";
+      throw new Error(
+        `המסמך כבר אושר${who ? ` על ידי ${who}` : ""}${when ? ` ב־${when}` : ""} — לא ניתן לאשר שוב`
+      );
+    }
+    if (sheet.status === "revision") {
+      const rejector = sheet.approvals.find((a) => a.status === "rejected");
+      const who = rejector?.approver?.name;
+      throw new Error(
+        `המסמך הוחזר לתיקון${who ? ` על ידי ${who}` : ""}${
+          sheet.lastReturnComment ? `: ${sheet.lastReturnComment}` : ""
+        }. יש לתקן ולשלוח מחדש לפני אישור.`
+      );
+    }
+    if (sheet.status !== "pending_approval") {
+      throw new Error("המסמך אינו ממתין לאישור כעת");
+    }
 
     const mine = sheet.approvals.find(
       (a) => a.approverId === approverId && a.status === "pending"
     );
-    if (!mine) throw new Error("אין בקשת אישור ממתינה עבורך");
+    if (!mine) {
+      if (priorApproved) {
+        throw new Error(
+          `המסמך כבר אושר על ידי ${priorApproved.approver?.name || "מאשר אחר"} — אין צורך באישור נוסף`
+        );
+      }
+      throw new Error("אין בקשת אישור ממתינה עבורך");
+    }
 
     if (decision === "rejected") {
       if (!comment?.trim() && !(reviewNotes?.length)) {
@@ -2008,68 +2476,84 @@ export class MeasurementSheetsRepository {
       await this.addEvent(sheetId, "returned", `הוחזר לתיקון: ${summary}`, approverId, {
         reviewNotes,
       });
+      const fixLink = `/system/accounts?projectId=${sheet.projectId}&module=performance&sheetId=${sheetId}`;
       await this.notify(
         [sheet.createdById],
         "דוח ביצוע דורש תיקון",
         `${sheet.title}: ${summary}`,
-        `/invoices?projectId=${sheet.projectId}&module=performance`,
+        fixLink,
         sheet.projectId
       );
 
-      return this.getById(sheetId);
+      return {
+        ...(await this.getById(sheetId)),
+        approvalComplete: true,
+        decision: "rejected" as const,
+      };
     }
 
-    await prisma.measurementSheetApproval.update({
-      where: { id: mine.id },
-      data: {
-        status: "approved",
-        comment: comment ?? null,
-        decidedAt: new Date(),
-      },
-    });
-
-    const pending = await prisma.measurementSheetApproval.count({
-      where: { sheetId, status: "pending" },
-    });
-
-    if (pending === 0) {
-      const lastVer = await prisma.measurementSheetVersion.findFirst({
+    // any_one — אישור אחד מספיק; שאר הבקשות נסגרות מיד
+    const approvedAt = new Date();
+    await prisma.$transaction(async (tx) => {
+      await tx.measurementSheetApproval.update({
+        where: { id: mine.id },
+        data: {
+          status: "approved",
+          comment: comment ?? null,
+          decidedAt: approvedAt,
+        },
+      });
+      await tx.measurementSheetApproval.updateMany({
+        where: { sheetId, status: "pending" },
+        data: { status: "cancelled" },
+      });
+      const lastVer = await tx.measurementSheetVersion.findFirst({
         where: { sheetId },
         orderBy: { version: "desc" },
         select: { version: true },
       });
-      await prisma.measurementSheetVersion.create({
+      await tx.measurementSheetVersion.create({
         data: {
           sheetId,
           version: (lastVer?.version ?? 0) + 1,
           status: "approved",
           snapshotJson: "{}",
-          note: `V${sheet.currentVersion} אושר`,
+          note: `V${sheet.currentVersion} אושר (אישור יחיד)`,
           actorId: approverId,
         },
       });
-      await prisma.measurementSheet.update({
+      await tx.measurementSheet.update({
         where: { id: sheetId },
         data: {
           status: "approved",
-          approvedAt: new Date(),
+          approvedAt,
           updatedById: approverId,
         },
       });
-      await this.ensureDocument(sheetId, approverId, "approved", printBaseUrl);
-      await this.addEvent(sheetId, "approved", `V${sheet.currentVersion} אושר`, approverId);
-      await this.notify(
-        [sheet.createdById],
-        "דוח ביצוע אושר",
-        `${sheet.title} אושר — ניתן להפיק חשבון`,
-        `/invoices?projectId=${sheet.projectId}&module=performance`,
-        sheet.projectId
-      );
-    } else {
-      await this.addEvent(sheetId, "partial_approved", "אישור חלקי התקבל", approverId);
-    }
+    });
 
-    return this.getById(sheetId);
+    await this.ensureDocument(sheetId, approverId, "approved", printBaseUrl);
+    await this.addEvent(
+      sheetId,
+      "approved",
+      `V${sheet.currentVersion} אושר`,
+      approverId,
+      { mode: "any_one" }
+    );
+    await this.notify(
+      [sheet.createdById],
+      "דוח ביצוע אושר",
+      `${sheet.title} אושר — ניתן להפיק חשבון`,
+      `/system/accounts?projectId=${sheet.projectId}&module=performance&sheetId=${sheetId}`,
+      sheet.projectId
+    );
+
+    return {
+      ...(await this.getById(sheetId)),
+      approvalComplete: true,
+      decision: "approved" as const,
+      approvedAt: approvedAt.toISOString(),
+    };
   }
 
   static async listPendingApprovals(approverId: string) {
@@ -2127,7 +2611,11 @@ export class MeasurementSheetsRepository {
       },
     });
     if (!sheet) throw new Error("דף מדידה לא נמצא");
-    if (sheet.status !== "approved" && sheet.status !== "locked") {
+    if (
+      sheet.status !== "approved" &&
+      sheet.status !== "locked" &&
+      sheet.status !== "invoiced"
+    ) {
       throw new Error("ניתן לשלוח ללקוח רק לאחר אישור הדוח");
     }
 
@@ -2372,9 +2860,38 @@ export class MeasurementSheetsRepository {
     };
   }
 
-  static async listRevisionForCreator(userId: string) {
+  /**
+   * מסמכים בסטטוס revision שהמשתמש רשאי לתקן (לא רק לראות).
+   * Field → יוצר בלבד. PM → פרויקטים בבעלות. System/Ops → הכול.
+   */
+  static async listNeedingFix(userId: string, role: string) {
+    const { isSystemAdminRole } = await import(
+      "@/lib/auth/document-permissions"
+    );
+    const { OPERATIONS_MANAGER_ROLE, PROJECT_MANAGER_ROLE } = await import(
+      "@/lib/auth/roles"
+    );
+    const { isFieldManagerRole } = await import("@/lib/auth/roles");
+
+    const where: {
+      status: "revision";
+      createdById?: string;
+      project?: { ownerId: string };
+    } = { status: "revision" };
+
+    if (isFieldManagerRole(role)) {
+      where.createdById = userId;
+    } else if (role === PROJECT_MANAGER_ROLE && !isSystemAdminRole(role)) {
+      where.project = { ownerId: userId };
+    } else if (
+      !isSystemAdminRole(role) &&
+      role !== OPERATIONS_MANAGER_ROLE
+    ) {
+      where.createdById = userId;
+    }
+
     const rows = await prisma.measurementSheet.findMany({
-      where: { createdById: userId, status: "revision" },
+      where,
       select: {
         id: true,
         title: true,
@@ -2382,20 +2899,76 @@ export class MeasurementSheetsRepository {
         projectId: true,
         lastReturnComment: true,
         currentVersion: true,
-        project: { select: { name: true } },
+        returnedAt: true,
         updatedAt: true,
+        createdById: true,
+        project: { select: { name: true, contractor: true } },
+        createdBy: { select: { name: true } },
+        approvals: {
+          where: { status: "rejected" },
+          orderBy: { decidedAt: "desc" },
+          take: 1,
+          include: { approver: { select: { id: true, name: true } } },
+        },
+        reviewNotes: {
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          include: { author: { select: { name: true } } },
+        },
       },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { returnedAt: "desc" },
     });
-    return rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      projectId: r.projectId,
-      projectName: r.project?.name,
-      version: r.currentVersion,
-      lastReturnComment: r.lastReturnComment,
-      updatedAt: r.updatedAt.toISOString(),
-    }));
+
+    return rows.map((r) => {
+      const reject = r.approvals[0];
+      const returnedAt = r.returnedAt || r.updatedAt;
+      const waitingMs = Date.now() - returnedAt.getTime();
+      const waitingHours = Math.max(0, Math.floor(waitingMs / 3600000));
+      const waitingDays = Math.floor(waitingHours / 24);
+      const waitingLabel =
+        waitingDays > 0
+          ? `${waitingDays} ימים`
+          : waitingHours > 0
+            ? `${waitingHours} שעות`
+            : "פחות משעה";
+
+      const notesForVersion = r.reviewNotes.filter(
+        (n) => n.version === r.currentVersion
+      );
+      const notes = (notesForVersion.length ? notesForVersion : r.reviewNotes).map(
+        (n) => ({
+          comment: n.comment,
+          authorName: n.author?.name || null,
+          createdAt: n.createdAt.toISOString(),
+        })
+      );
+
+      return {
+        kind: "measurement_sheet" as const,
+        documentId: r.id,
+        documentNumber: `MS-${r.sequenceNumber}`,
+        title: r.title,
+        projectId: r.projectId,
+        projectName: r.project?.name || null,
+        clientName: r.project?.contractor || null,
+        status: "revision" as const,
+        statusLabel: "נדרש תיקון",
+        version: r.currentVersion,
+        returnedAt: returnedAt.toISOString(),
+        returnedByName: reject?.approver?.name || null,
+        returnedById: reject?.approverId || null,
+        returnComment: r.lastReturnComment || reject?.comment || null,
+        reviewNotes: notes,
+        waitingLabel,
+        createdByName: r.createdBy?.name || null,
+        canEdit: true,
+        fixHref: `?projectId=${r.projectId}&module=performance&sheetId=${r.id}`,
+      };
+    });
+  }
+
+  static async listRevisionForCreator(userId: string) {
+    return this.listNeedingFix(userId, "FIELD_MANAGER");
   }
 
   static async getEntries(sheetId: string, take = 100) {
@@ -2436,12 +3009,29 @@ export class MeasurementSheetsRepository {
     });
 
     if (sheetIds?.length) {
-      const invalid = sheets.filter(
+      const requested = await prisma.measurementSheet.findMany({
+        where: { id: { in: sheetIds }, projectId },
+        select: {
+          id: true,
+          status: true,
+          partialInvoiceId: true,
+          sequenceNumber: true,
+        },
+      });
+      const already = requested.filter((s) => s.partialInvoiceId);
+      if (already.length) {
+        throw new Error(
+          `כבר הופק חשבון לדף ${already
+            .map((s) => `MS-${s.sequenceNumber}`)
+            .join(", ")}`
+        );
+      }
+      const invalid = requested.filter(
         (s) => s.status !== "approved" && s.status !== "locked"
       );
       if (invalid.length) {
         throw new Error(
-          "ניתן להפיק חשבון רק מדוחות ביצוע שאושרו על ידי מנהל תפעול"
+          "ניתן להפיק חשבון רק מדוחות ביצוע שאושרו"
         );
       }
     }
@@ -2510,6 +3100,39 @@ export class MeasurementSheetsRepository {
     },
     userId: string
   ) {
+    if (input.sheetIds?.length) {
+      const sourceSheets = await prisma.measurementSheet.findMany({
+        where: { id: { in: input.sheetIds }, projectId },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          partialInvoiceId: true,
+          sequenceNumber: true,
+        },
+      });
+      if (sourceSheets.length !== input.sheetIds.length) {
+        throw new Error("חלק מדפי המדידה לא נמצאו בפרויקט");
+      }
+      const alreadyInvoiced = sourceSheets.filter((s) => s.partialInvoiceId);
+      if (alreadyInvoiced.length) {
+        throw new Error(
+          `כבר הופק חשבון לדף מדידה ${alreadyInvoiced
+            .map((s) => `MS-${s.sequenceNumber}`)
+            .join(", ")} — פתחו את החשבון הקיים במקום ליצור חדש`
+        );
+      }
+      const notApproved = sourceSheets.filter(
+        (s) => s.status !== "approved" && s.status !== "locked"
+      );
+      if (notApproved.length) {
+        throw new Error(
+          "ניתן להפיק חשבון רק מדף מדידה שאושר. דפים שלא אושרו: " +
+            notApproved.map((s) => `MS-${s.sequenceNumber}`).join(", ")
+        );
+      }
+    }
+
     const summary = await this.getProjectSummary(projectId, input.sheetIds);
     if (!summary.billableLines.length) {
       throw new Error("אין כמויות לחיוב בדפי המדידה שנבחרו");

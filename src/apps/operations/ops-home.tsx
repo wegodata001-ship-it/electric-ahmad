@@ -21,18 +21,14 @@ export function OpsHome() {
   useEffect(() => {
     Promise.allSettled([
       apiClient.get<{ queue: Queue }>("/api/work-orders"),
-      apiClient.get<{ items: unknown[] }>("/api/approvals/pending"),
+      apiClient.get<{ items: unknown[]; count?: number }>("/api/approvals/revisions"),
       notificationService.getUnread(),
     ]).then(([q, a, n]) => {
       if (q.status === "fulfilled") {
         setWorkOrders(q.value.queue.workOrdersToday ?? 0);
-        setApprovals(
-          (q.value.queue.diariesPending ?? 0) +
-            (q.value.queue.deliveryPending ?? 0)
-        );
       }
       if (a.status === "fulfilled") {
-        setApprovals((prev) => Math.max(prev, a.value.items.length));
+        setApprovals(a.value.count ?? a.value.items?.length ?? 0);
       }
       if (n.status === "fulfilled") setNotifications(n.value.length);
     });
@@ -43,7 +39,7 @@ export function OpsHome() {
       <section>
         <h1 className="text-2xl font-black tracking-tight">מה עושים היום?</h1>
         <p className="mt-1 text-sm text-stone-500">
-          סידורים · אישורים — נוכחות רק דרך סריקת QR
+          סידורים · תיקונים — נוכחות רק דרך סריקת QR
         </p>
       </section>
 
@@ -58,8 +54,8 @@ export function OpsHome() {
         <HomeCard
           href="/operations/approvals"
           icon={CheckSquare}
-          title={`🔔 ממתין לאישור (${approvals})`}
-          subtitle="יומני עבודה · תעודות משלוח"
+          title={`תיקונים (${approvals})`}
+          subtitle="מסמכים שהוחזרו · פתח ותקן"
           badge={approvals > 0 ? approvals : undefined}
           hot={approvals > 0}
         />

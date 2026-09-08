@@ -10,7 +10,7 @@ import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import { cn } from "@/lib/utils";
 
 const FULL_NAV = [
-  { href: "/system/approvals", label: "אישורים", badge: true },
+  { href: "/system/approvals", label: "תיקונים", badge: true },
   { href: "/system/accounts", label: "עץ פרויקט", exact: false },
   { href: "/system/attendance-qr", label: "QR לנוכחות" },
   { href: "/documents-archive", label: "ארכיון לחתימה" },

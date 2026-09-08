@@ -89,10 +89,17 @@ export const invoicesWorkspaceService = {
 
   saveCells(
     sheetId: string,
-    cells: { rowId: string; boqItemId: string; quantity: number }[]
+    cells: { rowId: string; boqItemId: string; quantity: number }[],
+    opts?: { approvalReviewEdit?: boolean; expectedVersion?: number }
   ) {
     return apiClient.put<any>(`/api/measurement-sheets/${sheetId}/cells`, {
       cells,
+      ...(opts?.approvalReviewEdit
+        ? {
+            approvalReviewEdit: true,
+            expectedVersion: opts.expectedVersion,
+          }
+        : {}),
     });
   },
 

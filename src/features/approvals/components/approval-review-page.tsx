@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowRight,
   Check,
@@ -11,12 +11,15 @@ import {
   Loader2,
   MessageSquare,
   Paperclip,
+  Pencil,
   X,
 } from "lucide-react";
 import { approvalsService } from "@/features/work-diaries/services/work-diaries.service";
 import { REJECT_REASONS } from "@/lib/approvals/reject-reasons";
 import { formatNumber } from "@/utils/format";
 import { cn } from "@/lib/utils";
+import { fetchClientMe } from "@/lib/auth/client-me";
+import { PROJECT_MANAGER_ROLE } from "@/lib/auth/roles";
 
 type Kind = "work_diary" | "delivery_note" | "measurement_sheet";
 
@@ -25,6 +28,13 @@ function kindLabel(kind: string) {
   if (kind === "delivery_note") return "תעודת משלוח";
   if (kind === "measurement_sheet") return "דף מדידה";
   return kind;
+}
+
+function portalBase(pathname: string) {
+  if (pathname.startsWith("/project")) return "/project";
+  if (pathname.startsWith("/field")) return "/field";
+  if (pathname.startsWith("/system")) return "/system";
+  return "/operations";
 }
 
 export function ApprovalReviewPage({
@@ -37,11 +47,16 @@ export function ApprovalReviewPage({
   backHref?: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const base = portalBase(pathname);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [me, setMe] = useState<{ userId?: string; role?: string } | null>(
+    null
+  );
 
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reasonId, setReasonId] = useState("missing_data");
@@ -70,9 +85,52 @@ export function ApprovalReviewPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, documentId]);
 
+  useEffect(() => {
+    fetchClientMe("/api/auth/me")
+      .then((json) => {
+        if (!json.success) return;
+        setMe({
+          userId: String(json.data?.id || ""),
+          role: json.data?.role,
+        });
+      })
+      .catch(() => setMe(null));
+  }, []);
+
   const doc = data?.document;
   const pending =
     doc?.status === "pending_approval" || doc?.status === "in_approval";
+  const isRevision = doc?.status === "revision";
+  const isApproved =
+    doc?.status === "approved" ||
+    doc?.status === "locked" ||
+    doc?.status === "invoiced";
+
+  const canPmEditPage = useMemo(() => {
+    if (kind !== "measurement_sheet" || !pending || !doc?.projectId) return false;
+    if (data?.canPmEdit || doc?.pmApprovalEdit) return true;
+    if (me?.role !== PROJECT_MANAGER_ROLE || !me.userId) return false;
+    const approvals = doc.approvals ?? [];
+    return approvals.some(
+      (a: any) =>
+        a.status === "pending" &&
+        (a.approverId === me.userId || a.approver?.id === me.userId)
+    );
+  }, [kind, pending, doc, me, data]);
+
+  const pmEditHref =
+    canPmEditPage && doc?.projectId
+      ? `${base}/accounts?projectId=${doc.projectId}&module=performance&sheetId=${documentId}&pmEdit=1`
+      : null;
+
+  const approvedBy = useMemo(() => {
+    const rows = doc?.approvals ?? [];
+    return rows.find((a: any) => a.status === "approved");
+  }, [doc]);
+  const rejectedBy = useMemo(() => {
+    const rows = doc?.approvals ?? [];
+    return rows.find((a: any) => a.status === "rejected");
+  }, [doc]);
 
   const sections = useMemo(() => {
     if (kind !== "measurement_sheet" || !doc) return [];
@@ -134,16 +192,17 @@ export function ApprovalReviewPage({
 
       const stillWaiting =
         result?.awaitingOtherApprovers ||
-        result?.status === "pending_approval" ||
-        result?.status === "in_approval" ||
-        result?.approvalComplete === false;
+        result?.approvalComplete === false ||
+        ((result?.status === "pending_approval" ||
+          result?.status === "in_approval") &&
+          result?.approvalComplete !== true);
 
       if (stillWaiting) {
         setInfo("האישור נרשם — ממתין למאשרים נוספים");
         setApproveOpen(false);
         await reload();
       } else {
-        setInfo("המסמך אושר ונשמר");
+        setInfo("המסמך אושר (מספיק אישור אחד)");
         setApproveOpen(false);
         router.push(backHref);
         router.refresh();
@@ -270,19 +329,19 @@ export function ApprovalReviewPage({
           className="inline-flex items-center gap-1 text-sm font-bold text-amber-800"
         >
           <ArrowRight className="h-4 w-4" />
-          תיבת אישורים
+          תיקונים
         </Link>
         {pending && (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setApproveOpen(true)}
-              className="inline-flex min-h-12 items-center gap-1 rounded-2xl bg-emerald-600 px-5 font-black text-white"
-            >
-              <Check className="h-5 w-5" />
-              אשר
-            </button>
+          <div className="flex flex-wrap gap-2">
+            {pmEditHref && (
+              <Link
+                href={pmEditHref}
+                className="inline-flex min-h-12 items-center gap-1 rounded-2xl border border-sky-300 bg-sky-50 px-5 font-black text-sky-900"
+              >
+                <Pencil className="h-5 w-5" />
+                עריכת דף
+              </Link>
+            )}
             <button
               type="button"
               disabled={busy}
@@ -294,6 +353,15 @@ export function ApprovalReviewPage({
             >
               <X className="h-5 w-5" />
               החזר לתיקון
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setApproveOpen(true)}
+              className="inline-flex min-h-12 items-center gap-1 rounded-2xl bg-emerald-600 px-5 font-black text-white"
+            >
+              <Check className="h-5 w-5" />
+              אשר
             </button>
           </div>
         )}
@@ -308,6 +376,52 @@ export function ApprovalReviewPage({
         <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           {info}
         </p>
+      )}
+
+      {isApproved && (
+        <div className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <p>
+            המסמך כבר אושר
+            {approvedBy?.approver?.name || approvedBy?.approverName
+              ? ` על ידי ${approvedBy.approver?.name || approvedBy.approverName}`
+              : ""}
+            {approvedBy?.decidedAt
+              ? ` ב־${new Date(approvedBy.decidedAt).toLocaleString("he-IL")}`
+              : doc.approvedAt
+                ? ` ב־${new Date(doc.approvedAt).toLocaleString("he-IL")}`
+                : ""}
+            . אין צורך באישור נוסף.
+          </p>
+          {kind === "measurement_sheet" && doc?.projectId && (
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/system/accounts?projectId=${doc.projectId}&module=performance&sheetId=${documentId}`}
+                className="inline-flex min-h-10 items-center rounded-xl bg-emerald-700 px-4 text-xs font-black text-white"
+              >
+                הפק חשבון / שלח ללקוח
+              </Link>
+              <a
+                href={`/print/measurement-sheets/${documentId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-10 items-center rounded-xl border border-emerald-300 bg-white px-4 text-xs font-bold text-emerald-900"
+              >
+                PDF
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isRevision && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950">
+          המסמך הוחזר לתיקון
+          {rejectedBy?.approver?.name || rejectedBy?.approverName
+            ? ` על ידי ${rejectedBy.approver?.name || rejectedBy.approverName}`
+            : ""}
+          {doc.lastReturnComment ? `: ${doc.lastReturnComment}` : ""}. לא ניתן
+          לאשר גרסה זו — יש לתקן ולשלוח מחדש.
+        </div>
       )}
 
       {/* Header */}
@@ -473,9 +587,11 @@ export function ApprovalReviewPage({
                       {t.message || t.action || t.label}
                     </p>
                     <p className="text-xs text-stone-400">
-                      {t.createdAt
+                      {[t.actorName, t.createdAt
                         ? new Date(t.createdAt).toLocaleString("he-IL")
-                        : ""}
+                        : ""]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </li>
                 ))}
@@ -579,19 +695,28 @@ export function ApprovalReviewPage({
       {pending && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-amber-200 bg-white/95 p-3 pb-[env(safe-area-inset-bottom)] lg:hidden">
           <div className="mx-auto flex max-w-lg gap-2">
+            {pmEditHref && (
+              <Link
+                href={pmEditHref}
+                className="flex min-h-12 flex-1 items-center justify-center gap-1 rounded-2xl border border-sky-300 bg-sky-50 font-black text-sky-900"
+              >
+                <Pencil className="h-4 w-4" />
+                עריכה
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={() => setRejectOpen(true)}
+              className="flex min-h-12 flex-1 items-center justify-center rounded-2xl bg-red-50 font-black text-red-700"
+            >
+              תיקון
+            </button>
             <button
               type="button"
               onClick={() => setApproveOpen(true)}
               className="flex min-h-12 flex-1 items-center justify-center rounded-2xl bg-emerald-600 font-black text-white"
             >
               אשר
-            </button>
-            <button
-              type="button"
-              onClick={() => setRejectOpen(true)}
-              className="flex min-h-12 flex-1 items-center justify-center rounded-2xl bg-red-50 font-black text-red-700"
-            >
-              החזר לתיקון
             </button>
           </div>
         </div>

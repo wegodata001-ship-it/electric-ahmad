@@ -94,6 +94,13 @@ export const approvalsService = {
     return apiClient.get<{ items: any[] }>("/api/approvals/pending");
   },
 
+  /** מסמכים שחזרו לתיקון — למרכז «תיקונים» */
+  revisions() {
+    return apiClient.get<{ items: any[]; count: number }>(
+      "/api/approvals/revisions"
+    );
+  },
+
   decide(body: {
     kind: "work_diary" | "delivery_note" | "measurement_sheet";
     documentId: string;
@@ -146,10 +153,15 @@ export const approvalsService = {
     }>(`/api/ops-delivery-notes/${id}/send-client`, { phone });
   },
 
-  sendMeasurementSheetToClient(id: string, phone?: string) {
-    return apiClient.post<{ url: string; whatsappUrl: string; message: string }>(
-      `/api/measurement-sheets/${id}/send-client`,
-      { phone }
-    );
+  sendMeasurementSheetToClient(
+    id: string,
+    body?: { phone?: string; message?: string }
+  ) {
+    return apiClient.post<{
+      url: string;
+      whatsappUrl: string;
+      message: string;
+      documentNumber: string;
+    }>(`/api/measurement-sheets/${id}/send-client`, body ?? {});
   },
 };
