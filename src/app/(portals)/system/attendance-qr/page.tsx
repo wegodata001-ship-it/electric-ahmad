@@ -1,7 +1,5 @@
-"use client";
-
-import { AttendanceQrAdminPage } from "@/apps/system/attendance-qr-admin";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <AttendanceQrAdminPage />;
+  redirect("/attendance/checkin");
 }

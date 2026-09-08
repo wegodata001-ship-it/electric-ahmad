@@ -3,8 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { FileText, Plus } from "lucide-react";
-import { useToast } from "@/components/ui";
+import {
+  AlertTriangle,
+  FileText,
+  MoreVertical,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { Modal, useToast } from "@/components/ui";
 import { invoicesWorkspaceService } from "@/features/partial-invoices/services/invoices-workspace.service";
 import { ProjectBoqPanel } from "@/features/projects/components/panels/project-boq-panel";
 import { ProjectDeliveryNotesPanel } from "@/features/projects/components/panels/project-delivery-notes-panel";
@@ -17,6 +23,8 @@ import {
   type ProjectNavTreeStats,
 } from "@/features/projects/components/project-modules-nav-tree";
 import { cn } from "@/lib/utils";
+import { fetchClientMe } from "@/lib/auth/client-me";
+import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 
 const ProjectInvoicesPage = dynamic(
   () =>
@@ -47,6 +55,7 @@ export type AdminModuleId = ProjectModuleId;
 type TreeProject = {
   id: string;
   name: string;
+  contractNumber?: string;
   contractor?: string;
 };
 
@@ -88,8 +97,24 @@ export function AdminProjectWorkspace({
   const [loading, setLoading] = useState(true);
   const [mobileProjectsOpen, setMobileProjectsOpen] = useState(false);
   const [treeStats, setTreeStats] = useState<ProjectNavTreeStats | undefined>();
+  const [canDeleteProjects, setCanDeleteProjects] = useState(false);
+  const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
+  const [deleteProject, setDeleteProject] = useState<TreeProject | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deletingProject, setDeletingProject] = useState(false);
 
   const effectiveOpsProjectId = opsProjectId || selectedId;
+
+  useEffect(() => {
+    fetchClientMe("/api/auth/me")
+      .then((json) => {
+        setCanDeleteProjects(
+          Boolean(json.success && isSystemAdminRole(json.data?.role))
+        );
+      })
+      .catch(() => setCanDeleteProjects(false));
+  }, []);
 
   // Restore workspace state — URL wins over localStorage (deep links from «תיקונים»)
   useEffect(() => {
@@ -229,6 +254,44 @@ export function AdminProjectWorkspace({
     });
   }, []);
 
+  async function archiveProject() {
+    if (!deleteProject || deleteConfirmName.trim() !== deleteProject.name) {
+      return;
+    }
+    setDeletingProject(true);
+    try {
+      const response = await fetch(`/api/projects/${deleteProject.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: deleteReason.trim() || undefined }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.success) {
+        throw new Error(json.error || "מחיקת הפרויקט נכשלה");
+      }
+
+      const remaining = projects.filter((p) => p.id !== deleteProject.id);
+      setProjects(remaining);
+      setOpsProjects((items) =>
+        items.filter((p) => p.id !== deleteProject.id)
+      );
+      if (selectedId === deleteProject.id) {
+        setSelectedId(remaining[0]?.id ?? null);
+      }
+      setDeleteProject(null);
+      setDeleteConfirmName("");
+      setDeleteReason("");
+      setProjectMenuId(null);
+      toast.success("הפרויקט הועבר לארכיון");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "מחיקת הפרויקט נכשלה"
+      );
+    } finally {
+      setDeletingProject(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center text-slate-500">
@@ -246,24 +309,13 @@ export function AdminProjectWorkspace({
             בחרו פרויקט ומודול מהגרף — העבודה נשארת באותו מסך
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {basePath === "/system/accounts" && (
-            <Link
-              href="/projects/new"
-              className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-primary-700"
-            >
-              <Plus className="h-4 w-4" />
-              פרויקט חדש
-            </Link>
-          )}
-          <button
-            type="button"
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold md:hidden"
-            onClick={() => setMobileProjectsOpen(true)}
-          >
-            פרויקטים
-          </button>
-        </div>
+        <button
+          type="button"
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold md:hidden"
+          onClick={() => setMobileProjectsOpen(true)}
+        >
+          פרויקטים
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr] lg:gap-6">
@@ -287,6 +339,15 @@ export function AdminProjectWorkspace({
               סגור
             </button>
           </div>
+          {basePath === "/system/accounts" && (
+            <Link
+              href="/projects/new"
+              className="mb-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-primary-700"
+            >
+              <Plus className="h-4 w-4" />
+              פרויקט חדש
+            </Link>
+          )}
           <div className="max-h-[40vh] space-y-1 overflow-y-auto lg:max-h-[70vh]">
             {projects.length === 0 && (
               <p className="px-3 py-6 text-center text-sm text-slate-400">
@@ -294,24 +355,56 @@ export function AdminProjectWorkspace({
               </p>
             )}
             {projects.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => selectProject(p.id)}
-                className={cn(
-                  "w-full rounded-xl px-3 py-3 text-right text-sm transition active:scale-[0.99]",
-                  selectedId === p.id
-                    ? "bg-primary-50 font-semibold text-primary-800"
-                    : "text-slate-700 hover:bg-slate-50"
+              <div key={p.id} className="relative flex items-stretch">
+                <button
+                  type="button"
+                  onClick={() => selectProject(p.id)}
+                  className={cn(
+                    "min-w-0 flex-1 rounded-xl px-3 py-3 text-right text-sm transition active:scale-[0.99]",
+                    selectedId === p.id
+                      ? "bg-primary-50 font-semibold text-primary-800"
+                      : "text-slate-700 hover:bg-slate-50"
+                  )}
+                >
+                  <span className="block truncate">{p.name}</span>
+                  {p.contractor && (
+                    <span className="block truncate text-xs text-slate-400">
+                      {p.contractor}
+                    </span>
+                  )}
+                </button>
+                {canDeleteProjects && (
+                  <button
+                    type="button"
+                    aria-label={`פעולות עבור ${p.name}`}
+                    onClick={() =>
+                      setProjectMenuId((current) =>
+                        current === p.id ? null : p.id
+                      )
+                    }
+                    className="my-2 rounded-lg px-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </button>
                 )}
-              >
-                <span className="block truncate">{p.name}</span>
-                {p.contractor && (
-                  <span className="block truncate text-xs text-slate-400">
-                    {p.contractor}
-                  </span>
+                {canDeleteProjects && projectMenuId === p.id && (
+                  <div className="absolute left-1 top-10 z-20 min-w-36 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteProject(p);
+                        setDeleteConfirmName("");
+                        setDeleteReason("");
+                        setProjectMenuId(null);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      מחיקת פרויקט
+                    </button>
+                  </div>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         </aside>
@@ -406,6 +499,91 @@ export function AdminProjectWorkspace({
           onClick={() => setMobileProjectsOpen(false)}
         />
       )}
+
+      <Modal
+        open={Boolean(deleteProject)}
+        onClose={() => {
+          if (deletingProject) return;
+          setDeleteProject(null);
+          setDeleteConfirmName("");
+          setDeleteReason("");
+        }}
+        title="מחיקת פרויקט"
+        description="מחיקת פרויקט היא פעולה קריטית. האם אתה בטוח?"
+        size="sm"
+      >
+        {deleteProject && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+                <div className="text-sm text-red-900">
+                  <p className="font-black">{deleteProject.name}</p>
+                  {deleteProject.contractNumber && (
+                    <p className="mt-1 text-xs">
+                      מספר פרויקט: {deleteProject.contractNumber}
+                    </p>
+                  )}
+                  <p className="mt-2 leading-6">
+                    הפרויקט יועבר לארכיון. דפי מדידה, כתבי כמויות, חשבונות,
+                    תעודות, יומנים, מסמכים, נוכחות, שיוכים, קישורים והיסטוריה
+                    יישמרו ולא יימחקו פיזית.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <label className="block text-sm">
+              <span className="font-bold text-slate-800">
+                סיבת המחיקה (אופציונלי)
+              </span>
+              <textarea
+                value={deleteReason}
+                onChange={(event) => setDeleteReason(event.target.value)}
+                rows={2}
+                disabled={deletingProject}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              />
+            </label>
+
+            <label className="block text-sm">
+              <span className="font-bold text-slate-800">
+                לאישור, הקלד את שם הפרויקט:
+              </span>
+              <span className="mr-1 font-black">{deleteProject.name}</span>
+              <input
+                value={deleteConfirmName}
+                onChange={(event) => setDeleteConfirmName(event.target.value)}
+                disabled={deletingProject}
+                autoComplete="off"
+                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2"
+              />
+            </label>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deletingProject}
+                onClick={() => setDeleteProject(null)}
+                className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700"
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                disabled={
+                  deletingProject ||
+                  deleteConfirmName.trim() !== deleteProject.name
+                }
+                onClick={() => void archiveProject()}
+                className="min-h-11 rounded-xl bg-red-600 px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {deletingProject ? "מעביר לארכיון…" : "מחק פרויקט"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -200,7 +200,7 @@ export function SystemPortalDashboard() {
             desc="ארכיון מסמכים ארגוני"
           />
           <SysLink
-            href="/system/share-links"
+            href="/system/documents?tab=shares"
             title="Share Links"
             desc="קישורי לקוח וחתימה"
           />
@@ -255,7 +255,7 @@ export function SystemPortalDashboard() {
           {loading ? "…" : counts.shareLinks}
         </p>
         <Link
-          href="/system/share-links"
+          href="/system/documents?tab=shares"
           className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-800"
         >
           <Link2 className="h-3.5 w-3.5" />
@@ -336,7 +336,7 @@ export function ProjectPortalDashboard() {
           {loading ? "…" : counts.shareLinks}
         </p>
         <Link
-          href="/project/share-links"
+          href="/project/documents?tab=shares"
           className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-800"
         >
           <Link2 className="h-3.5 w-3.5" />

@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
       projects: projects.map((p) => ({
         id: p.id,
         name: p.name,
+        contractNumber: p.contractNumber,
         contractor: p.contractor,
         location: p.location,
         status: p.status,

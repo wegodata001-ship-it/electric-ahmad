@@ -315,6 +315,10 @@ model Project {
   createdBy      User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
   updatedById    String
   updatedBy      User          @relation("ProjectUpdatedBy", fields: [updatedById], references: [id])
+  /** Soft-delete: archived projects keep all historical and linked records. */
+  deletedAt      DateTime?
+  deletedById    String?
+  deletionReason String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -342,6 +346,7 @@ model Project {
   @@index([status])
   @@index([foremanId])
   @@index([ownerId])
+  @@index([deletedAt])
 }
 
 /** חדר / יחידה ברמת פרויקט — מקור אמת משותף לכל המסכים */

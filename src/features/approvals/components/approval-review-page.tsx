@@ -19,6 +19,9 @@ import { REJECT_REASONS } from "@/lib/approvals/reject-reasons";
 import { formatNumber } from "@/utils/format";
 import { cn } from "@/lib/utils";
 import { fetchClientMe } from "@/lib/auth/client-me";
+import {
+  isSystemAdminRole,
+} from "@/lib/auth/document-permissions";
 import { PROJECT_MANAGER_ROLE } from "@/lib/auth/roles";
 
 type Kind = "work_diary" | "delivery_note" | "measurement_sheet";
@@ -837,14 +840,16 @@ export function ApprovalReviewPage({
               />
               לשלוח הודעה ליוצר המסמך
             </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={optSendClient}
-                onChange={(e) => setOptSendClient(e.target.checked)}
-              />
-              לשלוח ללקוח לחתימה
-            </label>
+            {isSystemAdminRole(me?.role) && (
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={optSendClient}
+                  onChange={(e) => setOptSendClient(e.target.checked)}
+                />
+                לשלוח ללקוח לחתימה
+              </label>
+            )}
           </div>
           <div className="flex gap-2">
             <button

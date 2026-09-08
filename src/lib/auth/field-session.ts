@@ -83,8 +83,8 @@ export async function getCurrentFieldForeman(): Promise<FieldForemanSession> {
 
 /** Field managers belong to the company — any active project may be selected. */
 export async function assertProjectSelectable(projectId: string): Promise<void> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, deletedAt: null },
     select: { id: true, status: true },
   });
   if (!project) {

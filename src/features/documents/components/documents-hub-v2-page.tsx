@@ -10,6 +10,7 @@ import {
   Folder,
   Link2,
   Loader2,
+  MessageCircle,
   MessageSquare,
   Plus,
   Search,
@@ -27,6 +28,7 @@ import type { ListPageInfo } from "@/lib/api/list-query";
 import { cn } from "@/lib/utils";
 import { uploadService } from "@/features/documents/services/upload.service";
 import { VirtualList } from "@/components/ui/virtual-list";
+import { whatsappShareLink } from "@/lib/signatures";
 
 const PAGE_SIZE = 50;
 
@@ -87,6 +89,7 @@ export function DocumentsHubV2Page({
   const [convText, setConvText] = useState("");
   const [uploading, setUploading] = useState(false);
   const [canCreateExternalShare, setCanCreateExternalShare] = useState(false);
+  const [whatsappBusyKey, setWhatsappBusyKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -272,6 +275,79 @@ export function DocumentsHubV2Page({
     }
   }
 
+  async function sendDocumentWhatsApp(item: HubListItem) {
+    const whatsappWindow = window.open("about:blank", "_blank");
+    setWhatsappBusyKey(item.hubKey);
+    setError("");
+    try {
+      let detailData: any = await apiClient.get(
+        `/api/documents/hub/${item.kind}/${item.entityId}`
+      );
+
+      if (!detailData?.list?.documentId && !item.documentId) {
+        await apiClient.post("/api/documents/hub/ensure", {
+          kind: item.kind,
+          entityId: item.entityId,
+        });
+        detailData = await apiClient.get(
+          `/api/documents/hub/${item.kind}/${item.entityId}`
+        );
+      }
+
+      const documentId =
+        detailData?.list?.documentId || item.documentId || item.entityId;
+      const entityType =
+        detailData?.list?.documentId || item.documentId
+          ? "document"
+          : item.kind;
+      const share = await apiClient.post<{ url: string }>(
+        "/api/external-share",
+        {
+          entityType,
+          entityId: documentId,
+          projectId: item.projectId,
+          title: item.title,
+          expiresInDays: 30,
+        }
+      );
+
+      const clientName =
+        detailData?.entity?.clientName ||
+        detailData?.entity?.client ||
+        detailData?.document?.clientName ||
+        "";
+      const projectName =
+        item.projectName || detailData?.list?.projectName || "הפרויקט";
+      const documentLabel = `${kindLabel(item.kind)} ${
+        item.documentNumber || item.title
+      }`.trim();
+      const message = [
+        `שלום${clientName ? ` ${clientName}` : ""},`,
+        `מצורף מסמך עבור פרויקט ${projectName}.`,
+        `מסמך: ${documentLabel}`,
+        `לצפייה: ${share.url}`,
+      ].join("\n");
+
+      const whatsappUrl = whatsappShareLink(
+        detailData?.entity?.clientPhone ||
+          detailData?.entity?.phone ||
+          undefined,
+        message
+      );
+      if (whatsappWindow) {
+        whatsappWindow.location.href = whatsappUrl;
+      } else {
+        window.location.href = whatsappUrl;
+      }
+      setInfo("WhatsApp נפתח עם קישור חיצוני מאובטח");
+    } catch (e: any) {
+      whatsappWindow?.close();
+      setError(e.message || "לא ניתן לפתוח WhatsApp");
+    } finally {
+      setWhatsappBusyKey(null);
+    }
+  }
+
   async function sendConversation() {
     if (!detail?.workflowDocumentId || !convText.trim()) return;
     setBusy(true);
@@ -344,8 +420,10 @@ export function DocumentsHubV2Page({
     <div className={cn("space-y-4", !embedded && "p-4 sm:p-6")} dir="rtl">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-stone-900">מסמכים</h1>
-          <p className="mt-1 text-sm text-stone-500">
+          {!embedded && (
+            <h1 className="text-2xl font-black text-stone-900">מסמכים</h1>
+          )}
+          <p className={cn("text-sm text-stone-500", !embedded && "mt-1")}>
             מרכז המסמכים של הפרויקט — קובץ, אישורים, תיקונים, גרסאות והיסטוריה
           </p>
         </div>
@@ -492,6 +570,17 @@ export function DocumentsHubV2Page({
                       <Download className="h-3.5 w-3.5" />
                       PDF
                     </a>
+                  )}
+                  {canCreateExternalShare && (
+                    <ActionChip
+                      icon={MessageCircle}
+                      label={
+                        whatsappBusyKey === item.hubKey
+                          ? "מכין WhatsApp…"
+                          : "WhatsApp"
+                      }
+                      onClick={() => void sendDocumentWhatsApp(item)}
+                    />
                   )}
                   <ActionChip
                     icon={MessageSquare}

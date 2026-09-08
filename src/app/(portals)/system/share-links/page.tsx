@@ -1,5 +1,5 @@
-import { ShareLinksHubPage } from "@/features/platform/components";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <ShareLinksHubPage />;
+  redirect("/system/documents?tab=shares");
 }

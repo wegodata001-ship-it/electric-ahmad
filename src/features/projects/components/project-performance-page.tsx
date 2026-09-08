@@ -34,6 +34,8 @@ import { SendInvoiceApprovalModal } from "@/features/partial-invoices/components
 import { SendClientLinkModal } from "@/features/signatures/send-client-link-modal";
 import { approvalsService } from "@/features/work-diaries/services/work-diaries.service";
 import { boqService } from "@/features/boq/services/boq.service";
+import { fetchClientMe } from "@/lib/auth/client-me";
+import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import { ProjectRoomsToolbar } from "@/features/projects/components/project-rooms-toolbar";
 import {
   buildMeasurementSheetExcel,
@@ -107,6 +109,7 @@ export function ProjectPerformancePage({
   } | null>(null);
   const [clientLinkOpen, setClientLinkOpen] = useState(false);
   const [clientLinkBusy, setClientLinkBusy] = useState(false);
+  const [canSendExternal, setCanSendExternal] = useState(false);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveAllRef = useRef<() => Promise<boolean>>(async () => false);
 
@@ -123,6 +126,16 @@ export function ProjectPerformancePage({
   const pmEditQuery = searchParams.get("pmEdit") === "1";
   const approvalEditMode =
     pmApprovalEdit || (pmEditQuery && isPending && !locked);
+
+  useEffect(() => {
+    fetchClientMe("/api/auth/me")
+      .then((json) =>
+        setCanSendExternal(
+          Boolean(json.success && isSystemAdminRole(json.data?.role))
+        )
+      )
+      .catch(() => setCanSendExternal(false));
+  }, []);
   const activeReviewNotes = useMemo(() => {
     const notes = sheet?.reviewNotes ?? [];
     if (!notes.length) return [];
@@ -994,33 +1007,41 @@ export function ProjectPerformancePage({
                   {generatingInvoice ? "מפיק…" : "הפק חשבון"}
                 </Button>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={clientLinkBusy}
-                onClick={() => void ensureClientLink({ openWhatsApp: false })}
-              >
-                <Link2 className="h-4 w-4" />
-                {clientLink ? "הצג קישור" : "צור קישור ללקוח"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={clientLinkBusy}
-                onClick={() => void handleCopyClientLink()}
-              >
-                <Copy className="h-4 w-4" />
-                העתק קישור
-              </Button>
-              <Button
-                size="sm"
-                className="bg-[#25D366] hover:bg-[#1ebe57] text-white"
-                disabled={clientLinkBusy}
-                onClick={() => void ensureClientLink({ openWhatsApp: true })}
-              >
-                <MessageCircle className="h-4 w-4" />
-                שלח WhatsApp
-              </Button>
+              {canSendExternal && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={clientLinkBusy}
+                    onClick={() =>
+                      void ensureClientLink({ openWhatsApp: false })
+                    }
+                  >
+                    <Link2 className="h-4 w-4" />
+                    {clientLink ? "הצג קישור" : "צור קישור ללקוח"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={clientLinkBusy}
+                    onClick={() => void handleCopyClientLink()}
+                  >
+                    <Copy className="h-4 w-4" />
+                    העתק קישור
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-[#25D366] hover:bg-[#1ebe57] text-white"
+                    disabled={clientLinkBusy}
+                    onClick={() =>
+                      void ensureClientLink({ openWhatsApp: true })
+                    }
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    שלח WhatsApp
+                  </Button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -1061,8 +1082,10 @@ export function ProjectPerformancePage({
                 שלב כספי / שליחה ללקוח
               </p>
               <p className="mt-0.5 text-xs text-emerald-800">
-                האישור הסתיים. ניתן להפיק חשבון, ליצור קישור חיצוני ולשלוח
-                ב־WhatsApp.
+                האישור הסתיים. ניתן להפיק חשבון
+                {canSendExternal
+                  ? ", ליצור קישור חיצוני ולשלוח ב־WhatsApp."
+                  : "."}
                 {hasInvoice
                   ? sheet?.invoiceNumber
                     ? ` · חשבון #${sheet.invoiceNumber} כבר מקושר לדף זה.`

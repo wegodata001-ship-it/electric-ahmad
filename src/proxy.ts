@@ -241,21 +241,15 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
     }
   }
 
-  // Secretary — attendance management only
+  // Secretary — QR admin screen was removed; preserve check-in and APIs only.
   if (isSecretaryRole(session.role)) {
     const allowedSystem =
-      pathname.startsWith("/system/attendance-qr") ||
       pathname.startsWith("/api/attendance/") ||
       pathname.startsWith("/api/auth/") ||
       pathname === "/attendance/checkin" ||
       pathname.startsWith("/attendance/checkin");
-    if (
-      pathname.startsWith("/system/") &&
-      !pathname.startsWith("/system/attendance-qr")
-    ) {
-      return NextResponse.redirect(
-        new URL("/system/attendance-qr", request.url)
-      );
+    if (pathname.startsWith("/system/")) {
+      return NextResponse.redirect(new URL("/attendance/checkin", request.url));
     }
     if (
       !allowedSystem &&
@@ -263,9 +257,7 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
         pathname.startsWith("/operations") ||
         pathname.startsWith("/dashboard"))
     ) {
-      return NextResponse.redirect(
-        new URL("/system/attendance-qr", request.url)
-      );
+      return NextResponse.redirect(new URL("/attendance/checkin", request.url));
     }
   }
 

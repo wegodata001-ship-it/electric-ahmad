@@ -344,8 +344,8 @@ export class WorkOrdersRepository {
   }
 
   static async create(input: CreateWorkOrderInput) {
-    const project = await prisma.project.findUnique({
-      where: { id: input.projectId },
+    const project = await prisma.project.findFirst({
+      where: { id: input.projectId, deletedAt: null },
       select: { id: true, name: true, location: true, contractor: true },
     });
     if (!project) throw new Error("פרויקט לא נמצא");

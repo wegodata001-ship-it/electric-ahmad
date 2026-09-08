@@ -19,7 +19,7 @@ export const mainNavigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "ממתינים לאישור", href: "/approvals", icon: ClipboardCheck },
   { name: "תעודות משלוח", href: "/delivery-notes", icon: Package },
-  { name: "ארכיון מסמכים", href: "/documents-archive", icon: ClipboardList },
+  { name: "מרכז מסמכים", href: "/documents-archive", icon: ClipboardList },
   { name: "פרויקטים", href: "/projects", icon: Building2 },
   { name: "כתבי כמויות", href: "/boq", icon: ClipboardList },
   { name: "חשבונות", href: "/invoices", icon: Receipt },

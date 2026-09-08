@@ -7,7 +7,7 @@ export async function GET() {
   try {
     await requireTruckDriver();
     const projects = await prisma.project.findMany({
-      where: { status: "active" },
+      where: { status: "active", deletedAt: null },
       select: { id: true, name: true, location: true },
       orderBy: { name: "asc" },
       take: 200,

@@ -12,11 +12,7 @@ import {
   CheckSquare,
   BookOpen,
   Truck,
-  MessageSquare,
-  Share2,
-  Bell,
   Link2,
-  Clock,
   User,
 } from "lucide-react";
 
@@ -69,14 +65,9 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     },
     nav: [
       { label: "עץ פרויקט", href: "/system/accounts", icon: GitBranch, mode: "live" },
-      { label: "QR לנוכחות", href: "/system/attendance-qr", icon: Clock, mode: "live" },
       { label: "משתמשים", href: "/system/users", icon: Users, mode: "live" },
       { label: "Workflow", href: "/system/workflow", icon: GitBranch, mode: "live" },
-      { label: "מסמכים", href: "/system/documents", icon: FolderOpen, mode: "live" },
-      { label: "ארכיון לחתימה", href: "/documents-archive", icon: FileText, mode: "live" },
-      { label: "התראות", href: "/system/notifications", icon: Bell, mode: "live" },
-      { label: "WhatsApp", href: "/system/whatsapp", icon: MessageSquare, mode: "live" },
-      { label: "Share Links", href: "/system/share-links", icon: Share2, mode: "live" },
+      { label: "מרכז מסמכים", href: "/system/documents", icon: FolderOpen, mode: "live" },
       { label: "הגדרות", href: "/system/settings", icon: Settings, mode: "live" },
     ],
   },
@@ -100,8 +91,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       { label: "עץ פרויקט", href: "/project/accounts", icon: GitBranch, mode: "live" },
       { label: "תיקונים", href: "/project/approvals", icon: CheckSquare, mode: "live" },
       { label: "תעודות משלוח", href: "/project/delivery-notes", icon: Truck, mode: "live" },
-      { label: "מסמכים", href: "/project/documents", icon: FileText, mode: "live" },
-      { label: "התראות", href: "/project/notifications", icon: Bell, mode: "live" },
+      { label: "מרכז מסמכים", href: "/project/documents", icon: FileText, mode: "live" },
     ],
   },
   operations: {
@@ -134,9 +124,7 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
         icon: ClipboardList,
         mode: "live",
       },
-      { label: "מסמכים", href: "/operations/documents", icon: FolderOpen, mode: "live" },
-      { label: "Share Links", href: "/operations/share-links", icon: Share2, mode: "live" },
-      { label: "התראות", href: "/operations/notifications", icon: Bell, mode: "live" },
+      { label: "מרכז מסמכים", href: "/operations/documents", icon: FolderOpen, mode: "live" },
       { label: "פרופיל", href: "/operations/profile", icon: User, mode: "live" },
     ],
   },
@@ -235,7 +223,7 @@ export function portalHomeForRole(role?: string | null): string {
       return PORTALS.system.home;
     case "SECRETARY":
     case "מזכירה":
-      return "/system/attendance-qr";
+      return "/attendance/checkin";
     case "PROJECT_MANAGER":
       return PORTALS.project.home;
     case "OPERATIONS_MANAGER":

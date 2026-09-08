@@ -7,7 +7,10 @@ import type { ProjectStatus } from "@prisma/client";
 export class ProjectsRepository {
   static async findAll(status?: ProjectStatus) {
     const rows = await prisma.project.findMany({
-      where: status ? { status } : undefined,
+      where: {
+        deletedAt: null,
+        ...(status ? { status } : {}),
+      },
       include: {
         foreman: true,
         _count: { select: { employees: true } },
@@ -18,8 +21,8 @@ export class ProjectsRepository {
   }
 
   static async findById(id: string) {
-    const row = await prisma.project.findUnique({
-      where: { id },
+    const row = await prisma.project.findFirst({
+      where: { id, deletedAt: null },
       include: {
         foreman: true,
         _count: { select: { employees: true } },
@@ -30,6 +33,7 @@ export class ProjectsRepository {
 
   static async findRecent(limit = 5) {
     const rows = await prisma.project.findMany({
+      where: { deletedAt: null },
       take: limit,
       include: {
         foreman: true,
@@ -163,13 +167,111 @@ export class ProjectsRepository {
     return mapProject(row);
   }
 
-  static async delete(id: string, userId: string) {
-    await prisma.project.delete({ where: { id } });
-    await AuditRepository.log({
-      action: "DELETE",
-      entityType: "Project",
-      entityId: id,
-      userId,
+  static async archive(id: string, userId: string, reason?: string) {
+    const project = await prisma.project.findFirst({
+      where: { id, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        contractNumber: true,
+        _count: {
+          select: {
+            measurementSheets: true,
+            boqItems: true,
+            invoices: true,
+            invoiceApprovals: true,
+            deliveryNotes: true,
+            workDiaries: true,
+            opsDeliveryNotes: true,
+            documents: true,
+            fieldAttendances: true,
+            employees: true,
+            activities: true,
+            workflowDocuments: true,
+          },
+        },
+      },
     });
+    if (!project) throw new Error("פרויקט לא נמצא או שכבר נמחק");
+
+    const shareLinks = await prisma.externalShareLink.count({
+      where: { projectId: id },
+    });
+    const deletedAt = new Date();
+    const metadata = {
+      projectName: project.name,
+      contractNumber: project.contractNumber,
+      reason: reason?.trim() || null,
+      deletionMode: "archive",
+      linkedEntities: {
+        ...project._count,
+        shareLinks,
+      },
+      deletedAt: deletedAt.toISOString(),
+    };
+
+    await prisma.$transaction([
+      prisma.project.update({
+        where: { id },
+        data: {
+          deletedAt,
+          deletedById: userId,
+          deletionReason: reason?.trim() || null,
+          updatedById: userId,
+        },
+      }),
+      prisma.auditLog.create({
+        data: {
+          action: "DELETE",
+          entityType: "Project",
+          entityId: id,
+          userId,
+          metadata: JSON.stringify(metadata),
+        },
+      }),
+      prisma.activity.create({
+        data: {
+          projectId: id,
+          type: "project_updated",
+          title: "הפרויקט הועבר לארכיון",
+          description: reason?.trim()
+            ? `סיבה: ${reason.trim()}`
+            : "הפרויקט הועבר לארכיון על ידי מנהל מערכת",
+          userId,
+        },
+      }),
+      prisma.externalShareLink.updateMany({
+        where: { projectId: id, revokedAt: null },
+        data: { revokedAt: deletedAt },
+      }),
+      prisma.measurementSheetSignToken.updateMany({
+        where: {
+          sheet: { projectId: id },
+          revokedAt: null,
+        },
+        data: { revokedAt: deletedAt },
+      }),
+      prisma.workDiarySignToken.updateMany({
+        where: {
+          workDiary: { projectId: id },
+          revokedAt: null,
+        },
+        data: { revokedAt: deletedAt },
+      }),
+      prisma.opsDeliveryNoteSignToken.updateMany({
+        where: {
+          opsDeliveryNote: { projectId: id },
+          revokedAt: null,
+        },
+        data: { revokedAt: deletedAt },
+      }),
+    ]);
+
+    return {
+      id,
+      archived: true,
+      deletedAt: deletedAt.toISOString(),
+      linkedEntities: metadata.linkedEntities,
+    };
   }
 }

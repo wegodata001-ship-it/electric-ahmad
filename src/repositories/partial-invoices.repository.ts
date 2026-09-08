@@ -114,8 +114,8 @@ export class PartialInvoicesRepository {
       throw new Error("יש להוסיף לפחות סעיף אחד לחשבון");
     }
 
-    const project = await prisma.project.findUnique({
-      where: { id: input.projectId },
+    const project = await prisma.project.findFirst({
+      where: { id: input.projectId, deletedAt: null },
     });
     if (!project) throw new Error("פרויקט לא נמצא");
 

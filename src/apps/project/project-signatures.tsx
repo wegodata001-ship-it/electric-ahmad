@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Link2, RefreshCw } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { formatRelative } from "@/utils/format";
@@ -28,8 +29,14 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   expired: { label: "פג תוקף", cls: "bg-red-100 text-red-800" },
 };
 
-/** Simple signatures tracker for Project Manager (mobile) */
-export function ProjectSignatures() {
+/** Existing signatures tracker, reusable inside the unified document center. */
+export function ProjectSignatures({ embedded = false }: { embedded?: boolean }) {
+  const pathname = usePathname();
+  const documentsPath = pathname.startsWith("/system")
+    ? "/system/documents"
+    : pathname.startsWith("/operations")
+      ? "/operations/documents"
+      : "/project/documents";
   const [items, setItems] = useState<ShareLinkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -50,12 +57,19 @@ export function ProjectSignatures() {
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black">חתימות</h1>
-          <p className="mt-1 text-sm text-slate-500">
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-black">חתימות</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              מי קיבל קישור · מי חתם · מי עדיין לא
+            </p>
+          </div>
+        )}
+        {embedded && (
+          <p className="text-sm text-slate-500">
             מי קיבל קישור · מי חתם · מי עדיין לא
           </p>
-        </div>
+        )}
         <button
           type="button"
           onClick={reload}
@@ -78,7 +92,7 @@ export function ProjectSignatures() {
           <Link2 className="mx-auto h-8 w-8 text-slate-300" />
           <p className="mt-3 text-sm text-slate-500">אין קישורי חתימה עדיין</p>
           <a
-            href="/project/share-links"
+            href={`${documentsPath}?tab=shares`}
             className="mt-4 inline-flex min-h-12 items-center rounded-2xl bg-blue-700 px-5 text-sm font-black text-white"
           >
             מעבר ל־Share Links

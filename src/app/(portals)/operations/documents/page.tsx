@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { DocumentCenterPage } from "@/features/documents/components/document-center-page";
 
 export default function Page() {
-  redirect("/operations");
+  return <DocumentCenterPage />;
 }

@@ -33,8 +33,8 @@ export async function listDocumentApprovers(options?: {
 
   let projectPmIds = new Set<string>();
   if (projectId) {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
       select: {
         ownerId: true,
         defaultApprovers: { select: { userId: true } },

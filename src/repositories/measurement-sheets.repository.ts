@@ -3138,7 +3138,9 @@ export class MeasurementSheetsRepository {
       throw new Error("אין כמויות לחיוב בדפי המדידה שנבחרו");
     }
 
-    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+    });
     if (!project) throw new Error("פרויקט לא נמצא");
 
     // דפי מדידה הם מקור הביצוע — מעדכנים completed לפני/עם החיוב

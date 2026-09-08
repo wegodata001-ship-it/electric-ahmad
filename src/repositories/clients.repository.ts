@@ -50,6 +50,7 @@ export class ClientsRepository {
   static async syncFromExistingData(userId: string) {
     const [projects, notes] = await Promise.all([
       prisma.project.findMany({
+        where: { deletedAt: null },
         select: { contractor: true, location: true },
         distinct: ["contractor"],
       }),

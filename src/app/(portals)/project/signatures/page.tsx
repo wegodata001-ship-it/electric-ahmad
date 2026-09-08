@@ -1,5 +1,5 @@
-import { ProjectSignatures } from "@/apps/project/project-signatures";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <ProjectSignatures />;
+  redirect("/project/documents?tab=signatures");
 }

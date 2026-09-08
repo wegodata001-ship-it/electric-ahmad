@@ -77,7 +77,7 @@ export function SystemHome() {
         <Tile label="פרויקטים / חברות" value={stats.projects} href="/system/companies" />
         <Tile label="תהליכים ממתינים" value={stats.workflowPending} href="/system/workflow" hot />
         <Tile label="התראות שלא נקראו" value={stats.notifications} href="/system/notifications" />
-        <Tile label="קישורי שיתוף" value={stats.shareLinks} href="/system/share-links" />
+        <Tile label="קישורי שיתוף" value={stats.shareLinks} href="/system/documents?tab=shares" />
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -85,8 +85,7 @@ export function SystemHome() {
         <Panel href="/system/users" title="משתמשים והרשאות" desc="משתמשים, מנהלי עבודה, עובדים" />
         <Panel href="/system/workflow" title="מנוע תהליכים" desc="תור אישורים ומעברי סטטוס" />
         <Panel href="/system/documents" title="מרכז מסמכים" desc="ארכיון מסמכים ארגוני" />
-        <Panel href="/system/whatsapp" title="מרכז וואטסאפ" desc="פנימי / חיצוני (תשתית)" />
-        <Panel href="/system/share-links" title="קישורי שיתוף" desc="קישורי לקוח וחתימה" />
+        <Panel href="/system/documents?tab=shares" title="קישורי שיתוף" desc="קישורי לקוח וחתימה" />
         <Panel href="/system/settings" title="הגדרות" desc="הגדרות מערכת" />
       </div>
     </div>

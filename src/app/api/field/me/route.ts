@@ -12,6 +12,7 @@ export async function GET() {
     // Hide internal "אחר" bucket used for unlisted temporary sites.
     const projects = await prisma.project.findMany({
       where: {
+        deletedAt: null,
         status: { in: ["active", "planning"] },
         contractNumber: { not: "__OTHER_SITES__" },
       },

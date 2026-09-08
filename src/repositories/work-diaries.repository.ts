@@ -468,7 +468,9 @@ export const WorkDiariesRepository = {
       throw new Error("יש לבחור פרויקט או להזין אתר תחת ״אחר״");
     }
 
-    const project = await prisma.project.findUnique({ where: { id: projectId! } });
+    const project = await prisma.project.findFirst({
+      where: { id: projectId!, deletedAt: null },
+    });
     if (!project) throw new Error("פרויקט לא נמצא");
 
     const { documentNumber, sequenceNumber } = await allocateDocumentNumber("work_diary");

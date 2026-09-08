@@ -5,9 +5,14 @@ export class DashboardRepository {
   static async getKPIs() {
     const [activeProjects, fieldEmployees, projects, todayReports, newDocuments] =
       await Promise.all([
-        prisma.project.count({ where: { status: "active" } }),
+        prisma.project.count({
+          where: { status: "active", deletedAt: null },
+        }),
         prisma.employee.count({ where: { status: "active", role: "worker" } }),
-        prisma.project.findMany({ select: { contractValue: true, completedValue: true } }),
+        prisma.project.findMany({
+          where: { deletedAt: null },
+          select: { contractValue: true, completedValue: true },
+        }),
         (async () => {
           const start = new Date();
           start.setHours(0, 0, 0, 0);
@@ -41,6 +46,7 @@ export class DashboardRepository {
 
   static async getChartData() {
     const projects = await prisma.project.findMany({
+      where: { deletedAt: null },
       select: { name: true, contractValue: true, completedValue: true, progress: true },
     });
     return projects.map((p) => ({
@@ -72,6 +78,7 @@ export class DashboardRepository {
     ] = await Promise.all([
       prisma.project.findMany({
         where: {
+          deletedAt: null,
           OR: [
             { name: { contains: q, mode: "insensitive" } },
             { contractNumber: { contains: q, mode: "insensitive" } },

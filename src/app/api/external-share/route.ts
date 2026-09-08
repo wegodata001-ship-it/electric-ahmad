@@ -67,6 +67,32 @@ export async function POST(request: NextRequest) {
 
     if (!entityId) return apiError("חסר מזהה ישות");
 
+    const origin =
+      request.headers.get("origin") ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "";
+    const existing = await prisma.externalShareLink.findFirst({
+      where: {
+        entityType,
+        entityId,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (existing) {
+      const url = origin
+        ? `${origin.replace(/\/$/, "")}/share/${existing.publicId}`
+        : `/share/${existing.publicId}`;
+      return apiSuccess({
+        id: existing.id,
+        publicId: existing.publicId,
+        url,
+        expiresAt: existing.expiresAt?.toISOString() ?? null,
+        reused: true,
+      });
+    }
+
     const { raw, hash, publicId } = generateSignToken();
     const expiresAt =
       Number.isFinite(days) && days > 0
@@ -100,10 +126,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const origin =
-      request.headers.get("origin") ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "";
     const url = origin
       ? `${origin.replace(/\/$/, "")}/share/${publicId}?t=${publicId}.${raw}`
       : `/share/${publicId}?t=${publicId}.${raw}`;

@@ -38,7 +38,7 @@ const STATUS_LABELS: Record<ShareLinkItem["status"], string> = {
   expired: "פג תוקף",
 };
 
-export function ShareLinksHubPage() {
+export function ShareLinksHubPage({ embedded = false }: { embedded?: boolean }) {
   const toast = useToast();
   const [items, setItems] = useState<ShareLinkItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -99,8 +99,12 @@ export function ShareLinksHubPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">קישורי שיתוף מאובטחים</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        {!embedded && (
+          <h1 className="text-xl font-bold text-gray-900">
+            קישורי שיתוף מאובטחים
+          </h1>
+        )}
+        <p className={embedded ? "text-sm text-gray-500" : "mt-1 text-sm text-gray-500"}>
           שיתוף מסמכים עם לקוח / מפקח / יועץ — ללא Login. יצירה ממסך המסמך.
         </p>
       </div>

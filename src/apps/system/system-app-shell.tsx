@@ -1,71 +1,43 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useMemo } from "react";
+import { usePathname } from "next/navigation";
 import { usePortalSession } from "@/apps/shared/use-portal-session";
 import { usePendingApprovalsCount } from "@/apps/shared/use-pending-approvals-count";
-import { canManageAttendance, isSecretaryRole } from "@/lib/auth/attendance-permissions";
+import { OfficeHeaderActions } from "@/apps/shared/office-header-actions";
+import { isSecretaryRole } from "@/lib/auth/attendance-permissions";
 import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import { cn } from "@/lib/utils";
 
 const FULL_NAV = [
   { href: "/system/approvals", label: "תיקונים", badge: true },
   { href: "/system/accounts", label: "עץ פרויקט", exact: false },
-  { href: "/system/attendance-qr", label: "QR לנוכחות" },
-  { href: "/documents-archive", label: "ארכיון לחתימה" },
   { href: "/system/users", label: "משתמשים" },
   { href: "/system/workflow", label: "תהליכי עבודה" },
-  { href: "/system/documents", label: "מסמכים" },
-  { href: "/system/share-links", label: "קישורי שיתוף" },
-  { href: "/system/whatsapp", label: "מרכז וואטסאפ" },
-  { href: "/system/notifications", label: "התראות" },
+  { href: "/system/documents", label: "מרכז מסמכים" },
   { href: "/system/settings", label: "הגדרות" },
 ];
 
-const SECRETARY_NAV = [
-  { href: "/system/attendance-qr", label: "QR לנוכחות" },
-];
-
 /**
- * System Back Office — System Manager full nav; Secretary = attendance only.
+ * System Back Office — QR attendance management screen is intentionally hidden.
  */
 export function SystemAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { userName, role, ready, loggingOut, logout } = usePortalSession("system");
   const pendingCount = usePendingApprovalsCount(
     ready && !isSecretaryRole(role)
   );
 
   const nav = useMemo(() => {
-    if (isSecretaryRole(role)) return SECRETARY_NAV;
+    if (isSecretaryRole(role)) return [];
     return FULL_NAV;
   }, [role]);
-
-  useEffect(() => {
-    if (!ready || !role) return;
-    if (isSecretaryRole(role) && !pathname.startsWith("/system/attendance-qr")) {
-      router.replace("/system/attendance-qr");
-    }
-  }, [ready, role, pathname, router]);
 
   if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500">
         טוען…
-      </div>
-    );
-  }
-
-  // Defense: non-admin / non-secretary shouldn't linger on attendance-qr via shell
-  if (
-    pathname.startsWith("/system/attendance-qr") &&
-    !canManageAttendance(role)
-  ) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        אין הרשאה
       </div>
     );
   }
@@ -132,24 +104,25 @@ export function SystemAppShell({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={loggingOut}
-            className="m-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            יציאה
-          </button>
         </aside>
 
-        <main
-          className={cn(
-            "min-w-0 flex-1",
-            isAccounts ? "px-3 py-3 lg:px-4" : "px-6 py-6 lg:px-10"
-          )}
-        >
-          {children}
-        </main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <OfficeHeaderActions
+            userName={userName}
+            role={role}
+            notificationsHref="/system/notifications"
+            loggingOut={loggingOut}
+            onLogout={logout}
+          />
+          <main
+            className={cn(
+              "min-w-0 flex-1",
+              isAccounts ? "px-3 py-3 lg:px-4" : "px-6 py-6 lg:px-10"
+            )}
+          >
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   );

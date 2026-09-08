@@ -39,8 +39,8 @@ export class ExecutionReportsRepository {
    * Generate next report number for project
    */
   static async generateReportNumber(projectId: string): Promise<string> {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
       select: { contractNumber: true },
     });
 

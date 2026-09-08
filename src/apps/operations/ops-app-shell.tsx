@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePortalSession } from "@/apps/shared/use-portal-session";
 import { usePendingApprovalsCount } from "@/apps/shared/use-pending-approvals-count";
+import { OfficeHeaderActions } from "@/apps/shared/office-header-actions";
 import { cn } from "@/lib/utils";
 
 /**
@@ -14,15 +15,14 @@ const NAV = [
   { href: "/operations/approvals", label: "תיקונים", badge: true },
   { href: "/operations/accounts", label: "עץ פרויקט", exact: false },
   { href: "/operations/work-orders", label: "סידורים" },
-  { href: "/operations/documents", label: "מסמכים" },
-  { href: "/operations/share-links", label: "קישורי שיתוף" },
-  { href: "/operations/notifications", label: "התראות" },
+  { href: "/operations/documents", label: "מרכז מסמכים" },
   { href: "/operations/profile", label: "פרופיל" },
 ];
 
 export function OpsAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { userName, ready, loggingOut, logout } = usePortalSession("operations");
+  const { userName, role, ready, loggingOut, logout } =
+    usePortalSession("operations");
   const pendingCount = usePendingApprovalsCount(ready);
 
   if (!ready) {
@@ -88,30 +88,16 @@ export function OpsAppShell({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={loggingOut}
-            className="m-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            יציאה
-          </button>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
-            <div>
-              <p className="text-sm font-black">מנהל תפעול</p>
-              <p className="text-xs text-slate-500">{userName}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="rounded-lg border px-2 py-1 text-xs"
-            >
-              יציאה
-            </button>
-          </header>
+          <OfficeHeaderActions
+            userName={userName}
+            role={role}
+            notificationsHref="/operations/notifications"
+            loggingOut={loggingOut}
+            onLogout={logout}
+          />
           <nav className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 md:hidden">
             {NAV.map((item) => (
               <Link

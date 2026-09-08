@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireOfficeUser } from "@/lib/auth/office-session";
-import { canApproveDocuments } from "@/lib/auth/document-permissions";
+import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
 import { OpsDeliveryNotesRepository } from "@/repositories/ops-delivery-notes.repository";
 import { whatsappShareUrl } from "@/lib/documents/sign-tokens";
@@ -11,8 +11,8 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const session = await requireOfficeUser();
-    if (!canApproveDocuments(session.role)) {
-      return apiError("אין הרשאה לשלוח ללקוח", 403);
+    if (!isSystemAdminRole(session.role)) {
+      return apiError("רק מנהל מערכת יכול ליצור ולשלוח קישור חיצוני", 403);
     }
 
     const { id } = await ctx.params;

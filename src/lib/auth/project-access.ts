@@ -25,18 +25,24 @@ export async function userCanAccessProject(opts: {
   scope?: ProjectAccessScope;
 }): Promise<boolean> {
   const scope = opts.scope ?? "manage";
+  const activeProject = await prisma.project.findFirst({
+    where: { id: opts.projectId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!activeProject) return false;
+
   if (canSeeAllProjects(opts.role)) return true;
 
   if (opts.role === PROJECT_MANAGER_ROLE) {
     if (scope === "operational") {
-      const exists = await prisma.project.findUnique({
-        where: { id: opts.projectId },
-        select: { id: true },
-      });
-      return Boolean(exists);
+      return true;
     }
     const owned = await prisma.project.findFirst({
-      where: { id: opts.projectId, ownerId: opts.userId },
+      where: {
+        id: opts.projectId,
+        ownerId: opts.userId,
+        deletedAt: null,
+      },
       select: { id: true },
     });
     return Boolean(owned);
@@ -54,9 +60,11 @@ export async function listProjectsForRole(opts: {
   const mode = opts.mode ?? "assigned";
   if (canSeeAllProjects(opts.role) || mode === "all") {
     return prisma.project.findMany({
+      where: { deletedAt: null },
       select: {
         id: true,
         name: true,
+        contractNumber: true,
         contractor: true,
         location: true,
         status: true,
@@ -67,10 +75,11 @@ export async function listProjectsForRole(opts: {
 
   if (opts.role === PROJECT_MANAGER_ROLE) {
     return prisma.project.findMany({
-      where: { ownerId: opts.userId },
+      where: { ownerId: opts.userId, deletedAt: null },
       select: {
         id: true,
         name: true,
+        contractNumber: true,
         contractor: true,
         location: true,
         status: true,

@@ -1,5 +1,5 @@
-import { DocumentsArchivePage } from "@/features/work-diaries/components/documents-archive-page";
+import { DocumentCenterPage } from "@/features/documents/components/document-center-page";
 
 export default function Page() {
-  return <DocumentsArchivePage />;
+  return <DocumentCenterPage />;
 }

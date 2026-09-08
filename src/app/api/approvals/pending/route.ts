@@ -1,7 +1,10 @@
 import { NextRequest } from "next/server";
 import { requireOfficeUser } from "@/lib/auth/office-session";
 import { requireFieldManager } from "@/lib/auth/field-session";
-import { canApproveDocuments } from "@/lib/auth/document-permissions";
+import {
+  canApproveDocuments,
+  isSystemAdminRole,
+} from "@/lib/auth/document-permissions";
 import { isFieldManagerRole } from "@/lib/auth/roles";
 import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
 import { OpsDeliveryNotesRepository } from "@/repositories/ops-delivery-notes.repository";
@@ -101,6 +104,12 @@ export async function POST(req: NextRequest) {
 
     if (!canApproveDocuments(session.role)) {
       return apiError("אין הרשאת אישור", 403);
+    }
+    if (approveOptions.sendToClient && !isSystemAdminRole(session.role)) {
+      return apiError(
+        "רק מנהל מערכת יכול ליצור ולשלוח קישור חיצוני",
+        403
+      );
     }
 
     let result: any;

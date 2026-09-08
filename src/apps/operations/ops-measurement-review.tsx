@@ -66,8 +66,7 @@ export function OpsMeasurementReview({ sheetId }: { sheetId: string }) {
         `/api/measurement-sheets/${sheetId}`
       );
       setSheet(refreshed);
-      setInfo("הדוח אושר — שלח קישור ללקוח לחתימה");
-      setSendOpen(true);
+      setInfo("הדוח אושר");
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -220,15 +219,6 @@ export function OpsMeasurementReview({ sheetId }: { sheetId: string }) {
               החזר לתיקון
             </button>
           </>
-        )}
-        {(sheet.status === "approved" || sheet.status === "locked") && (
-          <button
-            type="button"
-            onClick={() => setSendOpen(true)}
-            className="rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-bold text-white"
-          >
-            שלח קישור ללקוח לחתימה
-          </button>
         )}
       </div>
 
