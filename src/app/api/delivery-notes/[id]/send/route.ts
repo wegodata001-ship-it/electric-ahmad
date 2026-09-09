@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { DeliveryNotesRepository } from "@/repositories/delivery-notes.repository";
-import { getAuthContext } from "@/lib/auth/session";
+import { requireOfficeUser } from "@/lib/auth/office-session";
+import { assertCanAccessOwnedWdOrDn } from "@/lib/auth/cross-project-documents";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -8,8 +9,11 @@ type Ctx = { params: Promise<{ id: string }> };
 /** שליחת תעודת משלוח לנמענים */
 export async function POST(request: NextRequest, ctx: Ctx) {
   try {
-    const { userId } = await getAuthContext();
+    const session = await requireOfficeUser();
     const { id } = await ctx.params;
+    const note = await DeliveryNotesRepository.findById(id);
+    if (!note) return apiError("תעודת משלוח לא נמצאה", 404);
+    await assertCanAccessOwnedWdOrDn(session, note, "send_to_client");
     const body = await request.json().catch(() => ({}));
     const recipientIds: string[] = Array.isArray(body.recipientIds)
       ? body.recipientIds.map(String)
@@ -19,7 +23,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       return apiError("יש לבחור לפחות נמען אחד", 400);
     }
 
-    const result = await DeliveryNotesRepository.sendToRecipients(id, userId, {
+    const result = await DeliveryNotesRepository.sendToRecipients(id, session.userId, {
       recipientIds,
       includeClient: Boolean(body.includeClient),
       notifyInApp: body.notifyInApp !== false,

@@ -35,7 +35,7 @@ export type BoqItemUpdateInput = {
 };
 
 function derivedFields(contractQuantity: number, unitPrice: number, completedQuantity: number) {
-  const remaining = Math.max(0, contractQuantity - completedQuantity);
+  const remaining = contractQuantity - completedQuantity;
   const completedValue = completedQuantity * unitPrice;
   const remainingValue = remaining * unitPrice;
   const progress =
@@ -258,11 +258,14 @@ export class BOQRepository {
     }));
   }
 
-  static async findAll(projectId?: string) {
+  static async findAll(projectId?: string, projectIds?: string[]) {
     const rows = await prisma.boqItem.findMany({
       where: {
         deletedAt: null,
         ...(projectId ? { projectId } : {}),
+        ...(!projectId && projectIds
+          ? { projectId: { in: projectIds } }
+          : {}),
       },
       orderBy: [{ projectId: "asc" }, { code: "asc" }],
     });
@@ -290,6 +293,7 @@ export class BOQRepository {
    */
   static async listPage(opts: {
     projectId?: string;
+    projectIds?: string[];
     q?: string | null;
     itemKind?: BoqItemKind | "all" | null;
     status?: BoqItemStatus | "all" | null;
@@ -308,6 +312,7 @@ export class BOQRepository {
 
     const where: Prisma.BoqItemWhereInput = { deletedAt: null };
     if (opts.projectId) where.projectId = opts.projectId;
+    else if (opts.projectIds) where.projectId = { in: opts.projectIds };
     if (opts.itemKind && opts.itemKind !== "all") {
       where.itemKind = opts.itemKind;
     }

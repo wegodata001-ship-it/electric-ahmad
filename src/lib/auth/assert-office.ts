@@ -8,6 +8,17 @@ import {
   isSystemAdminRole,
   type DocumentPermission,
 } from "@/lib/auth/document-permissions";
+import {
+  userCanAccessProject,
+  type ProjectAccessScope,
+} from "@/lib/auth/project-access";
+import {
+  ADMIN_ROLE,
+  LEGACY_SYSTEM_ADMIN_ROLE,
+  OPERATIONS_MANAGER_ROLE,
+  PROJECT_MANAGER_ROLE,
+  SYSTEM_MANAGER_ROLE,
+} from "@/lib/auth/roles";
 
 /**
  * Thin wrappers around requireOfficeUser + permission matrix.
@@ -21,7 +32,19 @@ import {
  * these helpers instead of the individual route handlers.
  */
 export async function requireOfficeAuth(): Promise<OfficeUserSession> {
-  return requireOfficeUser();
+  const session = await requireOfficeUser();
+  const permittedRoles = new Set<string>([
+    SYSTEM_MANAGER_ROLE,
+    OPERATIONS_MANAGER_ROLE,
+    PROJECT_MANAGER_ROLE,
+    ADMIN_ROLE,
+    LEGACY_SYSTEM_ADMIN_ROLE,
+    "admin",
+  ]);
+  if (!permittedRoles.has(session.role)) {
+    throw new OfficeAuthError("אין הרשאה לפורטל המשרדי", 403);
+  }
+  return session;
 }
 
 /**
@@ -48,6 +71,33 @@ export async function requireSystemAdmin(): Promise<OfficeUserSession> {
   const session = await requireOfficeAuth();
   if (!isSystemAdminRole(session.role)) {
     throw new OfficeAuthError("נדרשת הרשאת מנהל מערכת", 403);
+  }
+  return session;
+}
+
+/** User lifecycle and credential administration is canonical SYSTEM_MANAGER only. */
+export async function requireUserManager(): Promise<OfficeUserSession> {
+  const session = await requireOfficeAuth();
+  if (session.role !== SYSTEM_MANAGER_ROLE) {
+    throw new OfficeAuthError("ניהול משתמשים זמין למנהל מערכת בלבד", 403);
+  }
+  return session;
+}
+
+export async function requireProjectPermission(
+  permission: DocumentPermission,
+  projectId: string,
+  scope: ProjectAccessScope = "manage"
+): Promise<OfficeUserSession> {
+  const session = await requirePermission(permission);
+  const allowed = await userCanAccessProject({
+    userId: session.userId,
+    role: session.role,
+    projectId,
+    scope,
+  });
+  if (!allowed) {
+    throw new OfficeAuthError("אין הרשאה לפרויקט זה", 403);
   }
   return session;
 }

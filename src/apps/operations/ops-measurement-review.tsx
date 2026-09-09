@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Check, Loader2, X } from "lucide-react";
+import { ArrowRight, Check, Loader2, TriangleAlert, X } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { approvalsService } from "@/features/work-diaries/services/work-diaries.service";
 import { formatNumber } from "@/utils/format";
+import { calculateMeasurementQuantity } from "@/lib/measurement/quantities";
 
 /** Single measurement sheet for Ops approval — not the full projects workspace */
 export function OpsMeasurementReview({ sheetId }: { sheetId: string }) {
@@ -52,6 +53,33 @@ export function OpsMeasurementReview({ sheetId }: { sheetId: string }) {
     );
     return Number(cell?.quantity ?? 0);
   }
+
+  const quantitySummaries = useMemo(
+    () =>
+      sections.map((section) => {
+        const currentQuantity = rooms.reduce(
+          (sum, row) => sum + qty(row.id, section.id),
+          0
+        );
+        return {
+          section,
+          metrics: calculateMeasurementQuantity({
+            contractQuantity: Number(section.contractQuantity) || 0,
+            previousApprovedQuantity:
+              Number(
+                section.previousApprovedQuantity ??
+                  section.invoicedQuantity
+              ) || 0,
+            currentQuantity,
+          }),
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sections, rooms, sheet]
+  );
+  const overruns = quantitySummaries.filter(
+    ({ metrics }) => metrics.isOverrun
+  );
 
   async function approve() {
     setBusy(true);
@@ -159,12 +187,36 @@ export function OpsMeasurementReview({ sheetId }: { sheetId: string }) {
         </p>
       )}
 
+      {!!overruns.length && (
+        <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-4 text-red-950">
+          <p className="flex items-center gap-2 font-black">
+            <TriangleAlert className="h-5 w-5 text-red-700" />
+            חריגה מכמות חוזה
+          </p>
+          <div className="mt-2 space-y-1 text-sm">
+            {overruns.map(({ section, metrics }) => (
+              <p key={section.id}>
+                <span className="font-bold">
+                  {section.code} · {section.description}
+                </span>
+                {" — "}כמות חוזה: {formatNumber(metrics.contractQuantity)},
+                ביצוע: {formatNumber(metrics.cumulativeQuantity)}, חריגה: +
+                {formatNumber(metrics.overrunQuantity)}
+              </p>
+            ))}
+          </div>
+          <p className="mt-2 text-xs font-bold">
+            ניתן לאשר את המדידה או להחזיר אותה לתיקון.
+          </p>
+        </div>
+      )}
+
       <div className="overflow-auto rounded-2xl bg-white ring-1 ring-amber-200">
         <table className="min-w-full border-collapse text-sm">
           <thead className="bg-amber-50">
             <tr>
               <th className="border-b border-amber-100 px-3 py-2 text-right">
-                חדר / יחידה
+                שורה / יחידה
               </th>
               {sections.map((s) => (
                 <th key={s.id} className="border-b border-amber-100 px-2 py-2 text-center">

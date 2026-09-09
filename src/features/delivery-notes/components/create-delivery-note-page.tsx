@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, Input, Modal } from "@/components/ui";
 import { deliveryNoteService } from "@/features/delivery-notes/services/delivery-note.service";
 import { clientService } from "@/features/clients/services/client.service";
-import { projectService } from "@/services";
 import type { Client, Project } from "@/types";
+import { apiClient } from "@/lib/api/client";
 import { ArrowRight, Pencil, Plus, Search, Trash2, Paperclip, UserPlus } from "lucide-react";
 import { UNITS } from "@/constants";
 
@@ -18,6 +18,7 @@ type Line = {
   packageNumber: string;
   notes: string;
 };
+type CreationProject = Project & { assigned: boolean };
 
 const emptyLine = (): Line => ({
   sku: "",
@@ -46,7 +47,7 @@ export function CreateDeliveryNotePage({
   const searchParams = useSearchParams();
   const projectFromQuery = lockedProjectId || searchParams.get("projectId") || "";
 
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<CreationProject[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [clientQuery, setClientQuery] = useState("");
   const [clientMenuOpen, setClientMenuOpen] = useState(false);
@@ -105,8 +106,14 @@ export function CreateDeliveryNotePage({
   });
 
   useEffect(() => {
-    Promise.all([projectService.getAll(), clientService.getAll()]).then(
-      ([projectList, clientList]) => {
+    Promise.all([
+      apiClient.get<{ projects: CreationProject[] }>(
+        "/api/document-creation-projects"
+      ),
+      clientService.getAll(),
+    ]).then(
+      ([projectResult, clientList]) => {
+        const projectList = projectResult.projects;
         setProjects(projectList);
         setClients(clientList);
         const pid = projectFromQuery || projectId;
@@ -608,11 +615,24 @@ export function CreateDeliveryNotePage({
               className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-lg disabled:bg-gray-50"
             >
               <option value="">בחר פרויקט...</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
+              <optgroup label="הפרויקטים שלי">
+                {projects
+                  .filter((project) => project.assigned)
+                  .map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="פרויקטים נוספים">
+                {projects
+                  .filter((project) => !project.assigned)
+                  .map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+              </optgroup>
             </select>
           </Field>
 

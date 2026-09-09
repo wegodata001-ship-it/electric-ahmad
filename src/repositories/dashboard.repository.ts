@@ -193,8 +193,9 @@ export class ActivityRepository {
     user: { select: { name: true } },
   } as const;
 
-  static async findAll() {
+  static async findAll(projectIds?: string[]) {
     const rows = await prisma.activity.findMany({
+      where: projectIds ? { projectId: { in: projectIds } } : undefined,
       include: this.activityInclude,
       orderBy: { createdAt: "desc" },
     });
@@ -210,9 +211,10 @@ export class ActivityRepository {
     return rows.map(mapActivity);
   }
 
-  static async findRecent(limit = 20) {
+  static async findRecent(limit = 20, projectIds?: string[]) {
     const rows = await prisma.activity.findMany({
       take: limit,
+      where: projectIds ? { projectId: { in: projectIds } } : undefined,
       include: this.activityInclude,
       orderBy: { createdAt: "desc" },
     });

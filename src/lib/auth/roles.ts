@@ -11,6 +11,21 @@ export const TRUCK_DRIVER_ROLE = "TRUCK_DRIVER" as const;
 /** Seed / legacy office admin role (Hebrew label kept for BC) */
 export const LEGACY_SYSTEM_ADMIN_ROLE = "מנהל מערכת" as const;
 
+/** Roles a System Manager may assign from User Management. */
+export const MANAGED_USER_ROLES = [
+  SYSTEM_MANAGER_ROLE,
+  OPERATIONS_MANAGER_ROLE,
+  PROJECT_MANAGER_ROLE,
+  FIELD_MANAGER_ROLE,
+  TRUCK_DRIVER_ROLE,
+] as const;
+
+export type ManagedUserRole = (typeof MANAGED_USER_ROLES)[number];
+
+export function isManagedUserRole(role: unknown): role is ManagedUserRole {
+  return MANAGED_USER_ROLES.includes(role as ManagedUserRole);
+}
+
 export function isFieldManagerRole(role?: string | null): boolean {
   return role === FIELD_MANAGER_ROLE;
 }

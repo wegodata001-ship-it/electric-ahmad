@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
-import { requireFieldManager } from "@/lib/auth/field-session";
+import {
+  assertProjectSelectable,
+  requireFieldManager,
+} from "@/lib/auth/field-session";
 import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { peekNextDocumentNumber } from "@/lib/documents/sequences";
@@ -34,6 +37,9 @@ export async function POST(req: NextRequest) {
       : null;
     if (!body.projectId && !customSiteName) {
       return apiError("יש לבחור פרויקט או להזין אתר תחת ״אחר״");
+    }
+    if (body.projectId) {
+      await assertProjectSelectable(String(body.projectId), session.foremanId);
     }
 
     const diary = await WorkDiariesRepository.create({

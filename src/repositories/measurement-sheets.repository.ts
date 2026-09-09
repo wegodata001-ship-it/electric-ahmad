@@ -7,6 +7,7 @@ import {
   hashSignToken,
   parseSignQuery,
 } from "@/lib/documents/sign-tokens";
+import { encryptShareToken } from "@/lib/documents/share-token-vault";
 import type { MeasurementAxisType, MeasurementSheetStatus } from "@prisma/client";
 import {
   assertDocumentMutable,
@@ -18,6 +19,7 @@ import {
   PmApprovalEditError,
 } from "@/lib/auth/measurement-pm-approval-edit";
 import { PROJECT_MANAGER_ROLE } from "@/lib/auth/roles";
+import { calculateMeasurementQuantity } from "@/lib/measurement/quantities";
 
 function num(v: unknown): number {
   return Number(v ?? 0);
@@ -165,20 +167,15 @@ function mapSheet(row: any) {
   const versions = parseJsonArray(row.versions);
 
   const mappedRows = rows
-    .filter((r: any) => {
-      if (r.projectRoom?.deletedAt) return false;
-      if (r.projectRoom?.isHidden) return false;
-      return true;
-    })
     .sort((a: any, b: any) => {
-      const sa = a.projectRoom?.sortOrder ?? a.sortOrder ?? 0;
-      const sb = b.projectRoom?.sortOrder ?? b.sortOrder ?? 0;
+      const sa = a.sortOrder ?? 0;
+      const sb = b.sortOrder ?? 0;
       return sa - sb;
     })
     .map((r: any) => ({
       id: r.id,
-      name: r.projectRoom?.name ?? r.name,
-      sortOrder: r.projectRoom?.sortOrder ?? r.sortOrder,
+      name: r.name,
+      sortOrder: r.sortOrder,
       notes: r.notes,
       projectRoomId: r.projectRoomId ?? r.projectRoom?.id ?? null,
       floor: r.projectRoom?.floor ?? null,
@@ -231,14 +228,10 @@ function mapSheet(row: any) {
     correctionMode: row.status === "revision",
     rows: mappedRows,
     cells: cells
-      .filter((c: any) => !c.boqItem?.deletedAt)
-      .filter((c: any) => {
-        const rowMeta = rows.find((r: any) => r.id === c.rowId);
-        if (!rowMeta) return true;
-        if (rowMeta.projectRoom?.deletedAt) return false;
-        if (rowMeta.projectRoom?.isHidden) return false;
-        return true;
-      })
+      .filter(
+        (c: any) =>
+          !c.boqItem?.deletedAt || !isSheetEditable(row.status)
+      )
       .map((c: any) => ({
         id: c.id,
         rowId: c.rowId,
@@ -254,6 +247,9 @@ function mapSheet(row: any) {
               completedQuantity: num(c.boqItem.completedQuantity),
               unitPrice: num(c.boqItem.unitPrice),
               invoicedQuantity: num(c.boqItem.invoicedQuantity),
+              previousApprovedQuantity: num(
+                c.boqItem.previousApprovedQuantity
+              ),
               remainingQuantity: num(c.boqItem.remainingQuantity),
             }
           : null,
@@ -543,6 +539,20 @@ export class MeasurementSheetsRepository {
                       'completedQuantity', b."completedQuantity",
                       'unitPrice', b."unitPrice",
                       'invoicedQuantity', b."invoicedQuantity",
+                      'previousApprovedQuantity', COALESCE((
+                        SELECT SUM(prev_cell.quantity)
+                        FROM "MeasurementCell" prev_cell
+                        INNER JOIN "MeasurementSheet" prev_sheet
+                          ON prev_sheet.id = prev_cell."sheetId"
+                        WHERE prev_cell."boqItemId" = b.id
+                          AND prev_sheet."projectId" = (
+                            SELECT current_sheet."projectId"
+                            FROM "MeasurementSheet" current_sheet
+                            WHERE current_sheet.id = ${id}
+                          )
+                          AND prev_sheet.id <> ${id}
+                          AND prev_sheet.status IN ('approved', 'locked', 'invoiced')
+                      ), 0),
                       'remainingQuantity', b."remainingQuantity",
                       'deletedAt', b."deletedAt"
                     )
@@ -775,6 +785,20 @@ export class MeasurementSheetsRepository {
                       'completedQuantity', b."completedQuantity",
                       'unitPrice', b."unitPrice",
                       'invoicedQuantity', b."invoicedQuantity",
+                      'previousApprovedQuantity', COALESCE((
+                        SELECT SUM(prev_cell.quantity)
+                        FROM "MeasurementCell" prev_cell
+                        INNER JOIN "MeasurementSheet" prev_sheet
+                          ON prev_sheet.id = prev_cell."sheetId"
+                        WHERE prev_cell."boqItemId" = b.id
+                          AND prev_sheet."projectId" = (
+                            SELECT current_sheet."projectId"
+                            FROM "MeasurementSheet" current_sheet
+                            WHERE current_sheet.id = ${id}
+                          )
+                          AND prev_sheet.id <> ${id}
+                          AND prev_sheet.status IN ('approved', 'locked', 'invoiced')
+                      ), 0),
                       'remainingQuantity', b."remainingQuantity",
                       'deletedAt', b."deletedAt"
                     )
@@ -1001,30 +1025,18 @@ export class MeasurementSheetsRepository {
       orderBy: { sortOrder: "asc" },
     });
 
-    const rowNames =
+    const requestedRowNames =
       input.rowNames?.map((n) => n.trim()).filter(Boolean) ?? [];
-
-    // אם אין חדרים בפרויקט — צור מ־rowNames; אחרת השתמש בחדרים הקיימים
-    if (!projectRooms.length && rowNames.length) {
-      const { ProjectRoomsRepository } = await import(
-        "@/repositories/project-rooms.repository"
-      );
-      for (const name of rowNames) {
-        await ProjectRoomsRepository.create(input.projectId, { name });
-      }
-    } else if (!projectRooms.length && !rowNames.length) {
-      const { ProjectRoomsRepository } = await import(
-        "@/repositories/project-rooms.repository"
-      );
-      for (const name of ["חדר 101", "חדר 102", "חדר 103"]) {
-        await ProjectRoomsRepository.create(input.projectId, { name });
-      }
-    }
-
-    const rooms = await prisma.projectRoom.findMany({
-      where: { projectId: input.projectId, deletedAt: null, isHidden: false },
-      orderBy: { sortOrder: "asc" },
-    });
+    const seedRows = requestedRowNames.length
+      ? requestedRowNames.map((name, index) => ({ name, sortOrder: index }))
+      : projectRooms.length
+        ? projectRooms
+            .filter((room) => !room.isHidden)
+            .map((room) => ({ name: room.name, sortOrder: room.sortOrder }))
+        : ["שורה 1", "שורה 2", "שורה 3"].map((name, index) => ({
+            name,
+            sortOrder: index,
+          }));
 
     const sheet = await prisma.$transaction(async (tx) => {
       const created = await tx.measurementSheet.create({
@@ -1039,13 +1051,12 @@ export class MeasurementSheetsRepository {
         },
       });
 
-      if (rooms.length) {
+      if (seedRows.length) {
         await tx.measurementSheetRow.createMany({
-          data: rooms.map((room) => ({
+          data: seedRows.map((row) => ({
             sheetId: created.id,
-            name: room.name,
-            sortOrder: room.sortOrder,
-            projectRoomId: room.id,
+            name: row.name,
+            sortOrder: row.sortOrder,
           })),
         });
       }
@@ -1193,13 +1204,50 @@ export class MeasurementSheetsRepository {
       return this.getById(id);
     }
 
-    await prisma.measurementSheet.update({
-      where: { id },
-      data: {
-        title: title,
-        notes: notes,
-        updatedById: userId,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.measurementSheet.update({
+        where: { id },
+        data: {
+          title,
+          notes,
+          updatedById: userId,
+        },
+      });
+      if (titleChanged || notesChanged) {
+        await tx.measurementSheetEvent.create({
+          data: {
+            sheetId: id,
+            type: titleChanged ? "title_changed" : "metadata_changed",
+            message: titleChanged
+              ? `כותרת המדידה שונתה מ-"${existing.title}" ל-"${title}"`
+              : "פרטי דף המדידה עודכנו",
+            actorId: userId,
+            metadata: JSON.stringify({
+              changedFields: [
+                ...(titleChanged
+                  ? [
+                      {
+                        field: "title",
+                        oldValue: existing.title,
+                        newValue: title,
+                      },
+                    ]
+                  : []),
+                ...(notesChanged
+                  ? [
+                      {
+                        field: "notes",
+                        oldValue: existing.notes,
+                        newValue: notes,
+                      },
+                    ]
+                  : []),
+              ],
+              editedAt: new Date().toISOString(),
+            }),
+          },
+        });
+      }
     });
     return this.getById(id);
   }
@@ -1385,58 +1433,270 @@ export class MeasurementSheetsRepository {
     const clean = names.map((n) => n.trim()).filter(Boolean);
     if (!clean.length) throw new Error("יש להזין שם יחידה");
 
-    const { ProjectRoomsRepository } = await import(
-      "@/repositories/project-rooms.repository"
-    );
-    for (const name of clean) {
-      await ProjectRoomsRepository.create(sheet.projectId, { name });
-    }
-
-    if (pmPending) {
-      const versionBefore = sheet.currentVersion;
-      const versionAfter = versionBefore + 1;
-      const bumped = await prisma.measurementSheet.updateMany({
+    const [lastRow, boqItems] = await Promise.all([
+      prisma.measurementSheetRow.findFirst({
+        where: { sheetId },
+        orderBy: { sortOrder: "desc" },
+        select: { sortOrder: true },
+      }),
+      prisma.boqItem.findMany({
         where: {
-          id: sheetId,
-          status: "pending_approval",
-          currentVersion: versionBefore,
+          projectId: sheet.projectId,
+          deletedAt: null,
+          status: { not: "cancelled" },
         },
+        select: { id: true },
+      }),
+    ]);
+
+    await prisma.$transaction(async (tx) => {
+      const createdRows: { id: string; name: string }[] = [];
+      for (const [index, name] of clean.entries()) {
+        const row = await tx.measurementSheetRow.create({
+          data: {
+            sheetId,
+            name,
+            sortOrder: (lastRow?.sortOrder ?? -1) + index + 1,
+          },
+          select: { id: true, name: true },
+        });
+        createdRows.push(row);
+        if (boqItems.length) {
+          await tx.measurementCell.createMany({
+            data: boqItems.map((boq) => ({
+              sheetId,
+              rowId: row.id,
+              boqItemId: boq.id,
+              quantity: 0,
+            })),
+          });
+        }
+      }
+
+      const versionBefore = sheet.currentVersion;
+      const versionAfter = pmPending ? versionBefore + 1 : versionBefore;
+      const updated = await tx.measurementSheet.updateMany({
+        where: pmPending
+          ? {
+              id: sheetId,
+              status: "pending_approval",
+              currentVersion: versionBefore,
+            }
+          : { id: sheetId },
         data: {
           updatedById: userId,
-          currentVersion: versionAfter,
+          status: pmPending
+            ? "pending_approval"
+            : sheet.status === "revision"
+              ? "revision"
+              : "in_progress",
+          ...(pmPending ? { currentVersion: versionAfter } : {}),
         },
       });
-      if (!bumped.count) {
+      if (!updated.count) {
         throw new PmApprovalEditError(
           "המסמך עודכן מאז שפתחת אותו. יש לרענן לפני שמירת השינויים.",
           409
         );
       }
-      await this.addEvent(
-        sheetId,
-        "pm_edited",
-        "נערך על ידי מנהל פרויקט",
-        userId,
-        {
-          documentId: sheetId,
-          versionBefore,
-          versionAfter,
-          role: PROJECT_MANAGER_ROLE,
-          changedFields: [{ field: "rows", added: clean }],
-          editedBy: userId,
-          editedAt: new Date().toISOString(),
-        }
-      );
-    } else {
-      await prisma.measurementSheet.update({
-        where: { id: sheetId },
+      await tx.measurementSheetEvent.create({
         data: {
-          updatedById: userId,
-          status: sheet.status === "revision" ? "revision" : "in_progress",
+          sheetId,
+          type: pmPending ? "pm_edited" : "row_added",
+          message: `נוספו ${createdRows.length} שורות לדף המדידה`,
+          actorId: userId,
+          metadata: JSON.stringify({
+            rows: createdRows,
+            versionBefore,
+            versionAfter,
+            editedAt: new Date().toISOString(),
+          }),
         },
       });
+    });
+
+    return this.getById(sheetId);
+  }
+
+  static async renameRow(
+    sheetId: string,
+    rowId: string,
+    nameInput: string,
+    userId: string,
+    opts?: { role?: string; expectedVersion?: number }
+  ) {
+    const name = nameInput.trim();
+    if (!name) throw new Error("יש להזין שם שורה");
+    const row = await prisma.measurementSheetRow.findFirst({
+      where: { id: rowId, sheetId },
+      include: { sheet: true },
+    });
+    if (!row) throw new Error("השורה לא נמצאה");
+
+    const pmPending =
+      row.sheet.status === "pending_approval" &&
+      opts?.role === PROJECT_MANAGER_ROLE;
+    if (pmPending) {
+      await assertProjectManagerPendingEdit({
+        userId,
+        role: opts!.role!,
+        sheetId,
+        expectedVersion: opts?.expectedVersion,
+      });
+    } else if (!isSheetEditable(row.sheet.status)) {
+      throw new Error("דף המדידה נעול לעריכה");
+    }
+    if (row.name === name && !row.projectRoomId) return this.getById(sheetId);
+
+    await prisma.$transaction(async (tx) => {
+      const versionBefore = row.sheet.currentVersion;
+      const versionAfter = pmPending ? versionBefore + 1 : versionBefore;
+      const updated = await tx.measurementSheet.updateMany({
+        where: pmPending
+          ? {
+              id: sheetId,
+              status: "pending_approval",
+              currentVersion: versionBefore,
+            }
+          : { id: sheetId },
+        data: {
+          updatedById: userId,
+          status: pmPending
+            ? "pending_approval"
+            : row.sheet.status === "revision"
+              ? "revision"
+              : "in_progress",
+          ...(pmPending ? { currentVersion: versionAfter } : {}),
+        },
+      });
+      if (!updated.count) {
+        throw new PmApprovalEditError(
+          "המסמך עודכן מאז שפתחת אותו. יש לרענן לפני שמירת השינויים.",
+          409
+        );
+      }
+      await tx.measurementSheetRow.update({
+        where: { id: rowId },
+        data: {
+          name,
+          // A renamed row becomes sheet-specific; historical/project rows stay unchanged.
+          projectRoomId: null,
+        },
+      });
+      await tx.measurementSheetEvent.create({
+        data: {
+          sheetId,
+          type: pmPending ? "pm_edited" : "row_renamed",
+          message: `שם השורה שונה מ-"${row.name}" ל-"${name}"`,
+          actorId: userId,
+          metadata: JSON.stringify({
+            rowId,
+            oldName: row.name,
+            newName: name,
+            versionBefore,
+            versionAfter,
+            editedAt: new Date().toISOString(),
+          }),
+        },
+      });
+    });
+    return this.getById(sheetId);
+  }
+
+  static async deleteRow(
+    sheetId: string,
+    rowId: string,
+    userId: string,
+    opts?: { role?: string; expectedVersion?: number }
+  ) {
+    const row = await prisma.measurementSheetRow.findFirst({
+      where: { id: rowId, sheetId },
+      include: {
+        sheet: true,
+        cells: {
+          select: {
+            boqItemId: true,
+            quantity: true,
+            boqItem: { select: { code: true, description: true } },
+          },
+        },
+      },
+    });
+    if (!row) throw new Error("השורה לא נמצאה");
+
+    const pmPending =
+      row.sheet.status === "pending_approval" &&
+      opts?.role === PROJECT_MANAGER_ROLE;
+    if (pmPending) {
+      await assertProjectManagerPendingEdit({
+        userId,
+        role: opts!.role!,
+        sheetId,
+        expectedVersion: opts?.expectedVersion,
+      });
+    } else if (!isSheetEditable(row.sheet.status)) {
+      throw new Error(
+        "לא ניתן למחוק שורה ממדידה מאושרת או נעולה. יש לפתוח Revision."
+      );
     }
 
+    const quantities = row.cells
+      .map((cell) => ({
+        boqItemId: cell.boqItemId,
+        code: cell.boqItem.code,
+        description: cell.boqItem.description,
+        quantity: num(cell.quantity),
+      }))
+      .filter((cell) => cell.quantity !== 0);
+
+    await prisma.$transaction(async (tx) => {
+      const versionBefore = row.sheet.currentVersion;
+      const versionAfter = pmPending ? versionBefore + 1 : versionBefore;
+      const updated = await tx.measurementSheet.updateMany({
+        where: pmPending
+          ? {
+              id: sheetId,
+              status: "pending_approval",
+              currentVersion: versionBefore,
+            }
+          : { id: sheetId },
+        data: {
+          updatedById: userId,
+          status: pmPending
+            ? "pending_approval"
+            : row.sheet.status === "revision"
+              ? "revision"
+              : "in_progress",
+          ...(pmPending ? { currentVersion: versionAfter } : {}),
+        },
+      });
+      if (!updated.count) {
+        throw new PmApprovalEditError(
+          "המסמך עודכן מאז שפתחת אותו. יש לרענן לפני שמירת השינויים.",
+          409
+        );
+      }
+      await tx.measurementCell.deleteMany({ where: { sheetId, rowId } });
+      await tx.measurementSheetRow.delete({ where: { id: rowId } });
+      await tx.measurementSheetEvent.create({
+        data: {
+          sheetId,
+          type: pmPending ? "pm_edited" : "row_deleted",
+          message: `השורה "${row.name}" נמחקה מדף המדידה`,
+          actorId: userId,
+          metadata: JSON.stringify({
+            rowId,
+            rowName: row.name,
+            quantities,
+            hadMeasurements: quantities.length > 0,
+            versionBefore,
+            versionAfter,
+            deletedBy: userId,
+            deletedAt: new Date().toISOString(),
+          }),
+        },
+      });
+    });
     return this.getById(sheetId);
   }
 
@@ -2639,6 +2899,7 @@ export class MeasurementSheetsRepository {
       data: {
         sheetId,
         tokenHash: hash,
+        tokenCiphertext: encryptShareToken(raw),
         publicId,
         createdById: actorId,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -2683,7 +2944,6 @@ export class MeasurementSheetsRepository {
     const token = await prisma.measurementSheetSignToken.findFirst({
       where: {
         publicId: parsed.publicId,
-        revokedAt: null,
         sheetId,
       },
       include: {
@@ -2691,11 +2951,12 @@ export class MeasurementSheetsRepository {
       },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.expiresAt && token.expiresAt < new Date()) {
-      throw new Error("הקישור פג תוקף");
-    }
     if (token.tokenHash !== hashSignToken(parsed.raw)) {
       throw new Error("קישור לא תקין");
+    }
+    if (token.revokedAt) throw new Error("הקישור בוטל");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("תוקף הקישור הסתיים");
     }
 
     const mapped = mapSheet(token.sheet);
@@ -2753,17 +3014,17 @@ export class MeasurementSheetsRepository {
     const token = await prisma.measurementSheetSignToken.findFirst({
       where: {
         publicId: parsed.publicId,
-        revokedAt: null,
         sheetId: opts.sheetId,
       },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.usedAt) throw new Error("הקישור כבר נוצל");
-    if (token.expiresAt && token.expiresAt < new Date()) {
-      throw new Error("הקישור פג תוקף");
-    }
     if (token.tokenHash !== hashSignToken(parsed.raw)) {
       throw new Error("קישור לא תקין");
+    }
+    if (token.revokedAt) throw new Error("הקישור בוטל");
+    if (token.usedAt) throw new Error("המסמך כבר נחתם");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("תוקף הקישור הסתיים");
     }
 
     const sheetRow = await prisma.measurementSheet.findUnique({
@@ -3065,10 +3326,12 @@ export class MeasurementSheetsRepository {
       const contractQuantity = num(b.contractQuantity);
       const previousQuantity = num(b.invoicedQuantity);
       const periodQuantity = periodByBoq.get(b.id) ?? 0;
-      const available = Math.max(0, contractQuantity - previousQuantity);
-      const billable = Math.min(periodQuantity, available);
-      const cumulative = previousQuantity + billable;
-      const remaining = Math.max(0, contractQuantity - cumulative);
+      const quantities = calculateMeasurementQuantity({
+        contractQuantity,
+        previousApprovedQuantity: previousQuantity,
+        currentQuantity: periodQuantity,
+      });
+      const billable = periodQuantity;
       const unitPrice = num(b.unitPrice);
       return {
         boqItemId: b.id,
@@ -3080,8 +3343,9 @@ export class MeasurementSheetsRepository {
         previousQuantity,
         periodQuantity,
         billableQuantity: billable,
-        cumulativeQuantity: cumulative,
-        remainingQuantity: remaining,
+        cumulativeQuantity: quantities.cumulativeQuantity,
+        remainingQuantity: quantities.remainingQuantity,
+        overrunQuantity: quantities.overrunQuantity,
         amount: billable * unitPrice,
         itemKind: b.itemKind,
       };
@@ -3159,7 +3423,7 @@ export class MeasurementSheetsRepository {
       if (!boq) continue;
       const completed = Math.max(num(boq.completedQuantity), line.cumulativeQuantity);
       const contract = num(boq.contractQuantity);
-      const remaining = Math.max(0, contract - completed);
+      const remaining = contract - completed;
       const unitPrice = num(boq.unitPrice);
       await prisma.boqItem.update({
         where: { id: line.boqItemId },
@@ -3168,7 +3432,7 @@ export class MeasurementSheetsRepository {
           remainingQuantity: remaining,
           completedValue: completed * unitPrice,
           remainingValue: remaining * unitPrice,
-          progress: contract > 0 ? Math.min(100, (completed / contract) * 100) : 0,
+          progress: contract > 0 ? (completed / contract) * 100 : 0,
           updatedById: userId,
         },
       });
@@ -3447,24 +3711,10 @@ export class MeasurementSheetsRepository {
           billable AS (
             SELECT
               COUNT(*) FILTER (
-                WHERE GREATEST(
-                  0,
-                  LEAST(
-                    COALESCE(p.qty, 0),
-                    GREATEST(0, b."contractQuantity" - b."invoicedQuantity")
-                  )
-                ) > 0
+                WHERE COALESCE(p.qty, 0) > 0
               )::int AS line_count,
               COALESCE(
-                SUM(
-                  GREATEST(
-                    0,
-                    LEAST(
-                      COALESCE(p.qty, 0),
-                      GREATEST(0, b."contractQuantity" - b."invoicedQuantity")
-                    )
-                  ) * b."unitPrice"
-                ),
+                SUM(COALESCE(p.qty, 0) * b."unitPrice"),
                 0
               ) AS subtotal
             FROM "BoqItem" b
@@ -3634,24 +3884,10 @@ export class MeasurementSheetsRepository {
           billable AS (
             SELECT
               COUNT(*) FILTER (
-                WHERE GREATEST(
-                  0,
-                  LEAST(
-                    COALESCE(p.qty, 0),
-                    GREATEST(0, b."contractQuantity" - b."invoicedQuantity")
-                  )
-                ) > 0
+                WHERE COALESCE(p.qty, 0) > 0
               )::int AS line_count,
               COALESCE(
-                SUM(
-                  GREATEST(
-                    0,
-                    LEAST(
-                      COALESCE(p.qty, 0),
-                      GREATEST(0, b."contractQuantity" - b."invoicedQuantity")
-                    )
-                  ) * b."unitPrice"
-                ),
+                SUM(COALESCE(p.qty, 0) * b."unitPrice"),
                 0
               ) AS subtotal
             FROM "BoqItem" b

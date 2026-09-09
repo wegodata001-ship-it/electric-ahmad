@@ -76,8 +76,9 @@ export class PartialInvoicesRepository {
     items: true,
   } as const;
 
-  static async findAll() {
+  static async findAll(projectIds?: string[]) {
     const rows = await prisma.partialInvoice.findMany({
+      where: projectIds ? { projectId: { in: projectIds } } : undefined,
       include: this.invoiceInclude,
       orderBy: [{ date: "desc" }, { sequenceNumber: "desc" }],
     });
@@ -136,15 +137,18 @@ export class PartialInvoicesRepository {
     for (const line of input.items) {
       const boq = boqById.get(line.boqItemId)!;
       const invoiced = Number(boq.invoicedQuantity);
-      const available =
-        input.quantitySource === "measurement"
-          ? Math.max(0, Number(boq.contractQuantity) - invoiced)
-          : availableForInvoice(Number(boq.completedQuantity), invoiced);
+      const available = availableForInvoice(
+        Number(boq.completedQuantity),
+        invoiced
+      );
       const qty = Number(line.quantity);
       if (!(qty > 0)) {
         throw new Error(`כמות לא תקינה לסעיף ${boq.code}`);
       }
-      if (qty > available + 1e-9) {
+      if (
+        input.quantitySource !== "measurement" &&
+        qty > available + 1e-9
+      ) {
         throw new Error(
           `לא ניתן לחייב כפול בסעיף ${boq.code}: זמין ${available}, בוקש ${qty}`
         );

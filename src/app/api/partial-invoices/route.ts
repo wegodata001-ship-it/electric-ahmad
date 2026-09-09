@@ -1,19 +1,35 @@
 import { NextRequest } from "next/server";
 import { PartialInvoicesRepository } from "@/repositories/partial-invoices.repository";
-import { getAuthContext } from "@/lib/auth/session";
-import { requireOfficeAuth } from "@/lib/auth/assert-office";
+import {
+  requirePermission,
+  requireProjectPermission,
+} from "@/lib/auth/assert-office";
+import { listProjectsForRole } from "@/lib/auth/project-access";
+import { OfficeAuthError } from "@/lib/auth/office-session";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireOfficeAuth();
+    const user = await requirePermission("view_all");
     const projectId = request.nextUrl.searchParams.get("projectId");
     if (projectId) {
+      await requireProjectPermission("view_all", projectId);
       return apiSuccess(
         await PartialInvoicesRepository.findByProject(projectId)
       );
     }
-    return apiSuccess(await PartialInvoicesRepository.findAll());
+    const projects = await listProjectsForRole({
+      userId: user.userId,
+      role: user.role,
+      mode: "assigned",
+    });
+    return apiSuccess(
+      await PartialInvoicesRepository.findAll(
+        user.role === "PROJECT_MANAGER"
+          ? projects.map((project) => project.id)
+          : undefined
+      )
+    );
   } catch (error) {
     return handleApiError(error);
   }
@@ -21,11 +37,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await getAuthContext();
     const body = await request.json();
 
     const projectId = String(body.projectId ?? "");
     if (!projectId) return apiError("מזהה פרויקט חובה");
+    const { userId } = await requireProjectPermission("create", projectId);
 
     const items = Array.isArray(body.items) ? body.items : [];
     if (items.length === 0) return apiError("יש להוסיף לפחות סעיף אחד");
@@ -57,6 +73,7 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess(invoice, 201);
   } catch (error) {
+    if (error instanceof OfficeAuthError) return handleApiError(error);
     if (error instanceof Error) {
       return apiError(error.message, 400);
     }

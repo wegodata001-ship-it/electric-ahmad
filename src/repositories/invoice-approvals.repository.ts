@@ -4,6 +4,7 @@ import { DocumentsRepository } from "./documents.repository";
 import { emitDomainEvent } from "@/lib/events/domain-events";
 import {
   canApproveDocuments,
+  isSystemAdminRole,
   roleGradeLabel,
 } from "@/lib/auth/document-permissions";
 import {
@@ -55,6 +56,16 @@ export class ApprovalSendError extends Error {
   ) {
     super(message);
     this.name = "ApprovalSendError";
+  }
+}
+
+export class ApprovalDecisionError extends Error {
+  constructor(
+    message: string,
+    readonly status = 403
+  ) {
+    super(message);
+    this.name = "ApprovalDecisionError";
   }
 }
 
@@ -710,20 +721,47 @@ export class InvoiceApprovalsRepository {
 
     const actor = await prisma.user.findUnique({
       where: { id: actorUserId },
-      select: { name: true },
+      select: {
+        name: true,
+        role: true,
+        employee: { select: { id: true } },
+      },
     });
     if (!actor) throw new Error("המשתמש המאשר לא נמצא");
+    if (!canApproveDocuments(actor.role)) {
+      throw new ApprovalDecisionError("אין הרשאה לאשר חשבונות");
+    }
+    const isAssigned =
+      approval.approverUserId === actorUserId ||
+      Boolean(
+        approval.managerId && approval.managerId === actor.employee?.id
+      );
+    const isOverride = isSystemAdminRole(actor.role);
+    if (!isAssigned && !isOverride) {
+      throw new ApprovalDecisionError(
+        "בקשת האישור אינה משויכת למשתמש הנוכחי"
+      );
+    }
 
     const now = new Date();
 
     const updated = await prisma.$transaction(async (tx) => {
-      const row = await tx.projectInvoiceApproval.update({
-        where: { id: approvalId },
+      const claimed = await tx.projectInvoiceApproval.updateMany({
+        where: { id: approvalId, status: "pending" },
         data: {
           status: "approved",
           approvedAt: now,
           comment: comment?.trim() || approval.comment,
         },
+      });
+      if (claimed.count !== 1) {
+        throw new ApprovalDecisionError(
+          "בקשת האישור כבר טופלה על ידי משתמש אחר",
+          409
+        );
+      }
+      const row = await tx.projectInvoiceApproval.findUniqueOrThrow({
+        where: { id: approvalId },
         include: approvalInclude,
       });
 
@@ -756,7 +794,12 @@ export class InvoiceApprovalsRepository {
       entityType: "ProjectInvoiceApproval",
       entityId: approvalId,
       userId: actorUserId,
-      metadata: { action: "approve", invoiceId: approval.invoiceId },
+      metadata: {
+        action: "approve",
+        invoiceId: approval.invoiceId,
+        assignedApprover: isAssigned,
+        systemManagerOverride: !isAssigned && isOverride,
+      },
     });
 
     emitDomainEvent("invoice.approved_by_foreman", {
@@ -791,16 +834,47 @@ export class InvoiceApprovalsRepository {
       throw new Error("ניתן לדחות רק בקשה במצב ממתין");
     }
 
+    const actor = await prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: {
+        role: true,
+        employee: { select: { id: true } },
+      },
+    });
+    if (!actor || !canApproveDocuments(actor.role)) {
+      throw new ApprovalDecisionError("אין הרשאה לדחות חשבונות");
+    }
+    const isAssigned =
+      approval.approverUserId === actorUserId ||
+      Boolean(
+        approval.managerId && approval.managerId === actor.employee?.id
+      );
+    const isOverride = isSystemAdminRole(actor.role);
+    if (!isAssigned && !isOverride) {
+      throw new ApprovalDecisionError(
+        "בקשת האישור אינה משויכת למשתמש הנוכחי"
+      );
+    }
+
     const now = new Date();
 
     const updated = await prisma.$transaction(async (tx) => {
-      const row = await tx.projectInvoiceApproval.update({
-        where: { id: approvalId },
+      const claimed = await tx.projectInvoiceApproval.updateMany({
+        where: { id: approvalId, status: "pending" },
         data: {
           status: "rejected",
           rejectedAt: now,
           comment: comment.trim(),
         },
+      });
+      if (claimed.count !== 1) {
+        throw new ApprovalDecisionError(
+          "בקשת האישור כבר טופלה על ידי משתמש אחר",
+          409
+        );
+      }
+      const row = await tx.projectInvoiceApproval.findUniqueOrThrow({
+        where: { id: approvalId },
         include: approvalInclude,
       });
 
@@ -835,6 +909,8 @@ export class InvoiceApprovalsRepository {
         action: "reject",
         invoiceId: approval.invoiceId,
         comment: comment.trim(),
+        assignedApprover: isAssigned,
+        systemManagerOverride: !isAssigned && isOverride,
       },
     });
 

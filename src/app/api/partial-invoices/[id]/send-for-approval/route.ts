@@ -3,7 +3,9 @@ import {
   ApprovalSendError,
   InvoiceApprovalsRepository,
 } from "@/repositories/invoice-approvals.repository";
-import { getAuthContext } from "@/lib/auth/session";
+import { PartialInvoicesRepository } from "@/repositories/partial-invoices.repository";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
+import { OfficeAuthError } from "@/lib/auth/office-session";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
 export async function POST(
@@ -11,8 +13,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await getAuthContext();
     const { id } = await params;
+    const invoice = await PartialInvoicesRepository.findById(id);
+    if (!invoice) return apiError("חשבון לא נמצא", 404);
+    const { userId } = await requireProjectPermission(
+      "send_for_approval",
+      invoice.projectId
+    );
     const body = await request.json().catch(() => ({}));
 
     const approverUserIds: string[] = Array.isArray(body?.approverUserIds)
@@ -48,6 +55,7 @@ export async function POST(
     );
     return response;
   } catch (error) {
+    if (error instanceof OfficeAuthError) return handleApiError(error);
     if (error instanceof ApprovalSendError) {
       return NextResponse.json(
         { success: false, error: error.message, code: error.code },

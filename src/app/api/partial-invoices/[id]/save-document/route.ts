@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { InvoiceApprovalsRepository } from "@/repositories/invoice-approvals.repository";
-import { getAuthContext } from "@/lib/auth/session";
+import { PartialInvoicesRepository } from "@/repositories/partial-invoices.repository";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
 import { apiSuccess, handleApiError } from "@/lib/api/response";
 
 /** שמירת חשבון כ-PDF במסמכי הפרויקט (תיקיית חשבונות) */
@@ -9,8 +10,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await getAuthContext();
     const { id } = await params;
+    const invoice = await PartialInvoicesRepository.findById(id);
+    if (!invoice) throw new Error("חשבון לא נמצא");
+    const { userId } = await requireProjectPermission(
+      "create",
+      invoice.projectId
+    );
     const origin = request.nextUrl.origin;
     const result = await InvoiceApprovalsRepository.saveInvoiceDocument(
       id,

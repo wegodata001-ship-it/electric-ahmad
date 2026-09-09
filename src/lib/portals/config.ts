@@ -65,8 +65,8 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     },
     nav: [
       { label: "עץ פרויקט", href: "/system/accounts", icon: GitBranch, mode: "live" },
-      { label: "משתמשים", href: "/system/users", icon: Users, mode: "live" },
-      { label: "Workflow", href: "/system/workflow", icon: GitBranch, mode: "live" },
+      { label: "ניהול משתמשים", href: "/system/users", icon: Users, mode: "live" },
+      { label: "ציר תהליכים", href: "/system/workflow", icon: GitBranch, mode: "live" },
       { label: "מרכז מסמכים", href: "/system/documents", icon: FolderOpen, mode: "live" },
       { label: "הגדרות", href: "/system/settings", icon: Settings, mode: "live" },
     ],
@@ -122,6 +122,12 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
         label: "סידורי עבודה",
         href: "/operations/work-orders",
         icon: ClipboardList,
+        mode: "live",
+      },
+      {
+        label: "שיוך מנהלי פרויקט",
+        href: "/operations/project-manager-assignments",
+        icon: Users,
         mode: "live",
       },
       { label: "מרכז מסמכים", href: "/operations/documents", icon: FolderOpen, mode: "live" },

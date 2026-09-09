@@ -10,6 +10,7 @@ import {
   buildSignUrl,
   parseSignQuery,
 } from "@/lib/documents/sign-tokens";
+import { encryptShareToken } from "@/lib/documents/share-token-vault";
 import {
   assertCanSoftDelete,
   OPS_DN_EDITABLE_STATUSES,
@@ -50,6 +51,8 @@ export type CreateOpsDnInput = {
   clientSignatureUrl?: string | null;
   clientSignedName?: string | null;
   createdById: string;
+  createdByRole?: string | null;
+  createdCrossProject?: boolean;
 };
 
 export type UpdateOpsDnInput = Partial<
@@ -81,6 +84,8 @@ function mapNote(row: any) {
     status: row.status as OpsDeliveryNoteStatus,
     projectId: row.projectId,
     createdById: row.createdById,
+    createdByRole: row.createdByRole ?? null,
+    createdCrossProject: row.createdCrossProject ?? false,
     clientName: row.clientName,
     address: row.address,
     foremanId: row.foremanId,
@@ -150,10 +155,17 @@ async function addEvent(
   opsDeliveryNoteId: string,
   action: string,
   message: string,
-  actorId?: string | null
+  actorId?: string | null,
+  metadata?: Record<string, unknown>
 ) {
   await prisma.opsDeliveryNoteEvent.create({
-    data: { opsDeliveryNoteId, action, message, actorId: actorId ?? null },
+    data: {
+      opsDeliveryNoteId,
+      action,
+      message,
+      actorId: actorId ?? null,
+      metadata: metadata ? JSON.stringify(metadata) : null,
+    },
   });
 }
 
@@ -275,6 +287,8 @@ export const OpsDeliveryNotesRepository = {
   async list(filters: {
     foremanId?: string;
     createdById?: string;
+    accessibleProjectIds?: string[];
+    ownedByUserId?: string;
     projectId?: string;
     status?: OpsDeliveryNoteStatus;
     take?: number;
@@ -284,6 +298,20 @@ export const OpsDeliveryNotesRepository = {
     if (filters.foremanId) where.foremanId = filters.foremanId;
     if (filters.createdById) where.createdById = filters.createdById;
     if (filters.projectId) where.projectId = filters.projectId;
+    if (filters.accessibleProjectIds || filters.ownedByUserId) {
+      where.AND = [
+        {
+          OR: [
+            ...(filters.accessibleProjectIds
+              ? [{ projectId: { in: filters.accessibleProjectIds } }]
+              : []),
+            ...(filters.ownedByUserId
+              ? [{ createdById: filters.ownedByUserId }]
+              : []),
+          ],
+        },
+      ];
+    }
     if (filters.status) where.status = filters.status;
 
     const rows = await prisma.opsDeliveryNote.findMany({
@@ -339,6 +367,8 @@ export const OpsDeliveryNotesRepository = {
         clientSignedName: input.clientSignedName ?? null,
         clientSignedAt: input.clientSignatureUrl ? new Date() : null,
         createdById: input.createdById,
+        createdByRole: input.createdByRole ?? null,
+        createdCrossProject: input.createdCrossProject ?? false,
         updatedById: input.createdById,
         items: {
           create: (input.items ?? []).map((item, i) => ({
@@ -361,6 +391,32 @@ export const OpsDeliveryNotesRepository = {
       userId: input.createdById,
       metadata: { action: "created", documentNumber },
     });
+    if (input.createdCrossProject) {
+      await addEvent(
+        row.id,
+        "cross_project_created",
+        `נוצרה תעודת משלוח לפרויקט שאינו משויך ליוצר`,
+        input.createdById,
+        {
+          documentNumber,
+          projectId: row.projectId,
+          createdByRole: input.createdByRole,
+          projectAssignedToCreator: false,
+        }
+      );
+      await AuditRepository.log({
+        action: "CROSS_PROJECT_DOCUMENT_CREATED",
+        entityType: "OpsDeliveryNote",
+        entityId: row.id,
+        userId: input.createdById,
+        metadata: {
+          documentNumber,
+          projectId: row.projectId,
+          createdByRole: input.createdByRole,
+          projectAssignedToCreator: false,
+        },
+      });
+    }
     if (row.projectId) {
       await syncOpsDeliveryNoteArchiveDocument({
         opsDeliveryNoteId: row.id,
@@ -661,6 +717,7 @@ export const OpsDeliveryNotesRepository = {
       data: {
         opsDeliveryNoteId: id,
         tokenHash: hash,
+        tokenCiphertext: encryptShareToken(raw),
         publicId,
         createdById: actorId,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -694,17 +751,17 @@ export const OpsDeliveryNotesRepository = {
     const token = await prisma.opsDeliveryNoteSignToken.findFirst({
       where: {
         publicId: parsed.publicId,
-        revokedAt: null,
         opsDeliveryNote: { documentNumber, deletedAt: null },
       },
       include: { opsDeliveryNote: { include: includeDetail } },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.expiresAt && token.expiresAt < new Date()) {
-      throw new Error("הקישור פג תוקף");
-    }
     if (token.tokenHash !== hashSignToken(parsed.raw)) {
       throw new Error("קישור לא תקין");
+    }
+    if (token.revokedAt) throw new Error("הקישור בוטל");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("תוקף הקישור הסתיים");
     }
 
     const mapped = mapNote(token.opsDeliveryNote);
@@ -766,18 +823,20 @@ export const OpsDeliveryNotesRepository = {
     const token = await prisma.opsDeliveryNoteSignToken.findFirst({
       where: {
         publicId: parsed.publicId,
-        revokedAt: null,
-        usedAt: null,
         opsDeliveryNote: { documentNumber: opts.documentNumber, deletedAt: null },
       },
       include: { opsDeliveryNote: true },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.expiresAt && token.expiresAt < new Date()) {
-      throw new Error("הקישור פג תוקף");
-    }
     if (token.tokenHash !== hashSignToken(parsed.raw)) {
       throw new Error("קישור לא תקין");
+    }
+    if (token.revokedAt) throw new Error("הקישור בוטל");
+    if (token.usedAt || token.opsDeliveryNote.clientSignedAt) {
+      throw new Error("המסמך כבר נחתם");
+    }
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("תוקף הקישור הסתיים");
     }
 
     const note = token.opsDeliveryNote;

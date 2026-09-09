@@ -217,6 +217,7 @@ export class WorkOrdersRepository {
     skip?: number;
     date?: Date;
     projectId?: string;
+    projectIds?: string[];
     foremanId?: string;
   }) {
     const take = Math.min(opts?.take ?? 80, 200);
@@ -231,6 +232,9 @@ export class WorkOrdersRepository {
       where: {
         ...(opts?.status ? { status: opts.status } : {}),
         ...(opts?.projectId ? { projectId: opts.projectId } : {}),
+        ...(!opts?.projectId && opts?.projectIds
+          ? { projectId: { in: opts.projectIds } }
+          : {}),
         ...(opts?.foremanId ? { foremanId: opts.foremanId } : {}),
         ...(dayStart && dayEnd
           ? { date: { gte: dayStart, lt: dayEnd } }

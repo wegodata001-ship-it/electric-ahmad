@@ -5,6 +5,8 @@ export type MeasurementExcelColumn = {
   unit?: string;
   contractQuantity: number;
   invoicedQuantity: number;
+  previousApprovedQuantity: number;
+  currentQuantity: number;
   doneQuantity: number;
   remainingQuantity: number;
 };
@@ -18,7 +20,7 @@ export type MeasurementExcelRow = {
 
 /**
  * Builds an .xlsx matching the on-screen measurement matrix
- * (rooms × BOQ sections + room/column totals + remaining).
+ * (rows × BOQ sections + current/cumulative totals + signed remaining).
  */
 export async function buildMeasurementSheetExcel(input: {
   title: string;
@@ -57,14 +59,14 @@ export async function buildMeasurementSheetExcel(input: {
 
   // Header row 1: codes
   const headerRow = r;
-  ws.getCell(r, 1).value = "חדר / יחידה";
+  ws.getCell(r, 1).value = "שורה / יחידה";
   input.columns.forEach((col, i) => {
     const cell = ws.getCell(r, i + 2);
     cell.value = col.code;
     cell.font = { bold: true };
     cell.alignment = { horizontal: "center", wrapText: true };
   });
-  ws.getCell(r, input.columns.length + 2).value = "סה״כ חדר";
+  ws.getCell(r, input.columns.length + 2).value = "סה״כ שורה";
   ws.getCell(r, input.columns.length + 2).font = { bold: true };
   r += 1;
 
@@ -77,16 +79,18 @@ export async function buildMeasurementSheetExcel(input: {
   });
   r += 1;
 
-  // Header row 3: approved / done / remaining
-  ws.getCell(r, 1).value = "מאושר / בוצע / יתרה";
+  // Header row 3: contract / previous approved / current / cumulative / remaining
+  ws.getCell(r, 1).value = "חוזה / קודם / נוכחי / מצטבר / יתרה";
   input.columns.forEach((col, i) => {
     const cell = ws.getCell(r, i + 2);
-    cell.value = `מאושר ${col.contractQuantity}\nבוצע ${col.doneQuantity}\nיתרה ${col.remainingQuantity}${col.unit ? ` ${col.unit}` : ""}`;
+    cell.value = `כמות חוזה ${col.contractQuantity}\nאושר קודם ${col.previousApprovedQuantity}\nנוכחי ${col.currentQuantity}\nמצטבר ${col.doneQuantity}\nיתרה ${col.remainingQuantity}${col.unit ? ` ${col.unit}` : ""}${col.remainingQuantity < 0 ? "\nחריגה מכמות חוזה" : ""}`;
     cell.alignment = { horizontal: "center", wrapText: true, vertical: "top" };
-    if (col.remainingQuantity > 0) {
+    if (col.remainingQuantity < 0) {
       cell.font = { color: { argb: "FFDC2626" }, bold: true };
-    } else {
+    } else if (col.remainingQuantity === 0) {
       cell.font = { color: { argb: "FF059669" }, bold: true };
+    } else {
+      cell.font = { color: { argb: "FF374151" }, bold: true };
     }
   });
   r += 1;
@@ -106,7 +110,7 @@ export async function buildMeasurementSheetExcel(input: {
   }
 
   // Totals footer
-  ws.getCell(r, 1).value = "סה״כ שבוצע";
+  ws.getCell(r, 1).value = "סה״כ שבוצע (מצטבר)";
   ws.getCell(r, 1).font = { bold: true };
   input.columns.forEach((col, i) => {
     const cell = ws.getCell(r, i + 2);
@@ -123,7 +127,12 @@ export async function buildMeasurementSheetExcel(input: {
     cell.font = {
       bold: true,
       color: {
-        argb: col.remainingQuantity > 0 ? "FFDC2626" : "FF059669",
+        argb:
+          col.remainingQuantity < 0
+            ? "FFDC2626"
+            : col.remainingQuantity === 0
+              ? "FF059669"
+              : "FF374151",
       },
     };
     cell.alignment = { horizontal: "center" };

@@ -10,6 +10,11 @@ import { MeasurementSheetsRepository } from "@/repositories/measurement-sheets.r
 import { WorkflowRepository } from "@/repositories/workflow.repository";
 import { prisma } from "@/lib/prisma";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import {
+  canSeeAllProjects,
+  userCanAccessProject,
+} from "@/lib/auth/project-access";
+import { PROJECT_MANAGER_ROLE } from "@/lib/auth/roles";
 
 async function resolveReviewer(): Promise<{
   userId: string;
@@ -68,6 +73,37 @@ async function loadRelated(projectId: string | null | undefined) {
   };
 }
 
+async function documentReviewAccess(
+  session: { userId: string; role: string },
+  document: {
+    projectId: string | null;
+    createdById: string;
+    approvals?: Array<{ approver?: { id?: string | null } | null }>;
+  }
+) {
+  if (canSeeAllProjects(session.role)) {
+    return { allowed: true, projectWide: true };
+  }
+  if (session.role !== PROJECT_MANAGER_ROLE) {
+    return { allowed: false, projectWide: false };
+  }
+  const projectWide = document.projectId
+    ? await userCanAccessProject({
+        userId: session.userId,
+        role: session.role,
+        projectId: document.projectId,
+      })
+    : false;
+  const ownsDocument = document.createdById === session.userId;
+  const assignedApprover = (document.approvals ?? []).some(
+    (approval) => approval.approver?.id === session.userId
+  );
+  return {
+    allowed: projectWide || ownsDocument || assignedApprover,
+    projectWide,
+  };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await resolveReviewer();
@@ -114,7 +150,11 @@ export async function GET(req: NextRequest) {
     if (kind === "work_diary") {
       const doc = await WorkDiariesRepository.getById(documentId);
       if (!doc) return apiError("יומן לא נמצא", 404);
-      const related = await loadRelated(doc.projectId || doc.project?.id);
+      const access = await documentReviewAccess(session, doc);
+      if (!access.allowed) return apiError("אין הרשאה למסמך זה", 403);
+      const related = access.projectWide
+        ? await loadRelated(doc.projectId || doc.project?.id)
+        : { documents: [], photos: [] };
       let timeline: any[] = [];
       let conversation: any[] = [];
       if (doc.workflowDocumentId) {
@@ -136,7 +176,11 @@ export async function GET(req: NextRequest) {
     if (kind === "delivery_note") {
       const doc = await OpsDeliveryNotesRepository.getById(documentId);
       if (!doc) return apiError("תעודה לא נמצאה", 404);
-      const related = await loadRelated(doc.projectId || doc.project?.id);
+      const access = await documentReviewAccess(session, doc);
+      if (!access.allowed) return apiError("אין הרשאה למסמך זה", 403);
+      const related = access.projectWide
+        ? await loadRelated(doc.projectId || doc.project?.id)
+        : { documents: [], photos: [] };
       return apiSuccess({
         kind,
         document: doc,

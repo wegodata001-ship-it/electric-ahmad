@@ -5,7 +5,8 @@ import { DocumentsRepository } from "@/repositories/documents.repository";
 import { AiParseRepository } from "@/repositories/ai-parse.repository";
 import { AiDocumentParserService } from "@/lib/ai/document-parser.service";
 import type { ParsedContractBoqResult } from "@/lib/ai/types";
-import { getAuthContext } from "@/lib/auth/session";
+import { requireOfficeUser } from "@/lib/auth/office-session";
+import { canSeeAllProjects } from "@/lib/auth/project-access";
 import { uploadToStorage } from "@/lib/supabase/storage";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { PipelineError, pipelineLog } from "@/lib/api/pipeline-log";
@@ -22,7 +23,11 @@ export async function POST(request: NextRequest) {
   try {
     // ── auth ──────────────────────────────────────────────────────────────
     currentStep = "auth";
-    const { userId } = await getAuthContext();
+    const session = await requireOfficeUser();
+    if (!canSeeAllProjects(session.role)) {
+      return apiError("אין הרשאה ליצירת פרויקט", 403);
+    }
+    const { userId } = session;
 
     // ── UPLOAD: receive file ──────────────────────────────────────────────
     currentStep = "receive_file";

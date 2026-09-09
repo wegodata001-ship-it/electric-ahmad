@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getAuthContext } from "@/lib/auth/session";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
 import {
   uploadToStorage,
   resolveDocumentType,
@@ -14,7 +14,6 @@ type Ctx = { params: Promise<{ id: string }> };
 /** העלאת קובץ מצורף למסמך */
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
-    const { userId } = await getAuthContext();
     const { id } = await ctx.params;
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
@@ -24,6 +23,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const doc = await DocumentsRepository.findById(id);
     if (!doc) return apiError("מסמך לא נמצא", 404);
+    const { userId } = await requireProjectPermission(
+      "edit_draft",
+      doc.projectId
+    );
 
     const mimeType = file.type || "application/octet-stream";
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";

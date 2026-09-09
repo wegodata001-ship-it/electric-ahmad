@@ -16,6 +16,19 @@ type Item = {
   project?: { id: string; name: string } | null;
   foreman?: { id: string; name: string } | null;
 };
+type RawProject = {
+  id: string;
+  name?: string;
+  contractNumber?: string;
+  assigned?: boolean;
+};
+type RawForeman = {
+  id?: string;
+  employeeId?: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+};
 
 const STATUS: Record<string, string> = {
   draft: "טיוטה",
@@ -107,9 +120,10 @@ export function PmDeliveryNotesList() {
 
       <div className="space-y-3">
         {items.map((item) => (
-          <article
+          <Link
             key={item.id}
-            className="rounded-2xl bg-white px-4 py-4 ring-1 ring-blue-100"
+            href={`/print/ops-delivery-notes/${item.id}`}
+            className="block rounded-2xl bg-white px-4 py-4 ring-1 ring-blue-100"
           >
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -126,7 +140,7 @@ export function PmDeliveryNotesList() {
             <p className="mt-2 text-sm text-slate-600">
               {item.project?.name || "ללא פרויקט"}
             </p>
-          </article>
+          </Link>
         ))}
       </div>
     </div>
@@ -135,7 +149,9 @@ export function PmDeliveryNotesList() {
 
 export function PmCreateDeliveryNote() {
   const router = useRouter();
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projects, setProjects] = useState<
+    { id: string; name: string; assigned: boolean }[]
+  >([]);
   const [foremen, setForemen] = useState<{ id: string; name: string }[]>([]);
   const [projectId, setProjectId] = useState("");
   const [foremanId, setForemanId] = useState("");
@@ -154,17 +170,23 @@ export function PmCreateDeliveryNote() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/projects").then((r) => r.json()).catch(() => null),
+      fetch("/api/document-creation-projects")
+        .then((r) => r.json())
+        .catch(() => null),
       fetch("/api/foremen").then((r) => r.json()).catch(() => null),
     ]).then(([proj, fm]) => {
       const pRaw = proj?.data ?? proj;
       const list = Array.isArray(pRaw)
         ? pRaw
-        : Array.isArray(pRaw?.items)
-          ? pRaw.items
+        : Array.isArray(pRaw?.projects)
+          ? pRaw.projects
           : [];
       setProjects(
-        list.map((p: any) => ({ id: p.id, name: p.name || p.contractNumber }))
+        list.map((p: RawProject) => ({
+          id: p.id,
+          name: p.name || p.contractNumber,
+          assigned: Boolean(p.assigned),
+        }))
       );
       const fRaw = fm?.data ?? fm;
       const fList = Array.isArray(fRaw)
@@ -173,8 +195,8 @@ export function PmCreateDeliveryNote() {
           ? fRaw.items
           : [];
       setForemen(
-        fList.map((f: any) => ({
-          id: f.id || f.employeeId,
+        fList.map((f: RawForeman) => ({
+          id: f.id || f.employeeId || "",
           name:
             f.name ||
             `${f.firstName ?? ""} ${f.lastName ?? ""}`.trim() ||
@@ -260,11 +282,24 @@ export function PmCreateDeliveryNote() {
           onChange={(e) => setProjectId(e.target.value)}
         >
           <option value="">ללא / בחרו</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
+          <optgroup label="הפרויקטים שלי">
+            {projects
+              .filter((p) => p.assigned)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </optgroup>
+          <optgroup label="פרויקטים נוספים">
+            {projects
+              .filter((p) => !p.assigned)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </optgroup>
         </select>
       </label>
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText } from "lucide-react";
+import { FileText, FolderOpen } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 
 type MyDoc = {
@@ -19,7 +19,7 @@ type MyDoc = {
   updatedAt: string;
 };
 
-/** 📁 המסמכים שלי — field / driver profile tab */
+/** המסמכים שלי — field / driver profile tab */
 export function MyDocumentsPanel({ apiPath }: { apiPath: string }) {
   const [items, setItems] = useState<MyDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +36,10 @@ export function MyDocumentsPanel({ apiPath }: { apiPath: string }) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-black text-slate-900">📁 המסמכים שלי</h2>
+        <h2 className="flex items-center gap-2 text-xl font-black text-slate-900">
+          <FolderOpen className="h-5 w-5" />
+          המסמכים שלי
+        </h2>
         <p className="mt-1 text-sm text-slate-500">
           יומנים · תעודות · PDF · סטטוס עדכני
         </p>

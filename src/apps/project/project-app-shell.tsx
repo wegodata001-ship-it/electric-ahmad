@@ -16,6 +16,7 @@ const NAV = [
   { href: "/project/accounts", label: "עץ פרויקט" },
   { href: "/project/work-diaries", label: "יומני עבודה" },
   { href: "/project/delivery-notes", label: "תעודות" },
+  { href: "/project/workflow", label: "ציר תהליכים" },
   { href: "/project/documents", label: "מרכז מסמכים" },
 ];
 

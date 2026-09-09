@@ -7,7 +7,7 @@ import {
 import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
 import { requireOfficeUser } from "@/lib/auth/office-session";
 import { requireFieldManager } from "@/lib/auth/field-session";
-import { userCanAccessProject } from "@/lib/auth/project-access";
+import { assertCanAccessOwnedWdOrDn } from "@/lib/auth/cross-project-documents";
 import { roleGradeLabel } from "@/lib/auth/document-permissions";
 import { approvalStatusLabel } from "@/lib/workflow/approval-status-labels";
 
@@ -52,12 +52,8 @@ export default async function Page({
   let authorized = false;
   try {
     const office = await requireOfficeUser();
-    authorized = await userCanAccessProject({
-      userId: office.userId,
-      role: office.role,
-      projectId: diary.projectId,
-      scope: "operational",
-    });
+    await assertCanAccessOwnedWdOrDn(office, diary, "view_all");
+    authorized = true;
   } catch {
     try {
       const field = await requireFieldManager();

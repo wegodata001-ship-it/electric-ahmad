@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { WorkflowCenterPage } from "@/features/platform/components";
 
 export default function Page() {
-  redirect("/operations");
+  return <WorkflowCenterPage />;
 }

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { getAuthContext } from "@/lib/auth/session";
+import { requireOfficeUser } from "@/lib/auth/office-session";
+import { assertCanAccessOwnedWdOrDn } from "@/lib/auth/cross-project-documents";
 import { DeliveryNotesRepository } from "@/repositories/delivery-notes.repository";
 import { uploadToStorage, resolveDocumentType } from "@/lib/supabase/storage";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
@@ -9,10 +10,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await getAuthContext();
+    const session = await requireOfficeUser();
     const { id } = await params;
     const note = await DeliveryNotesRepository.findById(id);
     if (!note) return apiError("תעודת משלוח לא נמצאה", 404);
+    await assertCanAccessOwnedWdOrDn(session, note, "edit_draft");
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;

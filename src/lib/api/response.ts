@@ -34,6 +34,19 @@ export async function handleApiError(error: unknown) {
     return apiError(error.message, error.status);
   }
 
+  if (error instanceof Error) {
+    const publicLinkStatus: Record<string, number> = {
+      "קישור לא נמצא": 404,
+      "קישור לא תקין": 403,
+      "הקישור בוטל": 410,
+      "תוקף הקישור הסתיים": 410,
+      "המסמך כבר נחתם": 410,
+      "לא ניתן ליצור קישור: המסמך המבוקש לא נמצא": 404,
+    };
+    const status = publicLinkStatus[error.message];
+    if (status) return apiError(error.message, status);
+  }
+
   if (error instanceof PipelineError) {
     pipelineLog("ERROR", `${error.stage}/${error.step}`, error.message);
     return apiError(toUserFacingError(error, error.message), 500);

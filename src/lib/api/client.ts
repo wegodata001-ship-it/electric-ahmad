@@ -43,8 +43,11 @@ export const apiClient = {
     });
   },
 
-  delete<T>(url: string) {
-    return request<T>(url, { method: "DELETE" });
+  delete<T>(url: string, body?: unknown) {
+    return request<T>(url, {
+      method: "DELETE",
+      body: body ? JSON.stringify(body) : undefined,
+    });
   },
 
   upload<T>(url: string, formData: FormData) {

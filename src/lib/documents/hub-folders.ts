@@ -3,16 +3,16 @@
  */
 
 export const HUB_FOLDERS = [
-  { id: "work_diary", label: "יומני עבודה", emoji: "📄" },
-  { id: "measurement", label: "דפי מדידה", emoji: "📄" },
-  { id: "invoice", label: "חשבונות", emoji: "📄" },
-  { id: "delivery", label: "תעודות משלוח", emoji: "📄" },
-  { id: "change", label: "שינויים", emoji: "📄" },
-  { id: "signed", label: "מסמכים חתומים", emoji: "✍️" },
-  { id: "revision", label: "הוחזרו לתיקון", emoji: "🔴" },
-  { id: "draft", label: "טיוטות", emoji: "📝" },
-  { id: "versions", label: "גרסאות", emoji: "🕒" },
-  { id: "files", label: "קבצים ותמונות", emoji: "📎" },
+  { id: "work_diary", label: "יומני עבודה" },
+  { id: "measurement", label: "דפי מדידה" },
+  { id: "invoice", label: "חשבונות" },
+  { id: "delivery", label: "תעודות משלוח" },
+  { id: "change", label: "שינויים" },
+  { id: "signed", label: "מסמכים חתומים" },
+  { id: "revision", label: "הוחזרו לתיקון" },
+  { id: "draft", label: "טיוטות" },
+  { id: "versions", label: "גרסאות" },
+  { id: "files", label: "קבצים ותמונות" },
 ] as const;
 
 export type HubFolderId = (typeof HUB_FOLDERS)[number]["id"];

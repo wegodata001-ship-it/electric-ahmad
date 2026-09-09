@@ -8,6 +8,7 @@ export type FieldSessionPayload = {
   userId: string;
   employeeId: string;
   role: typeof FIELD_MANAGER_ROLE;
+  sessionVersion: number;
   exp: number;
 };
 
@@ -48,8 +49,9 @@ async function hmacSign(data: string): Promise<string> {
 }
 
 export async function signFieldSession(
-  payload: Omit<FieldSessionPayload, "exp" | "role"> & {
+  payload: Omit<FieldSessionPayload, "exp" | "role" | "sessionVersion"> & {
     role?: typeof FIELD_MANAGER_ROLE;
+    sessionVersion?: number;
     ttlSeconds?: number;
   }
 ): Promise<string> {
@@ -57,6 +59,7 @@ export async function signFieldSession(
     userId: payload.userId,
     employeeId: payload.employeeId,
     role: FIELD_MANAGER_ROLE,
+    sessionVersion: payload.sessionVersion ?? 0,
     exp:
       Math.floor(Date.now() / 1000) +
       (payload.ttlSeconds ?? FIELD_SESSION_TTL_SECONDS),

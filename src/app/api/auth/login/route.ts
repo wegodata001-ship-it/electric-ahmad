@@ -107,6 +107,16 @@ export async function POST(request: NextRequest) {
       return apiError("שם משתמש או סיסמה שגויים", 401);
     }
 
+    if (user.status !== "ACTIVE") {
+      logFailedLogin({
+        bucket: LOGIN_BUCKET,
+        ip,
+        identifier,
+        reason: `user-${user.status.toLowerCase()}`,
+      });
+      return apiError("המשתמש אינו פעיל", 403);
+    }
+
     const portalPath = portalHomeForRole(user.role);
     if (portalPath === "/login") {
       return apiError("אין Portal מוגדר לתפקיד זה", 403);
@@ -117,9 +127,14 @@ export async function POST(request: NextRequest) {
       if (!user.employee) {
         return apiError("חשבון שטח אינו מקושר לעובד", 403);
       }
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
       const token = await signFieldSession({
         userId: user.id,
         employeeId: user.employee.id,
+        sessionVersion: user.sessionVersion,
       });
       await AuditRepository.log({
         action: "UPDATE",
@@ -151,6 +166,11 @@ export async function POST(request: NextRequest) {
       return apiError("אין הרשאה להתחברות", 401);
     }
 
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
     const ttl = rememberMe
       ? OFFICE_SESSION_REMEMBER_TTL_SECONDS
       : OFFICE_SESSION_TTL_SECONDS;
@@ -158,6 +178,7 @@ export async function POST(request: NextRequest) {
     const token = await signOfficeSession({
       userId: user.id,
       role: user.role,
+      sessionVersion: user.sessionVersion,
       ttlSeconds: ttl,
     });
 

@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
-import { requireFieldManager } from "@/lib/auth/field-session";
+import {
+  assertProjectSelectable,
+  requireFieldManager,
+} from "@/lib/auth/field-session";
 import { WorkOrdersRepository } from "@/repositories/work-orders.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import type { WorkOrderStatus } from "@prisma/client";
@@ -23,6 +26,9 @@ export async function PATCH(req: NextRequest, context: Ctx) {
     const session = await requireFieldManager();
     const { id } = await context.params;
     const body = await req.json();
+    if (body.projectId) {
+      await assertProjectSelectable(String(body.projectId), session.foremanId);
+    }
 
     const order = await WorkOrdersRepository.update(id, session.foremanId, {
       projectId: body.projectId ? String(body.projectId) : undefined,

@@ -490,7 +490,7 @@ export function DocumentsHubV2Page({
           <FolderChip
             key={f.id}
             active={folderId === f.id}
-            label={`${f.emoji} ${f.label}`}
+            label={f.label}
             count={counts[f.id] || 0}
             onClick={() => setFolderId(f.id)}
           />

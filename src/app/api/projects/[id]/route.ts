@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { ProjectsRepository } from "@/repositories/projects.repository";
-import { requireOfficeAuth } from "@/lib/auth/assert-office";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
 import { requireOfficeUser } from "@/lib/auth/office-session";
 import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
@@ -10,8 +10,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireOfficeAuth();
     const { id } = await params;
+    await requireProjectPermission("view_all", id);
     const data = await ProjectsRepository.findById(id);
     if (!data) return apiError("פרויקט לא נמצא", 404);
     return apiSuccess(data);

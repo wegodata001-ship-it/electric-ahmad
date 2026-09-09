@@ -26,8 +26,9 @@ export class DocumentsRepository {
     _count: { select: { attachments: true } },
   };
 
-  static async findAll() {
+  static async findAll(projectIds?: string[]) {
     const rows = await prisma.document.findMany({
+      where: projectIds ? { projectId: { in: projectIds } } : undefined,
       include: this.documentInclude,
       orderBy: { createdAt: "desc" },
     });
@@ -60,9 +61,10 @@ export class DocumentsRepository {
     return row ? mapDocument(row) : null;
   }
 
-  static async findRecent(limit = 5) {
+  static async findRecent(limit = 5, projectIds?: string[]) {
     const rows = await prisma.document.findMany({
       take: limit,
+      where: projectIds ? { projectId: { in: projectIds } } : undefined,
       include: this.documentInclude,
       orderBy: { createdAt: "desc" },
     });
@@ -70,13 +72,21 @@ export class DocumentsRepository {
   }
 
   /** חיפוש במסמכים ובקבצים מצורפים */
-  static async search(query: string, projectId?: string) {
+  static async search(
+    query: string,
+    projectId?: string,
+    projectIds?: string[]
+  ) {
     const q = query.trim();
     if (!q) return [];
 
     const rows = await prisma.document.findMany({
       where: {
-        ...(projectId ? { projectId } : {}),
+        ...(projectId
+          ? { projectId }
+          : projectIds
+            ? { projectId: { in: projectIds } }
+            : {}),
         OR: [
           { name: { contains: q, mode: "insensitive" } },
           { folderPath: { contains: q, mode: "insensitive" } },

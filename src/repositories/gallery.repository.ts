@@ -24,8 +24,8 @@ export class GalleryRepository {
     };
   }
 
-  static async findAll() {
-    const docs = await DocumentsRepository.findAll();
+  static async findAll(projectIds?: string[]) {
+    const docs = await DocumentsRepository.findAll(projectIds);
     return docs
       .filter((d) => d.type === "image" || d.type === "video")
       .map((d) => this.toGalleryItem(d)!)
@@ -40,8 +40,11 @@ export class GalleryRepository {
       .filter(Boolean);
   }
 
-  static async findRecent(limit = 12) {
-    const docs = await DocumentsRepository.findRecent(Math.max(limit * 3, 24));
+  static async findRecent(limit = 12, projectIds?: string[]) {
+    const docs = await DocumentsRepository.findRecent(
+      Math.max(limit * 3, 24),
+      projectIds
+    );
     return docs
       .filter((d) => d.type === "image" || d.type === "video")
       .slice(0, limit)

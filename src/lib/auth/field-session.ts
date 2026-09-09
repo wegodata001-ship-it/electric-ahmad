@@ -47,7 +47,12 @@ export async function requireFieldManager(): Promise<FieldForemanSession> {
     include: { employee: true },
   });
 
-  if (!user || !isFieldManagerRole(user.role)) {
+  if (
+    !user ||
+    user.status !== "ACTIVE" ||
+    user.sessionVersion !== (payload.sessionVersion ?? 0) ||
+    !isFieldManagerRole(user.role)
+  ) {
     throw new FieldAuthError("אין הרשאת מנהל עבודה", 403);
   }
   if (!user.passwordHash || !user.username) {
@@ -81,10 +86,20 @@ export async function getCurrentFieldForeman(): Promise<FieldForemanSession> {
   return requireFieldManager();
 }
 
-/** Field managers belong to the company — any active project may be selected. */
-export async function assertProjectSelectable(projectId: string): Promise<void> {
+/** Field managers may use only projects where they are foreman or a member. */
+export async function assertProjectSelectable(
+  projectId: string,
+  foremanId: string
+): Promise<void> {
   const project = await prisma.project.findFirst({
-    where: { id: projectId, deletedAt: null },
+    where: {
+      id: projectId,
+      deletedAt: null,
+      OR: [
+        { foremanId },
+        { employees: { some: { employeeId: foremanId } } },
+      ],
+    },
     select: { id: true, status: true },
   });
   if (!project) {

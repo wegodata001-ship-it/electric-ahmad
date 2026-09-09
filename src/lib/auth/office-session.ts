@@ -52,6 +52,8 @@ export async function requireOfficeUser(): Promise<OfficeUserSession> {
       email: true,
       username: true,
       role: true,
+      status: true,
+      sessionVersion: true,
       avatarUrl: true,
       passwordHash: true,
       employee: {
@@ -64,7 +66,13 @@ export async function requireOfficeUser(): Promise<OfficeUserSession> {
     },
   });
 
-  if (!user || !user.passwordHash || !isOfficeRole(user.role)) {
+  if (
+    !user ||
+    user.status !== "ACTIVE" ||
+    user.sessionVersion !== (payload.sessionVersion ?? 0) ||
+    !user.passwordHash ||
+    !isOfficeRole(user.role)
+  ) {
     throw new OfficeAuthError("אין הרשאת מנהל פרויקט", 403);
   }
 

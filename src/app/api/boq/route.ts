@@ -6,15 +6,27 @@ import { parseListQuery } from "@/lib/api/list-query";
 import type { BoqItemKind, BoqItemStatus } from "@prisma/client";
 import { parseJsonBody } from "@/lib/validation/parse-body";
 import { boqCreateSchema } from "@/lib/validation/schemas";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
+import { listProjectsForRole } from "@/lib/auth/project-access";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireOfficeUser();
+    const session = await requireOfficeUser();
     const sp = request.nextUrl.searchParams;
     const projectId = sp.get("projectId") ?? undefined;
     const itemKind = sp.get("itemKind");
     const status = sp.get("status");
     const parsed = parseListQuery(sp, { defaultTake: 50, maxTake: 200 });
+    if (projectId) await requireProjectPermission("view_all", projectId);
+    const assignedProjects = await listProjectsForRole({
+      userId: session.userId,
+      role: session.role,
+      mode: "assigned",
+    });
+    const projectIds =
+      session.role === "PROJECT_MANAGER"
+        ? assignedProjects.map((project) => project.id)
+        : undefined;
 
     const usePaged =
       parsed.paginated ||
@@ -25,6 +37,7 @@ export async function GET(request: NextRequest) {
     if (usePaged) {
       const result = await BOQRepository.listPage({
         projectId,
+        projectIds,
         q: parsed.q,
         itemKind: itemKind as BoqItemKind | "all" | null,
         status: status as BoqItemStatus | "all" | null,
@@ -38,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     const data = projectId
       ? await BOQRepository.findByProject(projectId)
-      : await BOQRepository.findAll();
+      : await BOQRepository.findAll(undefined, projectIds);
     return apiSuccess(data);
   } catch (error) {
     return handleApiError(error);
@@ -49,6 +62,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await requireOfficeUser();
     const body = await parseJsonBody(request, boqCreateSchema);
+    await requireProjectPermission("create", body.projectId);
 
     const item = await BOQRepository.create(
       {

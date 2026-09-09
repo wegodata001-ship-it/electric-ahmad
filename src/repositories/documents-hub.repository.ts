@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { DocumentsRepository } from "@/repositories/documents.repository";
 import { WorkflowRepository } from "@/repositories/workflow.repository";
 import {
@@ -138,6 +139,7 @@ export class DocumentsHubRepository {
       take?: number;
       skip?: number;
       cursor?: string | null;
+      allowedProjectIds?: string[];
     }
   ): Promise<DocumentsHubListResult> {
     const take = Math.max(1, Math.min(opts.take ?? 300, 500));
@@ -147,6 +149,54 @@ export class DocumentsHubRepository {
     const qLike = trimmedQ ? `%${trimmedQ}%` : null;
     const folderIdParam =
       opts.folderId && opts.folderId !== "all" ? opts.folderId : null;
+    const scopedIds =
+      opts.allowedProjectIds === undefined
+        ? null
+        : opts.allowedProjectIds.length
+          ? Prisma.join(opts.allowedProjectIds)
+          : Prisma.sql`NULL`;
+    const scopeArchive = scopedIds
+      ? Prisma.sql`AND (
+          a."projectId" IN (${scopedIds})
+          OR (
+            a."sourceType" = 'work_diary'
+            AND EXISTS (
+              SELECT 1 FROM "WorkDiary" owned_wd
+              WHERE owned_wd.id = a."sourceId"
+                AND owned_wd."createdById" = ${officeUserId}
+            )
+          )
+          OR (
+            a."sourceType" = 'delivery_note'
+            AND EXISTS (
+              SELECT 1 FROM "OpsDeliveryNote" owned_dn
+              WHERE owned_dn.id = a."sourceId"
+                AND owned_dn."createdById" = ${officeUserId}
+            )
+          )
+        )`
+      : Prisma.empty;
+    const scopeDiaries = scopedIds
+      ? Prisma.sql`AND (
+          d."projectId" IN (${scopedIds})
+          OR d."createdById" = ${officeUserId}
+        )`
+      : Prisma.empty;
+    const scopeNotes = scopedIds
+      ? Prisma.sql`AND (
+          n."projectId" IN (${scopedIds})
+          OR n."createdById" = ${officeUserId}
+        )`
+      : Prisma.empty;
+    const scopeSheets = scopedIds
+      ? Prisma.sql`AND s."projectId" IN (${scopedIds})`
+      : Prisma.empty;
+    const scopeInvoices = scopedIds
+      ? Prisma.sql`AND inv."projectId" IN (${scopedIds})`
+      : Prisma.empty;
+    const scopeFiles = scopedIds
+      ? Prisma.sql`AND doc."projectId" IN (${scopedIds})`
+      : Prisma.empty;
 
     const rows = await prisma.$queryRaw<HubSqlRow[]>`
       WITH auth AS (
@@ -155,6 +205,7 @@ export class DocumentsHubRepository {
         LEFT JOIN "Employee" emp ON emp."userId" = u.id
         WHERE u.id = ${officeUserId}
           AND u."passwordHash" IS NOT NULL
+          AND u.status = 'ACTIVE'
           AND u.role IN (
             'PROJECT_MANAGER',
             'OPERATIONS_MANAGER',
@@ -177,6 +228,7 @@ export class DocumentsHubRepository {
         FROM "Document" a
         WHERE EXISTS (SELECT 1 FROM auth)
           AND (${projectId}::text IS NULL OR a."projectId" = ${projectId})
+          ${scopeArchive}
           AND a."sourceType" IN (
             'work_diary',
             'delivery_note',
@@ -217,6 +269,7 @@ export class DocumentsHubRepository {
         WHERE d."deletedAt" IS NULL
           AND EXISTS (SELECT 1 FROM auth)
           AND (${projectId}::text IS NULL OR d."projectId" = ${projectId})
+          ${scopeDiaries}
       ),
       notes AS (
         SELECT
@@ -248,6 +301,7 @@ export class DocumentsHubRepository {
           AND n."projectId" IS NOT NULL
           AND EXISTS (SELECT 1 FROM auth)
           AND (${projectId}::text IS NULL OR n."projectId" = ${projectId})
+          ${scopeNotes}
       ),
       sheets AS (
         SELECT
@@ -277,6 +331,7 @@ export class DocumentsHubRepository {
           ON arch."sourceType" = 'measurement_sheet' AND arch."sourceId" = s.id
         WHERE EXISTS (SELECT 1 FROM auth)
           AND (${projectId}::text IS NULL OR s."projectId" = ${projectId})
+          ${scopeSheets}
       ),
       invoices AS (
         SELECT
@@ -307,6 +362,7 @@ export class DocumentsHubRepository {
           ON arch_inv."sourceType" = 'invoice' AND arch_inv."sourceId" = inv.id
         WHERE EXISTS (SELECT 1 FROM auth)
           AND (${projectId}::text IS NULL OR inv."projectId" = ${projectId})
+          ${scopeInvoices}
       ),
       files AS (
         SELECT
@@ -334,6 +390,7 @@ export class DocumentsHubRepository {
         LEFT JOIN "User" up ON up.id = doc."uploadedById"
         WHERE EXISTS (SELECT 1 FROM auth)
           AND (${projectId}::text IS NULL OR doc."projectId" = ${projectId})
+          ${scopeFiles}
           AND (
             doc."sourceType" IS NULL
             OR doc."sourceType" NOT IN (
@@ -733,6 +790,7 @@ export class DocumentsHubRepository {
       clientName?: string;
       status?: string;
       take?: number;
+      allowedProjectIds?: string[];
     }
   ): Promise<DocumentsArchiveListResult> {
     const take = filters.take ?? 100;
@@ -744,6 +802,24 @@ export class DocumentsHubRepository {
     const documentNumber = filters.documentNumber?.trim() || null;
     const clientName = filters.clientName?.trim() || null;
     const status = filters.status || null;
+    const scopedIds =
+      filters.allowedProjectIds === undefined
+        ? null
+        : filters.allowedProjectIds.length
+          ? Prisma.join(filters.allowedProjectIds)
+          : Prisma.sql`NULL`;
+    const scopeDiaries = scopedIds
+      ? Prisma.sql`AND (
+          d."projectId" IN (${scopedIds})
+          OR d."createdById" = ${officeUserId}
+        )`
+      : Prisma.empty;
+    const scopeNotes = scopedIds
+      ? Prisma.sql`AND (
+          n."projectId" IN (${scopedIds})
+          OR n."createdById" = ${officeUserId}
+        )`
+      : Prisma.empty;
 
     const rows = await prisma.$queryRaw<ArchiveSqlRow[]>`
       WITH auth AS (
@@ -752,6 +828,7 @@ export class DocumentsHubRepository {
         LEFT JOIN "Employee" emp ON emp."userId" = u.id
         WHERE u.id = ${officeUserId}
           AND u."passwordHash" IS NOT NULL
+          AND u.status = 'ACTIVE'
           AND u.role IN (
             'PROJECT_MANAGER',
             'OPERATIONS_MANAGER',
@@ -800,6 +877,7 @@ export class DocumentsHubRepository {
           AND d."deletedAt" IS NULL
           AND EXISTS (SELECT 1 FROM auth)
           AND (${projectId}::text IS NULL OR d."projectId" = ${projectId})
+          ${scopeDiaries}
           AND (
             ${documentNumber}::text IS NULL
             OR d."documentNumber" ILIKE '%' || ${documentNumber} || '%'
@@ -840,6 +918,7 @@ export class DocumentsHubRepository {
           AND n."deletedAt" IS NULL
           AND EXISTS (SELECT 1 FROM auth)
           AND (${projectId}::text IS NULL OR n."projectId" = ${projectId})
+          ${scopeNotes}
           AND (
             ${status}::text IS NULL
             OR n.status::text = ${status}
@@ -1505,6 +1584,34 @@ export class DocumentsHubRepository {
     }
 
     throw new Error("סוג מסמך לא נתמך להוספה לארכיון");
+  }
+
+  static async projectIdForEntity(kind: string, entityId: string) {
+    if (kind === "work_diary") {
+      return (
+        await prisma.workDiary.findFirst({
+          where: { id: entityId, deletedAt: null },
+          select: { projectId: true },
+        })
+      )?.projectId ?? null;
+    }
+    if (kind === "measurement_sheet") {
+      return (
+        await prisma.measurementSheet.findUnique({
+          where: { id: entityId },
+          select: { projectId: true },
+        })
+      )?.projectId ?? null;
+    }
+    if (kind === "delivery_note") {
+      return (
+        await prisma.opsDeliveryNote.findFirst({
+          where: { id: entityId, deletedAt: null },
+          select: { projectId: true },
+        })
+      )?.projectId ?? null;
+    }
+    return null;
   }
 
   private static mapApprovals(rows: any[]) {

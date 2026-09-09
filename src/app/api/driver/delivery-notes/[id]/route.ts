@@ -1,5 +1,9 @@
 import { NextRequest } from "next/server";
-import { requireTruckDriver } from "@/lib/auth/driver-session";
+import {
+  assertDriverProjectSelectable,
+  requireTruckDriver,
+} from "@/lib/auth/driver-session";
+import { OfficeAuthError } from "@/lib/auth/office-session";
 import {
   OpsDeliveryNotesRepository,
   resolveDriverDnApproverIds,
@@ -52,6 +56,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     }
 
     const body = await req.json().catch(() => ({}));
+    if (body.projectId) {
+      await assertDriverProjectSelectable(String(body.projectId));
+    }
     const updated = await OpsDeliveryNotesRepository.update(id, {
       projectId: body.projectId,
       noteDate: body.noteDate ? new Date(body.noteDate) : undefined,
@@ -104,6 +111,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     return apiSuccess(updated);
   } catch (error) {
+    if (error instanceof OfficeAuthError) return handleApiError(error);
     if (error instanceof Error) return apiError(error.message, 400);
     return handleApiError(error);
   }

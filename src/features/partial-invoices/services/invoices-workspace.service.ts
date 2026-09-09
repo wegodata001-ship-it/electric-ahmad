@@ -36,8 +36,38 @@ export const invoicesWorkspaceService = {
     return apiClient.post<any>("/api/measurement-sheets", body);
   },
 
-  addRows(sheetId: string, names: string[]) {
-    return apiClient.post<any>(`/api/measurement-sheets/${sheetId}/rows`, { names });
+  addRows(sheetId: string, names: string[], expectedVersion?: number) {
+    return apiClient.post<any>(`/api/measurement-sheets/${sheetId}/rows`, {
+      names,
+      expectedVersion,
+    });
+  },
+
+  renameRow(
+    sheetId: string,
+    rowId: string,
+    name: string,
+    expectedVersion?: number
+  ) {
+    return apiClient.patch<any>(`/api/measurement-sheets/${sheetId}/rows`, {
+      rowId,
+      name,
+      expectedVersion,
+    });
+  },
+
+  deleteRow(sheetId: string, rowId: string, expectedVersion?: number) {
+    return apiClient.delete<any>(`/api/measurement-sheets/${sheetId}/rows`, {
+      rowId,
+      expectedVersion,
+    });
+  },
+
+  updateSheet(
+    sheetId: string,
+    body: { title?: string; notes?: string | null; expectedVersion?: number }
+  ) {
+    return apiClient.patch<any>(`/api/measurement-sheets/${sheetId}`, body);
   },
 
   listRooms(projectId: string, includeHidden = false) {

@@ -70,7 +70,7 @@ export function ProjectHome() {
         </div>
         {projects.length === 0 && (
           <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-400">
-            אין פרויקטים להצגה
+            אין פרויקטים משויכים לחשבון שלך.
           </p>
         )}
         {projects.map((p) => (

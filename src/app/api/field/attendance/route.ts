@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     if (action === "check_in") {
       if (body.projectId) {
-        await assertProjectSelectable(body.projectId);
+        await assertProjectSelectable(body.projectId, session.foremanId);
       }
       const attendance = await FieldAttendanceRepository.checkIn(
         session.foremanId,

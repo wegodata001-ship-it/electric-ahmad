@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { ExternalLink, FileText } from "lucide-react";
+import type { ClientPortalPayload } from "@/lib/share/client-portal-payload";
 
 type ShareView = {
   title: string;
@@ -10,6 +11,7 @@ type ShareView = {
   projectName: string | null;
   entityType: string;
   document: { name: string; url: string | null; type?: string } | null;
+  portal: ClientPortalPayload | null;
   expiresAt: string | null;
 };
 
@@ -63,7 +65,57 @@ export default function PublicSharePage() {
                 {data.notes}
               </p>
             )}
-            {data.document?.url ? (
+            {data.portal && (
+              <div className="space-y-4 rounded-2xl border border-slate-200 p-4">
+                <div>
+                  <p className="text-xs font-bold text-blue-700">
+                    {data.portal.document.kindLabel}
+                  </p>
+                  <h2 className="mt-1 text-lg font-black text-slate-900">
+                    {data.portal.document.number}
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    {data.portal.document.statusLabel}
+                  </p>
+                </div>
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  <InfoRow label="פרויקט" value={data.portal.project.name} />
+                  <InfoRow label="לקוח" value={data.portal.project.clientName} />
+                  <InfoRow
+                    label="תאריך"
+                    value={data.portal.document.date || "—"}
+                  />
+                  <InfoRow
+                    label="מנהל עבודה"
+                    value={data.portal.project.foreman}
+                  />
+                </div>
+                {data.portal.summary.whatWasDone && (
+                  <section>
+                    <h3 className="text-sm font-black">תוכן המסמך</h3>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+                      {data.portal.summary.whatWasDone}
+                    </p>
+                  </section>
+                )}
+                {data.portal.lineItems.length > 0 && (
+                  <ul className="divide-y divide-slate-100 text-sm">
+                    {data.portal.lineItems.map((item) => (
+                      <li
+                        key={item.id}
+                        className="flex justify-between gap-3 py-2"
+                      >
+                        <span>{item.description}</span>
+                        <span className="shrink-0 font-semibold">
+                          {item.quantity} {item.unit}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            {!data.portal && data.document?.url ? (
               <a
                 href={data.document.url}
                 target="_blank"
@@ -74,10 +126,12 @@ export default function PublicSharePage() {
                 פתח מסמך
               </a>
             ) : (
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm text-slate-500">
-                <FileText className="h-4 w-4" />
-                אין קובץ מצורף לצפייה
-              </div>
+              !data.portal && (
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm text-slate-500">
+                  <FileText className="h-4 w-4" />
+                  אין קובץ מצורף לצפייה
+                </div>
+              )
             )}
             {data.expiresAt && (
               <p className="text-[11px] text-slate-400">
@@ -88,5 +142,14 @@ export default function PublicSharePage() {
         )}
       </div>
     </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <p className="flex justify-between gap-2">
+      <span className="text-slate-400">{label}</span>
+      <strong>{value || "—"}</strong>
+    </p>
   );
 }

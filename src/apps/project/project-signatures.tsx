@@ -2,9 +2,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Link2, RefreshCw } from "lucide-react";
+import {
+  Copy,
+  Download,
+  Eye,
+  FileText,
+  Link2,
+  RefreshCw,
+  Signature,
+} from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { formatRelative } from "@/utils/format";
+import { Button, Modal, useToast } from "@/components/ui";
 
 type ShareLinkItem = {
   id: string;
@@ -14,6 +23,15 @@ type ShareLinkItem = {
   createdAt: string;
   usedAt: string | null;
   expiresAt: string | null;
+  projectName: string | null;
+  documentUrl: string;
+  pdfUrl: string | null;
+  downloadUrl: string | null;
+  signatureDetailsUrl: string | null;
+  signUrl: string | null;
+  canCopy: boolean;
+  signerName: string | null;
+  signedAt: string | null;
 };
 
 const KIND: Record<string, string> = {
@@ -31,6 +49,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 
 /** Existing signatures tracker, reusable inside the unified document center. */
 export function ProjectSignatures({ embedded = false }: { embedded?: boolean }) {
+  const toast = useToast();
   const pathname = usePathname();
   const documentsPath = pathname.startsWith("/system")
     ? "/system/documents"
@@ -40,6 +59,7 @@ export function ProjectSignatures({ embedded = false }: { embedded?: boolean }) 
   const [items, setItems] = useState<ShareLinkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<ShareLinkItem | null>(null);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -51,8 +71,39 @@ export function ProjectSignatures({ embedded = false }: { embedded?: boolean }) 
   }, []);
 
   useEffect(() => {
-    reload();
+    void Promise.resolve().then(reload);
   }, [reload]);
+
+  async function copySignLink(item: ShareLinkItem) {
+    if (!item.signUrl) {
+      toast.error("לא ניתן לשחזר token של קישור ישן. יש ליצור קישור חדש ממסך המסמך.");
+      return;
+    }
+    const url = new URL(item.signUrl, window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("הקישור הועתק");
+    } catch {
+      toast.error("העתקת הקישור נכשלה");
+    }
+  }
+
+  async function renewSignLink(item: ShareLinkItem) {
+    try {
+      const created = await apiClient.post<{ url: string }>(
+        `/api/share-links/${item.kind}/${item.id}/renew`,
+        {}
+      );
+      await navigator.clipboard.writeText(created.url);
+      toast.success("נוצר קישור חדש והקישור הועתק");
+      setSelected(null);
+      reload();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "יצירת הקישור נכשלה"
+      );
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -106,7 +157,15 @@ export function ProjectSignatures({ embedded = false }: { embedded?: boolean }) 
           return (
             <article
               key={item.id}
-              className="rounded-3xl border border-blue-100 bg-white px-4 py-4"
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelected(item)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  setSelected(item);
+                }
+              }}
+              className="cursor-pointer rounded-2xl border border-blue-100 bg-white px-4 py-3 transition hover:border-blue-300 hover:shadow-sm"
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
@@ -115,6 +174,7 @@ export function ProjectSignatures({ embedded = false }: { embedded?: boolean }) 
                   </p>
                   <p className="mt-1 font-black">{item.documentNumber}</p>
                   <p className="mt-1 text-xs text-slate-500">
+                    {item.projectName ? `${item.projectName} · ` : ""}
                     נוצר {formatRelative(item.createdAt)}
                     {item.usedAt
                       ? ` · נחתם ${formatRelative(item.usedAt)}`
@@ -127,10 +187,118 @@ export function ProjectSignatures({ embedded = false }: { embedded?: boolean }) 
                   {st.label}
                 </span>
               </div>
+              <div className="mt-3 flex flex-wrap gap-3 border-t border-slate-100 pt-2 text-xs font-bold text-blue-700">
+                <span>צפייה</span>
+                <span>PDF</span>
+                {item.status === "active" && <span>העתק קישור</span>}
+                {item.status === "used" && <span>פרטי חתימה</span>}
+              </div>
             </article>
           );
         })}
       </div>
+
+      <Modal
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        title={selected?.documentNumber ?? "מסמך"}
+        description={
+          selected
+            ? `${KIND[selected.kind] || selected.kind} · ${
+                STATUS[selected.status]?.label || selected.status
+              }`
+            : undefined
+        }
+      >
+        {selected && (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-50 p-4 text-sm">
+              <p>
+                <span className="text-slate-500">פרויקט: </span>
+                <strong>{selected.projectName || "—"}</strong>
+              </p>
+              {selected.signerName && (
+                <p className="mt-2">
+                  <span className="text-slate-500">שם החותם: </span>
+                  <strong>{selected.signerName}</strong>
+                </p>
+              )}
+              {selected.signedAt && (
+                <p className="mt-2">
+                  <span className="text-slate-500">נחתם: </span>
+                  <strong>
+                    {new Date(selected.signedAt).toLocaleString("he-IL")}
+                  </strong>
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button
+                variant="outline"
+                onClick={() => window.open(selected.documentUrl, "_blank")}
+              >
+                <Eye className="h-4 w-4" />
+                צפייה במסמך
+              </Button>
+              {selected.pdfUrl && (
+                <Button
+                  variant="outline"
+                  onClick={() => window.open(selected.pdfUrl!, "_blank")}
+                >
+                  <FileText className="h-4 w-4" />
+                  {selected.status === "used"
+                    ? "צפייה ב־PDF החתום"
+                    : "צפייה ב־PDF"}
+                </Button>
+              )}
+              {selected.downloadUrl && (
+                <Button
+                  variant="outline"
+                  onClick={() => window.open(selected.downloadUrl!, "_blank")}
+                >
+                  <Download className="h-4 w-4" />
+                  {selected.status === "used"
+                    ? "הורדת PDF חתום"
+                    : "הורדת PDF"}
+                </Button>
+              )}
+              {selected.status === "active" && (
+                <Button
+                  onClick={() =>
+                    selected.canCopy
+                      ? void copySignLink(selected)
+                      : void renewSignLink(selected)
+                  }
+                >
+                  <Copy className="h-4 w-4" />
+                  {selected.canCopy
+                    ? "העתקת קישור לחתימה"
+                    : "צור קישור חתימה חדש"}
+                </Button>
+              )}
+              {selected.status === "used" &&
+                selected.signatureDetailsUrl && (
+                <Button
+                  onClick={() =>
+                    window.open(selected.signatureDetailsUrl!, "_blank")
+                  }
+                >
+                  <Signature className="h-4 w-4" />
+                  צפייה בפרטי החתימה
+                </Button>
+                )}
+            </div>
+            {selected.status === "active" && !selected.canCopy && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                זהו קישור בפורמט ישן שה־token שלו אינו ניתן לשחזור. הקישור
+                המקורי ממשיך לעבוד. יצירת קישור חדש תבטל את הקישור הפעיל הישן
+                ותעתיק קישור מאובטח חדש.
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

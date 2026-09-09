@@ -206,6 +206,7 @@ export function AccountTemplate({ model }: { model: AccountPdfModel }) {
               <Th>כמות קודמת</Th>
               <Th>ביצוע נוכחי</Th>
               <Th>כמות מצטברת</Th>
+              <Th>יתרה</Th>
               <Th>% ביצוע</Th>
               <Th>מחיר יחידה</Th>
               <Th>סכום קודם</Th>
@@ -232,7 +233,7 @@ export function AccountTemplate({ model }: { model: AccountPdfModel }) {
                   <Td mono>{item.code || "—"}</Td>
                   <Td strong={parent}>{item.description}</Td>
                   {parent ? (
-                    <td colSpan={10} />
+                    <td colSpan={11} />
                   ) : (
                     <>
                       <Td>{item.unit || "—"}</Td>
@@ -240,6 +241,17 @@ export function AccountTemplate({ model }: { model: AccountPdfModel }) {
                       <Td numeric>{formatNumber(item.previousQuantity)}</Td>
                       <Td numeric strong>{formatNumber(item.quantity)}</Td>
                       <Td numeric>{formatNumber(item.cumulativeQuantity)}</Td>
+                      <td
+                        className={`border border-gray-300 px-1.5 py-1.5 text-left font-bold ${
+                          item.contractQuantity - item.cumulativeQuantity < 0
+                            ? "text-red-700"
+                            : ""
+                        }`}
+                      >
+                        {formatNumber(
+                          item.contractQuantity - item.cumulativeQuantity
+                        )}
+                      </td>
                       <Td numeric>{formatPercent(item.quantityPercent)}</Td>
                       <Td numeric>{formatMoney(item.unitPrice)}</Td>
                       <Td numeric>{formatMoney(item.previousAmount)}</Td>
@@ -252,7 +264,7 @@ export function AccountTemplate({ model }: { model: AccountPdfModel }) {
             })}
             {model.items.length === 0 && (
               <tr>
-                <td colSpan={12} className="py-10 text-center text-[11px] text-gray-400">
+                <td colSpan={13} className="py-10 text-center text-[11px] text-gray-400">
                   אין סעיפים בחשבון זה
                 </td>
               </tr>

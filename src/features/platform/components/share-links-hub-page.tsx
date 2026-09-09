@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Link2, RefreshCw, Ban, Copy } from "lucide-react";
+import {
+  Ban,
+  Copy,
+  ExternalLink,
+  Link2,
+  RefreshCw,
+  RotateCw,
+} from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { formatDate, formatRelative } from "@/utils/format";
 import { useToast } from "@/components/ui";
@@ -11,9 +18,11 @@ type ShareLinkItem = {
   id: string;
   kind: "work_diary" | "delivery_note" | "measurement_sheet" | "external";
   entityType?: string;
+  title?: string | null;
   documentId: string;
   documentNumber: string;
   projectId: string | null;
+  projectName?: string | null;
   publicId: string;
   createdAt: string;
   expiresAt: string | null;
@@ -22,6 +31,9 @@ type ShareLinkItem = {
   status: "active" | "used" | "revoked" | "expired";
   viewCount?: number;
   url?: string;
+  signUrl?: string | null;
+  canCopy?: boolean;
+  legacyToken?: boolean;
 };
 
 const KIND_LABELS: Record<string, string> = {
@@ -33,7 +45,7 @@ const KIND_LABELS: Record<string, string> = {
 
 const STATUS_LABELS: Record<ShareLinkItem["status"], string> = {
   active: "פעיל",
-  used: "נוצל",
+  used: "נחתם",
   revoked: "בוטל",
   expired: "פג תוקף",
 };
@@ -67,33 +79,76 @@ export function ShareLinksHubPage({ embedded = false }: { embedded?: boolean }) 
   }, []);
 
   useEffect(() => {
-    reload();
+    void Promise.resolve().then(reload);
   }, [reload]);
 
   async function revoke(id: string, kind: string) {
-    if (kind !== "external") {
-      toast.error("ביטול זמין כרגע לקישורי שיתוף חיצוניים בלבד");
-      return;
-    }
     try {
-      await apiClient.post(`/api/external-share/${id}/revoke`, {});
+      await apiClient.post(
+        kind === "external"
+          ? `/api/external-share/${id}/revoke`
+          : `/api/share-links/${kind}/${id}/revoke`,
+        {}
+      );
       toast.success("הקישור בוטל");
       reload();
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "ביטול הקישור נכשל");
     }
   }
 
+  function resolvedUrl(item: ShareLinkItem) {
+    const path = item.url || item.signUrl;
+    if (!path) return null;
+    if (/^https?:\/\//i.test(path)) return path;
+    if (typeof window === "undefined") return path;
+    return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+
   function copyUrl(item: ShareLinkItem) {
-    const path = item.url || `/share/${item.publicId}`;
-    const full =
-      typeof window !== "undefined"
-        ? `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`
-        : path;
+    const full = resolvedUrl(item);
+    if (!full) {
+      toast.error("לא ניתן לשחזר token של קישור ישן. יש ליצור קישור חדש.");
+      return;
+    }
     void navigator.clipboard.writeText(full).then(
       () => toast.success("הקישור הועתק"),
       () => toast.error("העתקה נכשלה")
     );
+  }
+
+  function openUrl(item: ShareLinkItem) {
+    const url = resolvedUrl(item);
+    if (!url) {
+      toast.error("לקישור הישן אין token שניתן לשחזר");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function createReplacement(item: ShareLinkItem) {
+    try {
+      const created =
+        item.kind === "external"
+          ? await apiClient.post<{ url: string }>("/api/external-share", {
+              entityType: item.entityType,
+              entityId: item.documentId,
+              projectId: item.projectId,
+              title: item.title || item.documentNumber,
+              expiresInDays: 30,
+            })
+          : await apiClient.post<{ url: string }>(
+              `/api/share-links/${item.kind}/${item.id}/renew`,
+              {}
+            );
+      await navigator.clipboard.writeText(created.url);
+      toast.success("נוצר קישור חדש והקישור הועתק");
+      reload();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "יצירת הקישור נכשלה"
+      );
+    }
   }
 
   return (
@@ -150,6 +205,7 @@ export function ShareLinksHubPage({ embedded = false }: { embedded?: boolean }) 
                   <p className="mt-0.5 text-xs text-gray-500">
                     {KIND_LABELS[item.kind] || item.kind}
                     {item.entityType ? ` · ${item.entityType}` : ""}
+                    {item.projectName ? ` · ${item.projectName}` : ""}
                     {" · "}
                     {STATUS_LABELS[item.status]}
                     {item.viewCount != null ? ` · ${item.viewCount} צפיות` : ""}
@@ -166,12 +222,22 @@ export function ShareLinksHubPage({ embedded = false }: { embedded?: boolean }) 
                   <button
                     type="button"
                     onClick={() => copyUrl(item)}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold"
+                    disabled={!resolvedUrl(item)}
+                    className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Copy className="h-3 w-3" />
-                    העתק
+                    העתק קישור
                   </button>
-                  {item.kind === "external" && item.status === "active" && (
+                  <button
+                    type="button"
+                    onClick={() => openUrl(item)}
+                    disabled={!resolvedUrl(item)}
+                    className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    פתח
+                  </button>
+                  {item.status === "active" && (
                     <button
                       type="button"
                       onClick={() => void revoke(item.id, item.kind)}
@@ -179,6 +245,18 @@ export function ShareLinksHubPage({ embedded = false }: { embedded?: boolean }) 
                     >
                       <Ban className="h-3 w-3" />
                       בטל
+                    </button>
+                  )}
+                  {(item.status === "expired" ||
+                    item.legacyToken ||
+                    !item.canCopy) && (
+                    <button
+                      type="button"
+                      onClick={() => void createReplacement(item)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-blue-200 px-2 py-1 text-xs font-semibold text-blue-700"
+                    >
+                      <RotateCw className="h-3 w-3" />
+                      צור קישור חדש
                     </button>
                   )}
                 </div>

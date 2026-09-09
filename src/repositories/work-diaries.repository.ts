@@ -12,6 +12,7 @@ import {
   hashSignToken,
   buildSignUrl,
 } from "@/lib/documents/sign-tokens";
+import { encryptShareToken } from "@/lib/documents/share-token-vault";
 import { WorkflowRepository } from "@/repositories/workflow.repository";
 import { isEditableStatus } from "@/lib/workflow/status-engine";
 import {
@@ -21,6 +22,7 @@ import {
 import { WORKFLOW_STATUS_LABELS } from "@/lib/workflow/types";
 import type { WorkflowStatus } from "@/lib/workflow/types";
 import { ensureMiscSitesProject } from "@/lib/field/misc-sites-project";
+import { AuditRepository } from "@/repositories/audit.repository";
 
 export type WorkItemInput = {
   description: string;
@@ -66,6 +68,8 @@ export type CreateWorkDiaryInput = {
   foremanSignatureUrl?: string | null;
   foremanSignedName?: string | null;
   createdById: string;
+  createdByRole?: string | null;
+  createdCrossProject?: boolean;
 };
 
 export type UpdateWorkDiaryInput = Partial<
@@ -198,6 +202,9 @@ function mapDiary(row: any) {
     statusLabel: WORKFLOW_STATUS_LABELS[wfStatus] ?? wfStatus,
     workflowDocumentId: row.workflowDocumentId ?? row.workflowDocument?.id ?? null,
     projectId: row.projectId,
+    createdById: row.createdById,
+    createdByRole: row.createdByRole ?? null,
+    createdCrossProject: row.createdCrossProject ?? false,
     customSiteName: row.customSiteName ?? null,
     siteLabel: row.customSiteName || row.project?.name || "—",
     clientName: row.clientName,
@@ -337,6 +344,8 @@ export const WorkDiariesRepository = {
   async list(filters: {
     foremanId?: string;
     projectId?: string;
+    projectIds?: string[];
+    ownedByUserId?: string;
     status?: WorkDiaryStatus;
     take?: number;
     skip?: number;
@@ -344,6 +353,20 @@ export const WorkDiariesRepository = {
     const where: any = { deletedAt: null };
     if (filters.foremanId) where.foremanId = filters.foremanId;
     if (filters.projectId) where.projectId = filters.projectId;
+    if (filters.projectIds || filters.ownedByUserId) {
+      where.AND = [
+        {
+          OR: [
+            ...(filters.projectIds
+              ? [{ projectId: { in: filters.projectIds } }]
+              : []),
+            ...(filters.ownedByUserId
+              ? [{ createdById: filters.ownedByUserId }]
+              : []),
+          ],
+        },
+      ];
+    }
     if (filters.status) {
       where.workflowDocument = { status: filters.status };
     }
@@ -494,6 +517,8 @@ export const WorkDiariesRepository = {
         foremanSignedName: input.foremanSignedName ?? null,
         foremanSignedAt: input.foremanSignatureUrl ? new Date() : null,
         createdById: input.createdById,
+        createdByRole: input.createdByRole ?? null,
+        createdCrossProject: input.createdCrossProject ?? false,
         updatedById: input.createdById,
         workItems: {
           create: (input.workItems ?? []).map((item, i) => ({
@@ -579,6 +604,31 @@ export const WorkDiariesRepository = {
       `/field/work-diaries/${row.id}`,
       projectId!
     );
+
+    if (input.createdCrossProject) {
+      const metadata = {
+        documentNumber,
+        projectId,
+        createdByRole: input.createdByRole,
+        projectAssignedToCreator: false,
+      };
+      await prisma.workDiaryEvent.create({
+        data: {
+          workDiaryId: row.id,
+          action: "cross_project_created",
+          message: "נוצר יומן עבודה לפרויקט שאינו משויך ליוצר",
+          actorId: input.createdById,
+          metadata: JSON.stringify(metadata),
+        },
+      });
+      await AuditRepository.log({
+        action: "CROSS_PROJECT_DOCUMENT_CREATED",
+        entityType: "WorkDiary",
+        entityId: row.id,
+        userId: input.createdById,
+        metadata,
+      });
+    }
 
     return this.getById(row.id);
   },
@@ -919,6 +969,7 @@ export const WorkDiariesRepository = {
       data: {
         workDiaryId: id,
         tokenHash: hash,
+        tokenCiphertext: encryptShareToken(raw),
         publicId,
         createdById: actorId,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -955,7 +1006,6 @@ export const WorkDiariesRepository = {
     const token = await prisma.workDiarySignToken.findFirst({
       where: {
         publicId: parsed.publicId,
-        revokedAt: null,
         workDiary: { documentNumber, deletedAt: null },
       },
       include: {
@@ -964,11 +1014,12 @@ export const WorkDiariesRepository = {
       },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.expiresAt && token.expiresAt < new Date()) {
-      throw new Error("הקישור פג תוקף");
-    }
     if (token.tokenHash !== hashSignToken(parsed.raw)) {
       throw new Error("קישור לא תקין");
+    }
+    if (token.revokedAt) throw new Error("הקישור בוטל");
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("תוקף הקישור הסתיים");
     }
 
     const mapped = mapDiary(token.workDiary);
@@ -1032,18 +1083,20 @@ export const WorkDiariesRepository = {
     const token = await prisma.workDiarySignToken.findFirst({
       where: {
         publicId: parsed.publicId,
-        revokedAt: null,
-        usedAt: null,
         workDiary: { documentNumber: opts.documentNumber, deletedAt: null },
       },
       include: { workDiary: true },
     });
     if (!token) throw new Error("קישור לא נמצא");
-    if (token.expiresAt && token.expiresAt < new Date()) {
-      throw new Error("הקישור פג תוקף");
-    }
     if (token.tokenHash !== hashSignToken(parsed.raw)) {
       throw new Error("קישור לא תקין");
+    }
+    if (token.revokedAt) throw new Error("הקישור בוטל");
+    if (token.usedAt || token.workDiary.clientSignedAt) {
+      throw new Error("המסמך כבר נחתם");
+    }
+    if (token.expiresAt && token.expiresAt < new Date()) {
+      throw new Error("תוקף הקישור הסתיים");
     }
 
     const diary = token.workDiary;

@@ -1,6 +1,10 @@
 import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { DeliveryNoteTemplate, PdfPrintShell } from "@/lib/pdf-engine";
+import { notFound } from "next/navigation";
+import { requireOfficeUser } from "@/lib/auth/office-session";
+import { requireFieldManager } from "@/lib/auth/field-session";
+import { assertCanAccessOwnedWdOrDn } from "@/lib/auth/cross-project-documents";
 
 const STATUS_HE: Record<string, string> = {
   draft: "טיוטה",
@@ -40,6 +44,21 @@ export default async function Page({
       </p>
     );
   }
+
+  let authorized = false;
+  try {
+    const office = await requireOfficeUser();
+    await assertCanAccessOwnedWdOrDn(office, row, "view_all");
+    authorized = true;
+  } catch {
+    try {
+      const field = await requireFieldManager();
+      authorized = row.foremanId === field.foremanId;
+    } catch {
+      authorized = false;
+    }
+  }
+  if (!authorized) notFound();
 
   const approval = row.approvals[0];
 

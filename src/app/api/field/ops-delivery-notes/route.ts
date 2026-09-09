@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
-import { requireFieldManager } from "@/lib/auth/field-session";
+import {
+  assertProjectSelectable,
+  requireFieldManager,
+} from "@/lib/auth/field-session";
 import { OpsDeliveryNotesRepository } from "@/repositories/ops-delivery-notes.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { peekNextDocumentNumber } from "@/lib/documents/sequences";
@@ -27,6 +30,9 @@ export async function POST(req: NextRequest) {
     const session = await requireFieldManager();
     const body = await req.json();
     if (!body.clientName?.trim()) return apiError("יש להזין שם לקוח");
+    if (body.projectId) {
+      await assertProjectSelectable(String(body.projectId), session.foremanId);
+    }
 
     const note = await OpsDeliveryNotesRepository.create({
       projectId: body.projectId || null,

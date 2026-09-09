@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { getAuthContext } from "@/lib/auth/session";
+import { requirePermission } from "@/lib/auth/assert-office";
+import { userCanAccessProject } from "@/lib/auth/project-access";
 import {
   uploadToStorage,
   resolveDocumentType,
@@ -25,7 +26,8 @@ const UPLOAD_WINDOW_MS = 60 * 60 * 1000;
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await getAuthContext();
+    const session = await requirePermission("create");
+    const { userId } = session;
 
     const ip = getClientIp(request);
     const limited = enforceRateLimit(
@@ -57,6 +59,19 @@ export async function POST(request: NextRequest) {
     const reportId = fields.reportId;
     const employeeId = fields.employeeId;
     const bucketKey = fields.bucketKey as StorageBucketKey | undefined;
+    const canAccessProject = await userCanAccessProject({
+      userId,
+      role: session.role,
+      projectId,
+      scope: "manage",
+    });
+    if (!canAccessProject) return apiError("אין הרשאה לפרויקט זה", 403);
+    if (documentId) {
+      const document = await DocumentsRepository.findById(documentId);
+      if (!document || document.projectId !== projectId) {
+        return apiError("המסמך אינו שייך לפרויקט שנבחר", 403);
+      }
+    }
 
     const mimeType = file.type || "application/octet-stream";
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -144,7 +159,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { userId } = await getAuthContext();
+    const { userId } = await requirePermission("delete");
     const { searchParams } = request.nextUrl;
     const id = searchParams.get("id");
     const entity = searchParams.get("entity") ?? "document";

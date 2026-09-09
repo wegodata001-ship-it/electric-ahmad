@@ -7,6 +7,10 @@ import {
 } from "@/lib/auth/financial-permissions";
 import { apiError, apiSuccess, handleApiError } from "@/lib/api/response";
 import { generateSignToken } from "@/lib/documents/sign-tokens";
+import {
+  decryptShareToken,
+  encryptShareToken,
+} from "@/lib/documents/share-token-vault";
 import { AuditRepository } from "@/repositories/audit.repository";
 
 function statusOf(row: {
@@ -18,31 +22,91 @@ function statusOf(row: {
   return "active" as const;
 }
 
+function publicOrigin(request?: NextRequest) {
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const requestOrigin = request?.nextUrl.origin;
+  return (configured || requestOrigin || "").replace(/\/$/, "");
+}
+
+async function assertShareTargetExists(entityType: string, entityId: string) {
+  const exists =
+    entityType === "document"
+      ? await prisma.document.findUnique({
+          where: { id: entityId },
+          select: { id: true },
+        })
+      : entityType === "work_diary"
+        ? await prisma.workDiary.findUnique({
+            where: { id: entityId },
+            select: { id: true },
+          })
+        : entityType === "delivery_note" ||
+            entityType === "ops_delivery_note"
+          ? await prisma.opsDeliveryNote.findUnique({
+              where: { id: entityId },
+              select: { id: true },
+            })
+          : entityType === "measurement_sheet"
+            ? await prisma.measurementSheet.findUnique({
+                where: { id: entityId },
+                select: { id: true },
+              })
+            : null;
+  if (!exists) {
+    throw new Error("לא ניתן ליצור קישור: המסמך המבוקש לא נמצא");
+  }
+}
+
 /** List external share links (system manager + office) */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     await requireOfficeUser();
     const items = await prisma.externalShareLink.findMany({
       take: 100,
       orderBy: { createdAt: "desc" },
     });
+    const projectIds = [
+      ...new Set(items.map((item) => item.projectId).filter(Boolean)),
+    ] as string[];
+    const projects = projectIds.length
+      ? await prisma.project.findMany({
+          where: { id: { in: projectIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const projectNames = new Map(
+      projects.map((project) => [project.id, project.name])
+    );
+    const origin = publicOrigin(request);
     return apiSuccess({
-      items: items.map((t) => ({
-        id: t.id,
-        kind: "external" as const,
-        entityType: t.entityType,
-        documentId: t.entityId,
-        documentNumber: t.title ?? t.entityId.slice(0, 8),
-        projectId: t.projectId,
-        publicId: t.publicId,
-        createdAt: t.createdAt.toISOString(),
-        expiresAt: t.expiresAt?.toISOString() ?? null,
-        usedAt: t.lastViewedAt?.toISOString() ?? null,
-        revokedAt: t.revokedAt?.toISOString() ?? null,
-        viewCount: t.viewCount,
-        status: statusOf(t),
-        url: `/share/${t.publicId}`,
-      })),
+      items: items.map((t) => {
+        const raw = decryptShareToken(t.tokenCiphertext);
+        const path = raw
+          ? `/share/${t.publicId}?t=${encodeURIComponent(`${t.publicId}.${raw}`)}`
+          : null;
+        return {
+          id: t.id,
+          kind: "external" as const,
+          entityType: t.entityType,
+          documentId: t.entityId,
+          documentNumber: t.title ?? t.entityId.slice(0, 8),
+          title: t.title,
+          projectId: t.projectId,
+          projectName: t.projectId
+            ? projectNames.get(t.projectId) ?? null
+            : null,
+          publicId: t.publicId,
+          createdAt: t.createdAt.toISOString(),
+          expiresAt: t.expiresAt?.toISOString() ?? null,
+          usedAt: t.lastViewedAt?.toISOString() ?? null,
+          revokedAt: t.revokedAt?.toISOString() ?? null,
+          viewCount: t.viewCount,
+          status: statusOf(t),
+          url: path ? `${origin}${path}` : null,
+          canCopy: Boolean(path),
+          legacyToken: !t.tokenCiphertext,
+        };
+      }),
     });
   } catch (error) {
     return handleApiError(error);
@@ -67,10 +131,7 @@ export async function POST(request: NextRequest) {
 
     if (!entityId) return apiError("חסר מזהה ישות");
 
-    const origin =
-      request.headers.get("origin") ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "";
+    const origin = publicOrigin(request);
     const existing = await prisma.externalShareLink.findFirst({
       where: {
         entityType,
@@ -80,10 +141,13 @@ export async function POST(request: NextRequest) {
       },
       orderBy: { createdAt: "desc" },
     });
-    if (existing) {
+    const existingRaw = existing
+      ? decryptShareToken(existing.tokenCiphertext)
+      : null;
+    if (existing && existingRaw) {
       const url = origin
-        ? `${origin.replace(/\/$/, "")}/share/${existing.publicId}`
-        : `/share/${existing.publicId}`;
+        ? `${origin}/share/${existing.publicId}?t=${encodeURIComponent(`${existing.publicId}.${existingRaw}`)}`
+        : `/share/${existing.publicId}?t=${encodeURIComponent(`${existing.publicId}.${existingRaw}`)}`;
       return apiSuccess({
         id: existing.id,
         publicId: existing.publicId,
@@ -93,6 +157,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    await assertShareTargetExists(entityType, entityId);
     const { raw, hash, publicId } = generateSignToken();
     const expiresAt =
       Number.isFinite(days) && days > 0
@@ -107,6 +172,7 @@ export async function POST(request: NextRequest) {
         title,
         notes,
         tokenHash: hash,
+        tokenCiphertext: encryptShareToken(raw),
         publicId,
         expiresAt,
         createdById: user.userId,
@@ -127,7 +193,7 @@ export async function POST(request: NextRequest) {
     });
 
     const url = origin
-      ? `${origin.replace(/\/$/, "")}/share/${publicId}?t=${publicId}.${raw}`
+      ? `${origin}/share/${publicId}?t=${encodeURIComponent(`${publicId}.${raw}`)}`
       : `/share/${publicId}?t=${publicId}.${raw}`;
 
     return apiSuccess({

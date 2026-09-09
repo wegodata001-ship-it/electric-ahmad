@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
-import { requireFieldManager } from "@/lib/auth/field-session";
+import {
+  assertProjectSelectable,
+  requireFieldManager,
+} from "@/lib/auth/field-session";
 import { ProjectRoomsRepository } from "@/repositories/project-rooms.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
@@ -8,8 +11,9 @@ type Ctx = { params: Promise<{ id: string }> };
 /** Mobile/Field: רשימה + הוספת חדר מתוך אותו מסך */
 export async function GET(_req: NextRequest, ctx: Ctx) {
   try {
-    await requireFieldManager();
+    const session = await requireFieldManager();
     const { id: projectId } = await ctx.params;
+    await assertProjectSelectable(projectId, session.foremanId);
     const items = await ProjectRoomsRepository.list(projectId);
     return apiSuccess({ items });
   } catch (error) {
@@ -19,8 +23,9 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
-    await requireFieldManager();
+    const session = await requireFieldManager();
     const { id: projectId } = await ctx.params;
+    await assertProjectSelectable(projectId, session.foremanId);
     const body = await req.json();
     if (!body.name?.trim()) return apiError("שם החדר חובה", 400);
     const room = await ProjectRoomsRepository.create(projectId, {

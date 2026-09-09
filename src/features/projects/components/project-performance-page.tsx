@@ -15,10 +15,13 @@ import {
   Maximize2,
   MessageCircle,
   Minimize2,
+  MoreVertical,
   Pencil,
   Plus,
   Receipt,
   Save,
+  Trash2,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import {
@@ -36,19 +39,22 @@ import { approvalsService } from "@/features/work-diaries/services/work-diaries.
 import { boqService } from "@/features/boq/services/boq.service";
 import { fetchClientMe } from "@/lib/auth/client-me";
 import { isSystemAdminRole } from "@/lib/auth/document-permissions";
-import { ProjectRoomsToolbar } from "@/features/projects/components/project-rooms-toolbar";
 import {
   buildMeasurementSheetExcel,
   downloadBlob,
 } from "@/lib/measurement/export-excel";
 import type { BoqItem } from "@/types";
 import { cn } from "@/lib/utils";
+import {
+  calculateMeasurementQuantity,
+  hasMeasurementData,
+} from "@/lib/measurement/quantities";
 
 type DraftMap = Record<string, string>;
 
 /**
  * דף מדידה בסגנון Excel:
- * שורות = חדרים/יחידות, עמודות = סעיפי BOQ
+ * שורות = יחידות/אזורים לפי בחירת המשתמש, עמודות = סעיפי BOQ
  */
 export function ProjectPerformancePage({
   projectId,
@@ -78,6 +84,12 @@ export function ProjectPerformancePage({
   const [creating, setCreating] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [dragRoomId, setDragRoomId] = useState<string | null>(null);
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [editingRowName, setEditingRowName] = useState("");
+  const [deletingRow, setDeletingRow] = useState<any | null>(null);
+  const [rowMutating, setRowMutating] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
 
   // Submit / invoice / ops review flow
   const [completing, setCompleting] = useState(false);
@@ -379,12 +391,116 @@ export function ProjectPerformancePage({
     }, 0);
   }
 
-  /** יתרה = מאושר − חויב − בוצע בדף זה */
-  function sectionRemaining(item: any) {
-    const contract = Number(item.contractQuantity) || 0;
-    const invoiced = Number(item.invoicedQuantity) || 0;
-    const done = sectionTotal(item.id);
-    return Math.max(0, contract - invoiced - done);
+  function sectionMetrics(item: any) {
+    return calculateMeasurementQuantity({
+      contractQuantity: Number(item.contractQuantity) || 0,
+      previousApprovedQuantity:
+        Number(
+          item.previousApprovedQuantity ?? item.invoicedQuantity
+        ) || 0,
+      currentQuantity: sectionTotal(item.id),
+    });
+  }
+
+  const overrunSections = useMemo(
+    () =>
+      sections
+        .map((item: any) => ({ item, metrics: sectionMetrics(item) }))
+        .filter(({ metrics }) => metrics.isOverrun),
+    // draft drives sectionTotal and therefore the warning.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sections, rooms, draft]
+  );
+
+  async function addMeasurementRow() {
+    if (!sheetId || locked || rowMutating) return;
+    setRowMutating(true);
+    try {
+      const updated = await invoicesWorkspaceService.addRows(
+        sheetId,
+        ["שורה חדשה"],
+        approvalEditMode ? sheet?.currentVersion : undefined
+      );
+      applySheet(updated);
+      const added = updated.rows?.[updated.rows.length - 1];
+      if (added) {
+        setEditingRowId(added.id);
+        setEditingRowName(added.name);
+      }
+      toast.success("נוספה שורה חדשה");
+    } catch (e: any) {
+      toast.error(e?.message || "לא ניתן להוסיף שורה");
+    } finally {
+      setRowMutating(false);
+    }
+  }
+
+  async function saveRowName() {
+    if (!sheetId || !editingRowId || !editingRowName.trim()) return;
+    setRowMutating(true);
+    try {
+      const updated = await invoicesWorkspaceService.renameRow(
+        sheetId,
+        editingRowId,
+        editingRowName.trim(),
+        approvalEditMode ? sheet?.currentVersion : undefined
+      );
+      applySheet(updated);
+      setEditingRowId(null);
+      toast.success("שם השורה עודכן");
+    } catch (e: any) {
+      toast.error(e?.message || "לא ניתן לשנות את שם השורה");
+    } finally {
+      setRowMutating(false);
+    }
+  }
+
+  async function confirmDeleteRow() {
+    if (!sheetId || !deletingRow) return;
+    setRowMutating(true);
+    try {
+      const updated = await invoicesWorkspaceService.deleteRow(
+        sheetId,
+        deletingRow.id,
+        approvalEditMode ? sheet?.currentVersion : undefined
+      );
+      applySheet(updated);
+      setDeletingRow(null);
+      toast.success("השורה נמחקה מהטיוטה הנוכחית");
+    } catch (e: any) {
+      toast.error(e?.message || "לא ניתן למחוק את השורה");
+    } finally {
+      setRowMutating(false);
+    }
+  }
+
+  function rowHasMeasurements(rowId: string) {
+    return hasMeasurementData(
+      sections.map(
+        (item: any) => Number(draft[cellKey(rowId, item.id)] ?? 0)
+      )
+    );
+  }
+
+  async function saveTitle() {
+    if (!sheetId || !titleDraft.trim()) return;
+    setRowMutating(true);
+    try {
+      const updated = await invoicesWorkspaceService.updateSheet(sheetId, {
+        title: titleDraft.trim(),
+        expectedVersion: approvalEditMode
+          ? sheet?.currentVersion
+          : undefined,
+      });
+      applySheet(updated);
+      await loadSheets();
+      setEditingTitle(false);
+      toast.success("כותרת המדידה עודכנה");
+    } catch (e: any) {
+      toast.error(e?.message || "לא ניתן לעדכן כותרת");
+    } finally {
+      setRowMutating(false);
+    }
   }
 
   async function saveAll(opts?: { silent?: boolean }): Promise<boolean> {
@@ -479,8 +595,7 @@ export function ProjectPerformancePage({
     setExportingExcel(true);
     try {
       const columns = sections.map((item: any) => {
-        const done = sectionTotal(item.id);
-        const remaining = sectionRemaining(item);
+        const metrics = sectionMetrics(item);
         return {
           id: item.id,
           code: String(item.code ?? ""),
@@ -488,8 +603,10 @@ export function ProjectPerformancePage({
           unit: item.unit,
           contractQuantity: Number(item.contractQuantity) || 0,
           invoicedQuantity: Number(item.invoicedQuantity) || 0,
-          doneQuantity: done,
-          remainingQuantity: remaining,
+          previousApprovedQuantity: metrics.previousApprovedQuantity,
+          currentQuantity: metrics.currentQuantity,
+          doneQuantity: metrics.cumulativeQuantity,
+          remainingQuantity: metrics.remainingQuantity,
         };
       });
       const rows = rooms.map((room: any) => {
@@ -544,14 +661,6 @@ export function ProjectPerformancePage({
     setSheets(sheetsRes.items);
   }
 
-  async function onRoomsChanged() {
-    try {
-      await refreshSheetLocal();
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  }
-
   async function reorderRoomsByRowIds(fromRowId: string, toRowId: string) {
     if (fromRowId === toRowId || locked) return;
     const ordered = rooms.map((r: any) => r.projectRoomId).filter(Boolean);
@@ -578,7 +687,7 @@ export function ProjectPerformancePage({
       const created = await invoicesWorkspaceService.createSheet({
         projectId,
         title: "דף מדידה ראשי",
-        rowNames: ["חדר 101", "חדר 102", "חדר 103"],
+        rowNames: ["שורה 1", "שורה 2", "שורה 3"],
       });
       setSheetId(created.id);
       applySheet(created);
@@ -837,11 +946,14 @@ export function ProjectPerformancePage({
           ))}
         </select>
         {!locked && (
-          <ProjectRoomsToolbar
-            projectId={projectId}
-            disabled={!sheetId}
-            onChanged={onRoomsChanged}
-          />
+          <Button
+            size="sm"
+            onClick={() => void addMeasurementRow()}
+            disabled={!sheetId || rowMutating}
+          >
+            <Plus className="h-4 w-4" />
+            {rowMutating ? "מוסיף…" : "+ הוסף שורה"}
+          </Button>
         )}
         <Button
           size="sm"
@@ -1047,6 +1159,83 @@ export function ProjectPerformancePage({
         </div>
       </div>
 
+      {sheet && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3">
+          {editingTitle ? (
+            <>
+              <input
+                className="min-w-[16rem] flex-1 rounded-lg border border-primary-300 px-3 py-2 font-bold"
+                value={titleDraft}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                autoFocus
+              />
+              <Button
+                size="sm"
+                onClick={() => void saveTitle()}
+                disabled={rowMutating || !titleDraft.trim()}
+              >
+                שמור
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditingTitle(false)}
+                disabled={rowMutating}
+              >
+                ביטול
+              </Button>
+            </>
+          ) : (
+            <>
+              <h3 className="flex-1 text-base font-black text-gray-900">
+                {sheet.title}
+              </h3>
+              {!locked && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setTitleDraft(sheet.title || "");
+                    setEditingTitle(true);
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  שינוי כותרת
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {!!overrunSections.length && (
+        <section className="rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-red-950">
+          <div className="flex items-start gap-2">
+            <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-700" />
+            <div>
+              <p className="font-black">חריגה מכמות חוזה</p>
+              <div className="mt-2 space-y-1 text-xs">
+                {overrunSections.map(({ item, metrics }) => (
+                  <p key={item.id}>
+                    <span className="font-bold">
+                      {item.code} · {item.description}
+                    </span>
+                    {" — "}כמות חוזה: {formatNumber(metrics.contractQuantity)},
+                    מצטבר ביצוע: {formatNumber(metrics.cumulativeQuantity)},
+                    חריגה: +{formatNumber(metrics.overrunQuantity)}
+                  </p>
+                ))}
+              </div>
+              {isPending && (
+                <p className="mt-2 text-xs font-bold">
+                  החריגה מוצגת למאשר ואינה מונעת אישור או החזרה לתיקון.
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       {approvalEditMode && (
         <section className="rounded-2xl border-2 border-sky-300 bg-sky-50/70 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1165,7 +1354,7 @@ export function ProjectPerformancePage({
             {!!activeReviewNotes.length && (
               <div className="mt-3">
                 <p className="text-[11px] font-bold text-orange-700">
-                  חדרים / סעיפים שסומנו
+                  שורות / סעיפים שסומנו
                 </p>
                 <ul className="mt-1 list-disc space-y-1 pr-5 text-xs text-orange-900">
                   {activeReviewNotes.map((n: any) => (
@@ -1183,7 +1372,7 @@ export function ProjectPerformancePage({
           </div>
 
           <p className="text-xs font-semibold text-orange-800">
-            ערכו כמויות / חדרים / הערות בטבלה למטה, ואז לחצו «שמור ושלח מחדש
+            ערכו כמויות / שורות / הערות בטבלה למטה, ואז לחצו «שמור ושלח מחדש
             לאישור». אין תיקון אוטומטי — רק עריכה ידנית.
           </p>
         </section>
@@ -1290,15 +1479,17 @@ export function ProjectPerformancePage({
             דף המדידה עדיין ריק
           </p>
           <p className="mt-1 text-sm text-gray-500">
-            הוסיפו חדרים והתחילו להזין כמויות
+            הוסיפו שורות והתחילו להזין כמויות
           </p>
           {!locked && (
             <div className="mt-5 flex flex-wrap justify-center gap-2">
-              <ProjectRoomsToolbar
-                projectId={projectId}
-                disabled={!sheetId}
-                onChanged={onRoomsChanged}
-              />
+              <Button
+                onClick={() => void addMeasurementRow()}
+                disabled={!sheetId || rowMutating}
+              >
+                <Plus className="h-4 w-4" />
+                + הוסף שורה
+              </Button>
               <Button onClick={() => void ensureFillableGrid()}>
                 <Plus className="h-4 w-4" />
                 התחל להזין מדידות
@@ -1324,7 +1515,7 @@ export function ProjectPerformancePage({
                   rowSpan={2}
                   className="sticky right-0 z-30 border-b border-l border-gray-200 bg-gray-50 px-3 py-3 text-right font-semibold text-gray-700 whitespace-nowrap min-w-[150px]"
                 >
-                  חדר / יחידה
+                  שורה / יחידה
                 </th>
                 {sections.map((item: any) => (
                   <th
@@ -1343,14 +1534,12 @@ export function ProjectPerformancePage({
                   rowSpan={2}
                   className="border-b border-gray-200 bg-primary-50 px-3 py-3 text-center font-semibold text-gray-700 whitespace-nowrap"
                 >
-                  סה״כ חדר
+                  סה״כ שורה
                 </th>
               </tr>
               <tr>
                 {sections.map((item: any) => {
-                  const done = sectionTotal(item.id);
-                  const remain = sectionRemaining(item);
-                  const contract = Number(item.contractQuantity) || 0;
+                  const metrics = sectionMetrics(item);
                   return (
                     <th
                       key={`meta-${item.id}`}
@@ -1358,26 +1547,41 @@ export function ProjectPerformancePage({
                     >
                       <div className="space-y-0.5 text-[10px] leading-tight">
                         <p className="text-gray-500">
-                          מאושר{" "}
+                          כמות חוזה{" "}
                           <span className="font-bold text-gray-800">
-                            {formatNumber(contract)}
+                            {formatNumber(metrics.contractQuantity)}
                           </span>
                           {item.unit ? ` ${item.unit}` : ""}
                         </p>
                         <p className="text-gray-500">
-                          בוצע{" "}
+                          מצטבר ביצוע{" "}
                           <span className="font-bold text-primary-700">
-                            {formatNumber(done)}
+                            {formatNumber(metrics.cumulativeQuantity)}
                           </span>
                         </p>
+                        {metrics.previousApprovedQuantity > 0 && (
+                          <p className="text-gray-500">
+                            אושר קודם{" "}
+                            {formatNumber(metrics.previousApprovedQuantity)}
+                          </p>
+                        )}
                         <p
                           className={cn(
                             "font-bold",
-                            remain > 0 ? "text-red-600" : "text-emerald-600"
+                            metrics.isOverrun
+                              ? "text-red-700"
+                              : metrics.isComplete
+                                ? "text-emerald-600"
+                                : "text-gray-700"
                           )}
                         >
-                          יתרה {formatNumber(remain)}
+                          יתרה {formatNumber(metrics.remainingQuantity)}
                         </p>
+                        {metrics.isOverrun && (
+                          <p className="font-black text-red-700">
+                            חריגה {formatNumber(metrics.overrunQuantity)}+
+                          </p>
+                        )}
                       </div>
                     </th>
                   );
@@ -1413,25 +1617,35 @@ export function ProjectPerformancePage({
                       {!locked && room.projectRoomId && (
                         <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-gray-300" />
                       )}
-                      {!locked && room.projectRoomId ? (
-                        <input
-                          className="min-w-[7rem] rounded-lg border border-transparent bg-transparent px-1 py-0.5 font-semibold text-gray-900 hover:border-gray-200 focus:border-primary-400 focus:outline-none"
-                          defaultValue={room.name}
-                          onBlur={(e) => {
-                            const name = e.target.value.trim();
-                            if (!name || name === room.name) return;
-                            void invoicesWorkspaceService
-                              .updateRoom(projectId, room.projectRoomId, {
-                                name,
-                              })
-                              .then(() => onRoomsChanged())
-                              .catch((err: any) =>
-                                toast.error(
-                                  err?.message || "לא ניתן לעדכן שם חדר"
-                                )
-                              );
-                          }}
-                        />
+                      {editingRowId === room.id ? (
+                        <span className="inline-flex items-center gap-1">
+                          <input
+                            className="min-w-[8rem] rounded-lg border border-primary-300 bg-white px-2 py-1 font-semibold focus:outline-none"
+                            value={editingRowName}
+                            onChange={(event) =>
+                              setEditingRowName(event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") void saveRowName();
+                              if (event.key === "Escape") setEditingRowId(null);
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            className="rounded bg-primary-600 px-2 py-1 text-[10px] font-bold text-white"
+                            onClick={() => void saveRowName()}
+                          >
+                            שמור
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded border px-2 py-1 text-[10px]"
+                            onClick={() => setEditingRowId(null)}
+                          >
+                            ביטול
+                          </button>
+                        </span>
                       ) : (
                         room.name
                       )}
@@ -1444,6 +1658,41 @@ export function ProjectPerformancePage({
                         <span className="rounded bg-orange-600 px-1.5 py-0.5 text-[9px] font-black text-white">
                           תיקון
                         </span>
+                      )}
+                      {!locked && editingRowId !== room.id && (
+                        <details className="relative">
+                          <summary
+                            className="list-none cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-100"
+                            aria-label={`פעולות עבור ${room.name}`}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </summary>
+                          <div className="absolute right-0 z-40 mt-1 min-w-32 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-right text-xs hover:bg-gray-50"
+                              onClick={(event) => {
+                                event.currentTarget.closest("details")?.removeAttribute("open");
+                                setEditingRowId(room.id);
+                                setEditingRowName(room.name);
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              שינוי שם
+                            </button>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-right text-xs text-red-700 hover:bg-red-50"
+                              onClick={(event) => {
+                                event.currentTarget.closest("details")?.removeAttribute("open");
+                                setDeletingRow(room);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              מחיקת שורה
+                            </button>
+                          </div>
+                        </details>
                       )}
                     </span>
                   </td>
@@ -1483,25 +1732,26 @@ export function ProjectPerformancePage({
             <tfoot className="sticky bottom-0 bg-gray-50">
               <tr>
                 <td className="sticky right-0 z-10 border-t border-l border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-gray-700">
-                  סה״כ שבוצע
+                  סה״כ שבוצע (מצטבר)
                 </td>
                 {sections.map((item: any) => {
-                  const total = sectionTotal(item.id);
+                  const metrics = sectionMetrics(item);
                   return (
                     <td
                       key={`tot-${item.id}`}
                       className="border-t border-gray-200 px-1 py-2 text-center"
                     >
                       <p className="font-bold text-primary-700">
-                        {formatNumber(total)}
+                        {formatNumber(metrics.cumulativeQuantity)}
                       </p>
                     </td>
                   );
                 })}
                 <td className="border-t border-gray-200 bg-primary-50 px-3 py-2 text-center font-bold text-primary-700">
                   {formatNumber(
-                    rooms.reduce(
-                      (s: number, u: any) => s + roomTotal(u.id),
+                    sections.reduce(
+                      (sum: number, item: any) =>
+                        sum + sectionMetrics(item).cumulativeQuantity,
                       0
                     )
                   )}
@@ -1512,7 +1762,7 @@ export function ProjectPerformancePage({
                   יתרה
                 </td>
                 {sections.map((item: any) => {
-                  const remain = sectionRemaining(item);
+                  const metrics = sectionMetrics(item);
                   return (
                     <td
                       key={`rem-${item.id}`}
@@ -1521,10 +1771,19 @@ export function ProjectPerformancePage({
                       <p
                         className={cn(
                           "text-sm font-bold",
-                          remain > 0 ? "text-red-600" : "text-emerald-600"
+                          metrics.isOverrun
+                            ? "text-red-700"
+                            : metrics.isComplete
+                              ? "text-emerald-600"
+                              : "text-gray-700"
                         )}
                       >
-                        {formatNumber(remain)}
+                        {formatNumber(metrics.remainingQuantity)}
+                        {metrics.isOverrun && (
+                          <span className="mt-0.5 block text-[10px]">
+                            חריגה מכמות חוזה
+                          </span>
+                        )}
                       </p>
                     </td>
                   );
@@ -1568,7 +1827,7 @@ export function ProjectPerformancePage({
                 דפי מדידה
               </h2>
               <p className="text-sm text-gray-500">
-                שורות = חדרים · עמודות = סעיפים · עבודה כמו באקסל
+                שורות = יחידות / אזורים · עמודות = סעיפים · עבודה כמו באקסל
               </p>
             </div>
           </div>
@@ -1584,7 +1843,7 @@ export function ProjectPerformancePage({
             דף המדידה עדיין ריק
           </p>
           <p className="mt-1 text-sm text-gray-500">
-            צרו דף מדידה והתחילו להזין כמויות לפי חדרים וסעיפים
+            צרו דף מדידה והתחילו להזין כמויות לפי שורות וסעיפים
           </p>
           <Button
             className="mt-5"
@@ -1628,6 +1887,24 @@ export function ProjectPerformancePage({
         size="lg"
       >
         <div className="space-y-4">
+          {!!overrunSections.length && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+              <p className="flex items-center gap-2 font-black text-amber-950">
+                <TriangleAlert className="h-5 w-5" />
+                שים לב – קיימת חריגה מכמות החוזה
+              </p>
+              <ul className="mt-2 space-y-1 text-xs text-amber-900">
+                {overrunSections.map(({ item, metrics }) => (
+                  <li key={item.id}>
+                    {item.code} {item.description}: חוזה{" "}
+                    {formatNumber(metrics.contractQuantity)}, מצטבר{" "}
+                    {formatNumber(metrics.cumulativeQuantity)}, חריגה +
+                    {formatNumber(metrics.overrunQuantity)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {loadingApprovers ? (
             <p className="text-sm text-gray-500">טוען מאשרים…</p>
           ) : (
@@ -1677,7 +1954,47 @@ export function ProjectPerformancePage({
               disabled={completing || !selectedApproverIds.length}
               loading={completing}
             >
-              {isRevision ? "שמור ושלח מחדש לאישור" : "שלח לאישור"}
+              {overrunSections.length
+                ? "המשך ושלח לאישור"
+                : isRevision
+                  ? "שמור ושלח מחדש לאישור"
+                  : "שלח לאישור"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(deletingRow)}
+        onClose={() => setDeletingRow(null)}
+        title="מחיקת שורה"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700">
+            {deletingRow && rowHasMeasurements(deletingRow.id)
+              ? "בשורה זו קיימים נתוני מדידה. מחיקת השורה תסיר את הנתונים מהטיוטה הנוכחית. האם להמשיך?"
+              : `למחוק את השורה "${deletingRow?.name ?? ""}"?`}
+          </p>
+          {deletingRow && rowHasMeasurements(deletingRow.id) && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-800">
+              הפעולה תירשם ב־Audit כולל שם השורה והכמויות שנמחקו.
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setDeletingRow(null)}
+              disabled={rowMutating}
+            >
+              ביטול
+            </Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => void confirmDeleteRow()}
+              disabled={rowMutating}
+              loading={rowMutating}
+            >
+              מחק שורה
             </Button>
           </div>
         </div>
@@ -1693,14 +2010,14 @@ export function ProjectPerformancePage({
         <div className="space-y-4">
           <textarea
             className="min-h-28 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
-            placeholder="לדוגמה: חדר 4 · סעיף 12 · חסרה תמונה / כמות לא תואמת"
+            placeholder="לדוגמה: שורה 4 · סעיף 12 · חסרה תמונה / כמות לא תואמת"
             value={opsRejectComment}
             onChange={(e) => setOpsRejectComment(e.target.value)}
           />
           {!!rooms.length && (
             <div>
               <p className="mb-2 text-xs font-semibold text-gray-600">
-                סמנו חדרים שדורשים תיקון (אופציונלי)
+                סמנו שורות שדורשות תיקון (אופציונלי)
               </p>
               <div className="max-h-40 space-y-1 overflow-auto rounded-xl border border-gray-200 p-2">
                 {rooms.map((room: any) => {

@@ -138,6 +138,13 @@ type RoomSqlRow = {
 };
 
 export const ProjectRoomsRepository = {
+  async getById(id: string) {
+    return prisma.projectRoom.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, projectId: true },
+    });
+  },
+
   /**
    * Hot path: HMAC session user + office auth + orphan link + rooms + hasReports
    * in one SQL round-trip. Response shape unchanged: { items }.
@@ -483,7 +490,10 @@ export const ProjectRoomsRepository = {
     });
 
     await prisma.measurementSheetRow.updateMany({
-      where: { projectRoomId: id },
+      where: {
+        projectRoomId: id,
+        sheet: { status: { in: ["draft", "in_progress", "revision"] } },
+      },
       data: {
         ...(data.name ? { name: data.name } : {}),
         ...(data.sortOrder != null ? { sortOrder: data.sortOrder } : {}),
@@ -516,7 +526,10 @@ export const ProjectRoomsRepository = {
     await prisma.$transaction(
       orderedIds.map((id, index) =>
         prisma.measurementSheetRow.updateMany({
-          where: { projectRoomId: id },
+          where: {
+            projectRoomId: id,
+            sheet: { status: { in: ["draft", "in_progress", "revision"] } },
+          },
           data: { sortOrder: index },
         })
       )
@@ -565,7 +578,10 @@ export const ProjectRoomsRepository = {
 
     await prisma.$transaction(async (tx) => {
       const rows = await tx.measurementSheetRow.findMany({
-        where: { projectRoomId: id },
+        where: {
+          projectRoomId: id,
+          sheet: { status: { in: ["draft", "in_progress", "revision"] } },
+        },
         select: { id: true },
       });
       const rowIds = rows.map((r) => r.id);

@@ -11,8 +11,9 @@ export class ReportsRepository {
     media: { select: { type: true, url: true } },
   } as const;
 
-  static async findAll() {
+  static async findAll(projectIds?: string[]) {
     const rows = await prisma.workReport.findMany({
+      where: projectIds ? { projectId: { in: projectIds } } : undefined,
       include: this.reportInclude,
       orderBy: { reportedAt: "desc" },
     });
@@ -28,41 +29,51 @@ export class ReportsRepository {
     return rows.map(mapWorkReport);
   }
 
-  static async findByEmployee(employeeId: string) {
+  static async findByEmployee(employeeId: string, projectIds?: string[]) {
     const rows = await prisma.workReport.findMany({
-      where: { employeeId },
+      where: {
+        employeeId,
+        ...(projectIds ? { projectId: { in: projectIds } } : {}),
+      },
       include: this.reportInclude,
       orderBy: { reportedAt: "desc" },
     });
     return rows.map(mapWorkReport);
   }
 
-  static async findByBoqItem(boqItemId: string) {
+  static async findByBoqItem(boqItemId: string, projectIds?: string[]) {
     const rows = await prisma.workReport.findMany({
-      where: { boqItemId },
+      where: {
+        boqItemId,
+        ...(projectIds ? { projectId: { in: projectIds } } : {}),
+      },
       include: this.reportInclude,
       orderBy: { reportedAt: "desc" },
     });
     return rows.map(mapWorkReport);
   }
 
-  static async findToday() {
+  static async findToday(projectIds?: string[]) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const end = new Date();
     end.setHours(23, 59, 59, 999);
 
     const rows = await prisma.workReport.findMany({
-      where: { reportedAt: { gte: start, lte: end } },
+      where: {
+        reportedAt: { gte: start, lte: end },
+        ...(projectIds ? { projectId: { in: projectIds } } : {}),
+      },
       include: this.reportInclude,
       orderBy: { reportedAt: "desc" },
     });
     return rows.map(mapWorkReport);
   }
 
-  static async findRecent(limit = 10) {
+  static async findRecent(limit = 10, projectIds?: string[]) {
     const rows = await prisma.workReport.findMany({
       take: limit,
+      where: projectIds ? { projectId: { in: projectIds } } : undefined,
       include: this.reportInclude,
       orderBy: { reportedAt: "desc" },
     });

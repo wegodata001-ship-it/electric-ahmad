@@ -8,13 +8,17 @@ export async function GET() {
   try {
     const session = await requireFieldManager();
 
-    // Company-wide projects — manager is not locked to one project.
+    // Only explicitly assigned projects (primary foreman or membership).
     // Hide internal "אחר" bucket used for unlisted temporary sites.
     const projects = await prisma.project.findMany({
       where: {
         deletedAt: null,
         status: { in: ["active", "planning"] },
         contractNumber: { not: "__OTHER_SITES__" },
+        OR: [
+          { foremanId: session.foremanId },
+          { employees: { some: { employeeId: session.foremanId } } },
+        ],
       },
       select: {
         id: true,

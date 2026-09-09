@@ -3,8 +3,8 @@ import {
   PartialInvoicesRepository,
   type UpdatePartialInvoiceInput,
 } from "@/repositories/partial-invoices.repository";
-import { getAuthContext } from "@/lib/auth/session";
-import { requireOfficeAuth } from "@/lib/auth/assert-office";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
+import { OfficeAuthError } from "@/lib/auth/office-session";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { parseJsonBody, ValidationError } from "@/lib/validation/parse-body";
 import { partialInvoicePatchSchema } from "@/lib/validation/schemas";
@@ -14,10 +14,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireOfficeAuth();
     const { id } = await params;
     const invoice = await PartialInvoicesRepository.findById(id);
     if (!invoice) return apiError("חשבון לא נמצא", 404);
+    await requireProjectPermission("view_all", invoice.projectId);
     return apiSuccess(invoice);
   } catch (error) {
     return handleApiError(error);
@@ -29,8 +29,13 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await getAuthContext();
     const { id } = await params;
+    const existing = await PartialInvoicesRepository.findById(id);
+    if (!existing) return apiError("חשבון לא נמצא", 404);
+    const { userId } = await requireProjectPermission(
+      "edit_draft",
+      existing.projectId
+    );
     const body = await parseJsonBody(request, partialInvoicePatchSchema);
     // Zod validates the wire payload; the repository accepts a slightly
     // narrower shape for status/items so we cast at the boundary to keep the
@@ -49,6 +54,7 @@ export async function PATCH(
     return apiSuccess(invoice);
   } catch (error) {
     if (error instanceof ValidationError) return handleApiError(error);
+    if (error instanceof OfficeAuthError) return handleApiError(error);
     if (error instanceof Error) return apiError(error.message, 400);
     return handleApiError(error);
   }

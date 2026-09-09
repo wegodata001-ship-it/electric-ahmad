@@ -15,6 +15,11 @@ const NAV = [
   { href: "/operations/approvals", label: "תיקונים", badge: true },
   { href: "/operations/accounts", label: "עץ פרויקט", exact: false },
   { href: "/operations/work-orders", label: "סידורים" },
+  {
+    href: "/operations/project-manager-assignments",
+    label: "שיוך מנהלי פרויקט",
+  },
+  { href: "/operations/workflow", label: "ציר תהליכים" },
   { href: "/operations/documents", label: "מרכז מסמכים" },
   { href: "/operations/profile", label: "פרופיל" },
 ];

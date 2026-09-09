@@ -13,6 +13,7 @@ export const OFFICE_SESSION_REMEMBER_TTL_SECONDS = 60 * 60 * 24 * 30; // 30d
 export type OfficeSessionPayload = {
   userId: string;
   role: string;
+  sessionVersion: number;
   exp: number;
 };
 
@@ -59,6 +60,7 @@ async function hmacSign(data: string): Promise<string> {
 export async function signOfficeSession(payload: {
   userId: string;
   role: string;
+  sessionVersion?: number;
   ttlSeconds?: number;
 }): Promise<string> {
   if (!isOfficeRole(payload.role)) {
@@ -67,6 +69,7 @@ export async function signOfficeSession(payload: {
   const body: OfficeSessionPayload = {
     userId: payload.userId,
     role: payload.role,
+    sessionVersion: payload.sessionVersion ?? 0,
     exp:
       Math.floor(Date.now() / 1000) +
       (payload.ttlSeconds ?? OFFICE_SESSION_TTL_SECONDS),

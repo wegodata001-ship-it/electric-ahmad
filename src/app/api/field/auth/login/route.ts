@@ -43,8 +43,8 @@ export async function POST(request: NextRequest) {
       return apiError("יש להזין שם משתמש וסיסמה");
     }
 
-    const user = await prisma.user.findUnique({
-      where: { username },
+    const user = await prisma.user.findFirst({
+      where: { username: { equals: username, mode: "insensitive" } },
       include: { employee: true },
     });
 
@@ -93,9 +93,25 @@ export async function POST(request: NextRequest) {
       return apiError("שם משתמש או סיסמה שגויים", 401);
     }
 
+    if (user.status !== "ACTIVE") {
+      logFailedLogin({
+        bucket: LOGIN_BUCKET,
+        ip,
+        identifier: username,
+        reason: `user-${user.status.toLowerCase()}`,
+      });
+      return apiError("המשתמש אינו פעיל", 403);
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
     const token = await signFieldSession({
       userId: user.id,
       employeeId: user.employee.id,
+      sessionVersion: user.sessionVersion,
     });
 
     await AuditRepository.log({

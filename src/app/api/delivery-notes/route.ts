@@ -1,13 +1,15 @@
 import { NextRequest } from "next/server";
 import { DeliveryNotesRepository } from "@/repositories/delivery-notes.repository";
-import { getAuthContext } from "@/lib/auth/session";
-import { requireOfficeAuth } from "@/lib/auth/assert-office";
+import { requireOfficeUser } from "@/lib/auth/office-session";
+import { hasDocumentPermission } from "@/lib/auth/document-permissions";
+import { assertCanCreateWdOrDnForProject } from "@/lib/auth/cross-project-documents";
+import { listProjectsForRole } from "@/lib/auth/project-access";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { parseListQuery } from "@/lib/api/list-query";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireOfficeAuth();
+    const session = await requireOfficeUser();
     const sp = request.nextUrl.searchParams;
     const projectId = sp.get("projectId") || undefined;
     const status = sp.get("status");
@@ -16,6 +18,21 @@ export async function GET(request: NextRequest) {
     // Use paged shape when the client asked for pagination or applied filters
     // beyond bare `projectId`. Otherwise keep the legacy array response for BC.
     const usePaged = parsed.paginated || Boolean(parsed.q) || Boolean(status);
+    const assignedProjects =
+      session.role === "PROJECT_MANAGER"
+        ? await listProjectsForRole({
+            userId: session.userId,
+            role: session.role,
+            mode: "assigned",
+          })
+        : [];
+    const access =
+      session.role === "PROJECT_MANAGER"
+        ? {
+            projectIds: assignedProjects.map((project) => project.id),
+            ownedByUserId: session.userId,
+          }
+        : undefined;
 
     if (usePaged) {
       const result = await DeliveryNotesRepository.listPage({
@@ -26,14 +43,17 @@ export async function GET(request: NextRequest) {
         skip: parsed.skip,
         sort: parsed.sort,
         dir: parsed.dir,
+        ...access,
       });
       return apiSuccess(result);
     }
 
     if (projectId) {
-      return apiSuccess(await DeliveryNotesRepository.findByProject(projectId));
+      return apiSuccess(
+        await DeliveryNotesRepository.findByProject(projectId, access)
+      );
     }
-    return apiSuccess(await DeliveryNotesRepository.findAll());
+    return apiSuccess(await DeliveryNotesRepository.findAll(access));
   } catch (error) {
     return handleApiError(error);
   }
@@ -41,8 +61,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await getAuthContext();
+    const session = await requireOfficeUser();
     const body = await request.json();
+    if (!hasDocumentPermission(session.role, "create")) {
+      return apiError("אין הרשאה ליצירת תעודת משלוח", 403);
+    }
+    const projectId = body.projectId ? String(body.projectId) : null;
+    const creationAccess = projectId
+      ? await assertCanCreateWdOrDnForProject(
+          session,
+          projectId,
+          "DELIVERY_NOTE"
+        )
+      : null;
     const note = await DeliveryNotesRepository.create(
       {
         noteNumber: body.noteNumber,
@@ -50,7 +81,9 @@ export async function POST(request: NextRequest) {
         status: body.status,
         client: body.client,
         clientId: body.clientId,
-        projectId: body.projectId,
+        projectId,
+        createdByRole: session.role,
+        createdCrossProject: creationAccess?.crossProject ?? false,
         orderNumber: body.orderNumber,
         contactName: body.contactName,
         phone: body.phone,
@@ -76,7 +109,7 @@ export async function POST(request: NextRequest) {
         driverNotes: body.driverNotes,
         items: Array.isArray(body.items) ? body.items : [],
       },
-      userId
+      session.userId
     );
     return apiSuccess(note, 201);
   } catch (error) {

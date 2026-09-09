@@ -106,7 +106,18 @@ export function InvoiceSummaryPage({ projectId }: { projectId: string }) {
                   {formatNumber(l.billableQuantity)}
                 </td>
                 <td className="px-3 py-2">{formatNumber(l.cumulativeQuantity)}</td>
-                <td className="px-3 py-2">{formatNumber(l.remainingQuantity)}</td>
+                <td
+                  className={`px-3 py-2 font-semibold ${
+                    l.remainingQuantity < 0 ? "text-red-700" : ""
+                  }`}
+                >
+                  {formatNumber(l.remainingQuantity)}
+                  {l.remainingQuantity < 0 && (
+                    <span className="block text-[10px]">
+                      חריגה מכמות חוזה
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2">{formatCurrency(l.amount)}</td>
               </tr>
             ))}

@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
-import { requireFieldManager } from "@/lib/auth/field-session";
+import {
+  assertProjectSelectable,
+  requireFieldManager,
+} from "@/lib/auth/field-session";
 import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 
@@ -31,6 +34,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     }
 
     const body = await req.json();
+    if (body.projectId) {
+      await assertProjectSelectable(String(body.projectId), session.foremanId);
+    }
     if (
       body.expectedVersion != null &&
       Number(body.expectedVersion) !== existing.currentVersion

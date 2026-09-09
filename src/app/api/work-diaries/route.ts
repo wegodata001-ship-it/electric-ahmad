@@ -8,6 +8,9 @@ import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { buildPageInfo, parseListQuery } from "@/lib/api/list-query";
 import type { WorkDiaryStatus } from "@prisma/client";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
+import { listProjectsForRole } from "@/lib/auth/project-access";
+import { assertCanCreateWdOrDnForProject } from "@/lib/auth/cross-project-documents";
 
 /** Office — list / create work diaries (Project Manager portal) */
 export async function GET(req: NextRequest) {
@@ -20,10 +23,24 @@ export async function GET(req: NextRequest) {
     const projectId = sp.get("projectId") || undefined;
     const status = sp.get("status") as WorkDiaryStatus | null;
     const parsed = parseListQuery(sp, { defaultTake: 80, maxTake: 200 });
+    if (projectId && session.role !== "PROJECT_MANAGER") {
+      await requireProjectPermission("view_all", projectId, "operational");
+    }
+    const assignedProjects = await listProjectsForRole({
+      userId: session.userId,
+      role: session.role,
+      mode: "assigned",
+    });
 
     // Fetch take+1 to detect hasMore without a separate count query.
     const fetched = await WorkDiariesRepository.list({
       projectId,
+      projectIds:
+        session.role === "PROJECT_MANAGER"
+          ? assignedProjects.map((project) => project.id)
+          : undefined,
+      ownedByUserId:
+        session.role === "PROJECT_MANAGER" ? session.userId : undefined,
       status: status || undefined,
       take: parsed.take + 1,
       skip: parsed.skip,
@@ -53,6 +70,11 @@ export async function POST(req: NextRequest) {
     }
     const body = await req.json();
     if (!body.projectId) return apiError("יש לבחור פרויקט");
+    const creationAccess = await assertCanCreateWdOrDnForProject(
+      session,
+      String(body.projectId),
+      "WORK_DIARY"
+    );
     if (!body.foremanId) return apiError("יש לבחור מנהל עבודה");
 
     const diary = await WorkDiariesRepository.create({
@@ -73,6 +95,8 @@ export async function POST(req: NextRequest) {
       foremanSignatureUrl: body.foremanSignatureUrl,
       foremanSignedName: body.foremanSignedName,
       createdById: session.userId,
+      createdByRole: session.role,
+      createdCrossProject: creationAccess.crossProject,
     });
 
     return apiSuccess(diary, 201);

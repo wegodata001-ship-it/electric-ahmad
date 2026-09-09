@@ -2,11 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, History, Save } from "lucide-react";
+import {
+  ArrowRight,
+  History,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+} from "lucide-react";
 import { Button, useToast } from "@/components/ui";
 import { invoicesWorkspaceService } from "../services/invoices-workspace.service";
-import { ProjectRoomsToolbar } from "@/features/projects/components/project-rooms-toolbar";
 import { formatNumber } from "@/utils/format";
+import {
+  calculateMeasurementQuantity,
+  hasMeasurementData,
+} from "@/lib/measurement/quantities";
 
 export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
   const toast = useToast();
@@ -16,6 +27,7 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [showHistory, setShowHistory] = useState(false);
   const [entries, setEntries] = useState<any[]>([]);
+  const [rowBusy, setRowBusy] = useState(false);
 
   useEffect(() => {
     invoicesWorkspaceService
@@ -54,7 +66,7 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
     );
   }, [sheet]);
 
-  const locked = sheet?.status === "invoiced" || sheet?.status === "locked";
+  const locked = sheet?.editable === false;
 
   async function saveCell(rowId: string, boqItemId: string) {
     const key = `${rowId}:${boqItemId}`;
@@ -81,15 +93,70 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
     }
   }
 
+  async function addRow() {
+    setRowBusy(true);
+    try {
+      await invoicesWorkspaceService.addRows(sheetId, ["שורה חדשה"]);
+      await reload();
+      toast.success("נוספה שורה חדשה");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setRowBusy(false);
+    }
+  }
+
+  async function renameRow(row: any) {
+    const name = window.prompt("שם השורה", row.name)?.trim();
+    if (!name || name === row.name) return;
+    setRowBusy(true);
+    try {
+      await invoicesWorkspaceService.renameRow(sheetId, row.id, name);
+      await reload();
+      toast.success("שם השורה עודכן");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setRowBusy(false);
+    }
+  }
+
+  async function deleteRow(row: any) {
+    const values = columns.map(
+      (column) => Number(draft[`${row.id}:${column.id}`] ?? 0)
+    );
+    const warning = hasMeasurementData(values)
+      ? "בשורה זו קיימים נתוני מדידה. מחיקת השורה תסיר את הנתונים מהטיוטה הנוכחית. האם להמשיך?"
+      : `למחוק את השורה "${row.name}"?`;
+    if (!window.confirm(warning)) return;
+    setRowBusy(true);
+    try {
+      await invoicesWorkspaceService.deleteRow(sheetId, row.id);
+      await reload();
+      toast.success("השורה נמחקה");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setRowBusy(false);
+    }
+  }
+
+  async function renameTitle() {
+    const title = window.prompt("כותרת המדידה", sheet.title)?.trim();
+    if (!title || title === sheet.title) return;
+    try {
+      const updated = await invoicesWorkspaceService.updateSheet(sheetId, {
+        title,
+      });
+      setSheet(updated);
+      toast.success("כותרת המדידה עודכנה");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
   if (loading) return <p className="p-6 text-sm text-gray-500">טוען דף מדידה…</p>;
   if (!sheet) return <p className="p-6 text-red-600">דף מדידה לא נמצא</p>;
-
-  const axis =
-    sheet.project?.measurementAxisLabel ||
-    ({ room: "חדר", floor: "קומה", building: "בניין", area: "אזור" } as any)[
-      sheet.project?.measurementAxisType
-    ] ||
-    "יחידה";
 
   return (
     <div className="space-y-4 pb-10">
@@ -101,7 +168,19 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
           <ArrowRight className="h-5 w-5" />
         </Link>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold text-gray-900">{sheet.title}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-gray-900">{sheet.title}</h1>
+            {!locked && (
+              <button
+                type="button"
+                className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                onClick={() => void renameTitle()}
+                title="שינוי כותרת"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
+          </div>
           <p className="text-sm text-gray-500">
             {sheet.project?.name} · דף #{sheet.sequenceNumber}
             {locked ? " · נעול" : ""}
@@ -113,11 +192,11 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
         </Button>
       </div>
 
-      {!locked && sheet?.projectId && (
-        <ProjectRoomsToolbar
-          projectId={sheet.projectId}
-          onChanged={reload}
-        />
+      {!locked && (
+        <Button size="sm" onClick={() => void addRow()} disabled={rowBusy}>
+          <Plus className="h-4 w-4" />
+          + הוסף שורה
+        </Button>
       )}
 
       {!columns.length && (
@@ -154,7 +233,7 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
           <thead className="sticky top-0 bg-gray-50 z-10">
             <tr>
               <th className="px-3 py-3 text-right font-semibold text-gray-600 whitespace-nowrap border-b">
-                {axis}
+                שורה / יחידה
               </th>
               {columns.map((col) => (
                 <th
@@ -174,7 +253,34 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
             {(sheet.rows ?? []).map((row: any) => (
               <tr key={row.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                 <td className="px-3 py-2 font-medium whitespace-nowrap sticky right-0 bg-white">
-                  {row.name}
+                  <span className="inline-flex items-center gap-2">
+                    {row.name}
+                    {!locked && (
+                      <details className="relative">
+                        <summary className="list-none cursor-pointer rounded p-1 hover:bg-gray-100">
+                          <MoreVertical className="h-4 w-4" />
+                        </summary>
+                        <div className="absolute right-0 z-20 mt-1 min-w-32 rounded-lg border bg-white p-1 shadow-lg">
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-gray-50"
+                            onClick={() => void renameRow(row)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            שינוי שם
+                          </button>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-red-700 hover:bg-red-50"
+                            onClick={() => void deleteRow(row)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            מחיקת שורה
+                          </button>
+                        </div>
+                      </details>
+                    )}
+                  </span>
                 </td>
                 {columns.map((col) => {
                   const key = `${row.id}:${col.id}`;
@@ -211,15 +317,56 @@ export function MeasurementSheetEditorPage({ sheetId }: { sheetId: string }) {
           </tbody>
           <tfoot>
             <tr className="bg-gray-50 font-semibold">
-              <td className="px-3 py-2">סה״כ</td>
+              <td className="px-3 py-2">סה״כ שבוצע (מצטבר)</td>
               {columns.map((col) => {
-                const sum = (sheet.rows ?? []).reduce((s: number, row: any) => {
+                const current = (sheet.rows ?? []).reduce((s: number, row: any) => {
                   const key = `${row.id}:${col.id}`;
                   return s + (Number(draft[key]) || 0);
                 }, 0);
+                const metrics = calculateMeasurementQuantity({
+                  contractQuantity: Number(col.contractQuantity) || 0,
+                  previousApprovedQuantity:
+                    Number(
+                      col.previousApprovedQuantity ?? col.invoicedQuantity
+                    ) || 0,
+                  currentQuantity: current,
+                });
                 return (
                   <td key={col.id} className="px-2 py-2 text-center">
-                    {formatNumber(sum)}
+                    {formatNumber(metrics.cumulativeQuantity)}
+                  </td>
+                );
+              })}
+            </tr>
+            <tr className="border-t bg-gray-50 font-semibold">
+              <td className="px-3 py-2">יתרה</td>
+              {columns.map((col) => {
+                const current = (sheet.rows ?? []).reduce(
+                  (sum: number, row: any) =>
+                    sum + (Number(draft[`${row.id}:${col.id}`]) || 0),
+                  0
+                );
+                const metrics = calculateMeasurementQuantity({
+                  contractQuantity: Number(col.contractQuantity) || 0,
+                  previousApprovedQuantity:
+                    Number(
+                      col.previousApprovedQuantity ?? col.invoicedQuantity
+                    ) || 0,
+                  currentQuantity: current,
+                });
+                return (
+                  <td
+                    key={col.id}
+                    className={`px-2 py-2 text-center ${
+                      metrics.isOverrun ? "text-red-700" : ""
+                    }`}
+                  >
+                    {formatNumber(metrics.remainingQuantity)}
+                    {metrics.isOverrun && (
+                      <span className="block text-[10px]">
+                        חריגה מכמות חוזה
+                      </span>
+                    )}
                   </td>
                 );
               })}

@@ -3,6 +3,7 @@ import { requireOfficeUser } from "@/lib/auth/office-session";
 import { hasDocumentPermission } from "@/lib/auth/document-permissions";
 import { WorkDiariesRepository } from "@/repositories/work-diaries.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { assertCanAccessOwnedWdOrDn } from "@/lib/auth/cross-project-documents";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,6 +17,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const existing = await WorkDiariesRepository.getById(id);
     if (!existing) return apiError("יומן עבודה לא נמצא", 404);
+    await assertCanAccessOwnedWdOrDn(
+      session,
+      existing,
+      "send_for_approval"
+    );
 
     const body = await req.json();
     const approverIds: string[] = Array.isArray(body.approverIds)

@@ -69,6 +69,7 @@ function MeasurementSheetPrintInner({ sheetId }: { sheetId: string }) {
             unit: s.unit,
             contractQuantity: s.contractQuantity,
             invoicedQuantity: s.invoicedQuantity,
+            previousApprovedQuantity: s.previousApprovedQuantity,
           })),
           qty,
           clientSignedAt: sheet.clientSignedAt,

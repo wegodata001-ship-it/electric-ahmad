@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ExecutionReportsRepository } from "@/repositories/execution-reports.repository";
-import { getAuthContext } from "@/lib/auth/session";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
+import { OfficeAuthError } from "@/lib/auth/office-session";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -13,12 +14,8 @@ type RouteContext = {
  */
 export async function GET(req: NextRequest, context: RouteContext) {
   try {
-    const { userId } = await getAuthContext();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: projectId } = await context.params;
+    await requireProjectPermission("view_all", projectId);
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
 
@@ -31,6 +28,9 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const reports = await ExecutionReportsRepository.findByProject(projectId);
     return NextResponse.json(reports);
   } catch (error: any) {
+    if (error instanceof OfficeAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error("[GET /api/projects/:id/execution-reports] Error:", error);
     return NextResponse.json(
       { error: error.message || "Failed to fetch reports" },
@@ -45,12 +45,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
  */
 export async function POST(req: NextRequest, context: RouteContext) {
   try {
-    const { userId } = await getAuthContext();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: projectId } = await context.params;
+    const { userId } = await requireProjectPermission("create", projectId);
     const body = await req.json();
 
     const { reportedAt, foremanId, notes, items } = body;
@@ -91,6 +87,9 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     return NextResponse.json(report, { status: 201 });
   } catch (error: any) {
+    if (error instanceof OfficeAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error("[POST /api/projects/:id/execution-reports] Error:", error);
     return NextResponse.json(
       { error: error.message || "Failed to create report" },

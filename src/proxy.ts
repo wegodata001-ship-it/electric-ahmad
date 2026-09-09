@@ -251,6 +251,12 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
     if (pathname.startsWith("/system/")) {
       return NextResponse.redirect(new URL("/attendance/checkin", request.url));
     }
+    if (isApi && !allowedSystem) {
+      return NextResponse.json(
+        { success: false, error: "אין הרשאה ל־API זה" },
+        { status: 403 }
+      );
+    }
     if (
       !allowedSystem &&
       (pathname.startsWith("/project") ||
@@ -268,6 +274,12 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
       pathname.startsWith("/driver/") ||
       pathname.startsWith("/api/driver/") ||
       pathname.startsWith("/api/auth/");
+    if (isApi && !onDriver) {
+      return NextResponse.json(
+        { success: false, error: "אין הרשאה ל־API זה" },
+        { status: 403 }
+      );
+    }
     if (!onDriver) {
       if (
         pathname.startsWith("/project") ||

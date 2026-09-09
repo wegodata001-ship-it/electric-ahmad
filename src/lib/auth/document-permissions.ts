@@ -3,6 +3,7 @@ import {
   FIELD_MANAGER_ROLE,
   LEGACY_SYSTEM_ADMIN_ROLE,
   PROJECT_MANAGER_ROLE,
+  SECRETARY_ROLE,
   SYSTEM_MANAGER_ROLE,
   TRUCK_DRIVER_ROLE,
   isFieldManagerRole,
@@ -106,6 +107,7 @@ export function permissionsForRole(role?: string | null): DocumentPermission[] {
     return PROJECT_OPS_PERMS;
   }
   if (isFieldManagerRole(role)) return FIELD_PERMS;
+  if (role === SECRETARY_ROLE || role === "מזכירה") return [];
   if (isTruckDriverRole(role) || role === TRUCK_DRIVER_ROLE) {
     return [
       "view_own",

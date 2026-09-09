@@ -22,7 +22,6 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const sheet = await MeasurementSheetsRepository.getPublicForSign(id, token);
     return apiSuccess(sheet);
   } catch (error) {
-    if (error instanceof Error) return apiError(error.message, 400);
     return handleApiError(error);
   }
 }
@@ -58,7 +57,6 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return apiSuccess(sheet);
   } catch (error) {
     if (error instanceof ValidationError) return handleApiError(error);
-    if (error instanceof Error) return apiError(error.message, 400);
     return handleApiError(error);
   }
 }

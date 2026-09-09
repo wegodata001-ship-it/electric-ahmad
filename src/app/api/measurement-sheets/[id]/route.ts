@@ -2,11 +2,11 @@ import { NextRequest } from "next/server";
 import {
   OfficeAuthError,
   readOfficeSessionPayload,
-  requireOfficeUser,
 } from "@/lib/auth/office-session";
 import { MeasurementSheetsRepository } from "@/repositories/measurement-sheets.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { PmApprovalEditError } from "@/lib/auth/measurement-pm-approval-edit";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -22,6 +22,9 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     }
 
     const { id } = await ctx.params;
+    const existing = await MeasurementSheetsRepository.getById(id);
+    if (!existing) return apiError("דף מדידה לא נמצא", 404);
+    await requireProjectPermission("view_all", existing.projectId);
     const result = await MeasurementSheetsRepository.getByIdForOffice(
       id,
       payload.userId
@@ -44,9 +47,17 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {
   try {
-    const session = await requireOfficeUser();
     const { id } = await ctx.params;
+    const existing = await MeasurementSheetsRepository.getById(id);
+    if (!existing) return apiError("דף מדידה לא נמצא", 404);
+    const session = await requireProjectPermission(
+      "edit_draft",
+      existing.projectId
+    );
     const body = await req.json();
+    if (body.title !== undefined && !String(body.title).trim()) {
+      return apiError("כותרת המדידה לא יכולה להיות ריקה", 400);
+    }
     // NOTE: `body.status` is intentionally NOT forwarded — status transitions
     // must go through submit / approve / reject / complete so approvals and
     // signatures are always enforced.

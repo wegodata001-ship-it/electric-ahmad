@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
-import { requireFieldManager } from "@/lib/auth/field-session";
+import {
+  assertProjectSelectable,
+  requireFieldManager,
+} from "@/lib/auth/field-session";
 import { WorkOrdersRepository } from "@/repositories/work-orders.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import type { WorkOrderStatus } from "@prisma/client";
@@ -25,6 +28,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     if (!body.projectId) return apiError("יש לבחור פרויקט");
+    await assertProjectSelectable(String(body.projectId), session.foremanId);
 
     const order = await WorkOrdersRepository.create({
       projectId: String(body.projectId),

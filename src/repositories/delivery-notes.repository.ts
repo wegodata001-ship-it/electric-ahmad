@@ -29,6 +29,9 @@ function mapNote(row: {
   client: string;
   clientId: string | null;
   projectId: string | null;
+  createdById: string;
+  createdByRole?: string | null;
+  createdCrossProject?: boolean;
   project?: { name: string } | null;
   orderNumber: string | null;
   contactName: string | null;
@@ -96,6 +99,9 @@ function mapNote(row: {
     client: row.client,
     clientId: row.clientId,
     projectId: row.projectId,
+    createdById: row.createdById,
+    createdByRole: row.createdByRole ?? null,
+    createdCrossProject: row.createdCrossProject ?? false,
     projectName: row.project?.name ?? null,
     orderNumber: row.orderNumber,
     contactName: row.contactName,
@@ -284,6 +290,8 @@ export type CreateDeliveryNoteInput = {
   client: string;
   clientId?: string | null;
   projectId?: string | null;
+  createdByRole?: string | null;
+  createdCrossProject?: boolean;
   orderNumber?: string;
   contactName?: string;
   phone?: string;
@@ -343,6 +351,23 @@ export type DeliveryNoteListItem = {
 };
 
 export class DeliveryNotesRepository {
+  private static accessWhere(access?: {
+    projectIds?: string[];
+    ownedByUserId?: string;
+  }): Prisma.DeliveryNoteWhereInput | undefined {
+    if (!access?.projectIds && !access?.ownedByUserId) return undefined;
+    return {
+      OR: [
+        ...(access.projectIds
+          ? [{ projectId: { in: access.projectIds } }]
+          : []),
+        ...(access.ownedByUserId
+          ? [{ createdById: access.ownedByUserId }]
+          : []),
+      ],
+    };
+  }
+
   static async nextSequence(): Promise<number> {
     const latest = await prisma.deliveryNote.findFirst({
       orderBy: { sequenceNumber: "desc" },
@@ -351,8 +376,12 @@ export class DeliveryNotesRepository {
     return (latest?.sequenceNumber ?? 0) + 1;
   }
 
-  static async findAll() {
+  static async findAll(access?: {
+    projectIds?: string[];
+    ownedByUserId?: string;
+  }) {
     const rows = await prisma.deliveryNote.findMany({
+      where: this.accessWhere(access),
       include: noteInclude,
       orderBy: { date: "desc" },
     });
@@ -367,9 +396,15 @@ export class DeliveryNotesRepository {
     return row ? mapNote(row) : null;
   }
 
-  static async findByProject(projectId: string) {
+  static async findByProject(
+    projectId: string,
+    access?: { projectIds?: string[]; ownedByUserId?: string }
+  ) {
     const rows = await prisma.deliveryNote.findMany({
-      where: { projectId },
+      where: {
+        projectId,
+        AND: this.accessWhere(access),
+      },
       include: noteInclude,
       orderBy: { date: "desc" },
     });
@@ -390,6 +425,8 @@ export class DeliveryNotesRepository {
     skip: number;
     sort?: string | null;
     dir?: ListSortDir;
+    projectIds?: string[];
+    ownedByUserId?: string;
   }): Promise<{
     items: DeliveryNoteListItem[];
     total: number;
@@ -400,19 +437,22 @@ export class DeliveryNotesRepository {
     const dir: ListSortDir = opts.dir === "asc" ? "asc" : "desc";
 
     const where: Prisma.DeliveryNoteWhereInput = {};
+    const accessWhere = this.accessWhere(opts);
+    if (accessWhere) where.AND = [accessWhere];
     if (opts.projectId) where.projectId = opts.projectId;
     if (opts.status && opts.status !== "all") {
       where.status = opts.status as DeliveryNoteStatus;
     }
     const q = opts.q?.trim();
     if (q) {
-      where.OR = [
+      const searchWhere: Prisma.DeliveryNoteWhereInput = { OR: [
         { noteNumber: { contains: q, mode: "insensitive" } },
         { client: { contains: q, mode: "insensitive" } },
         { contactName: { contains: q, mode: "insensitive" } },
         { orderNumber: { contains: q, mode: "insensitive" } },
         { city: { contains: q, mode: "insensitive" } },
-      ];
+      ] };
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), searchWhere];
     }
 
     const orderBy: Prisma.DeliveryNoteOrderByWithRelationInput[] = (() => {
@@ -570,6 +610,8 @@ export class DeliveryNotesRepository {
         barcodePayload,
         ownerId: userId,
         createdById: userId,
+        createdByRole: input.createdByRole ?? null,
+        createdCrossProject: input.createdCrossProject ?? false,
         updatedById: userId,
         items: {
           create: input.items.map((item, index) => ({
@@ -607,6 +649,20 @@ export class DeliveryNotesRepository {
       userId,
       metadata: { noteNumber, itemCount: input.items.length },
     });
+    if (input.createdCrossProject) {
+      await AuditRepository.log({
+        action: "CROSS_PROJECT_DOCUMENT_CREATED",
+        entityType: "DeliveryNote",
+        entityId: created.id,
+        userId,
+        metadata: {
+          noteNumber,
+          projectId: input.projectId,
+          createdByRole: input.createdByRole,
+          projectAssignedToCreator: false,
+        },
+      });
+    }
 
     const mapped = mapNote(created);
     await prisma.deliveryNoteVersion.create({

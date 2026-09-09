@@ -1,5 +1,9 @@
 import { NextRequest } from "next/server";
-import { requireTruckDriver } from "@/lib/auth/driver-session";
+import {
+  assertDriverProjectSelectable,
+  requireTruckDriver,
+} from "@/lib/auth/driver-session";
+import { OfficeAuthError } from "@/lib/auth/office-session";
 import {
   OpsDeliveryNotesRepository,
   ensureDriverEmployee,
@@ -34,6 +38,9 @@ export async function POST(req: NextRequest) {
     }
     if (!Array.isArray(body.items) || body.items.length === 0) {
       return apiError("יש להוסיף לפחות פריט אחד");
+    }
+    if (body.projectId) {
+      await assertDriverProjectSelectable(String(body.projectId));
     }
 
     const foremanId = await ensureDriverEmployee({
@@ -94,6 +101,7 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess(note, 201);
   } catch (error) {
+    if (error instanceof OfficeAuthError) return handleApiError(error);
     if (error instanceof Error) return apiError(error.message, 400);
     return handleApiError(error);
   }

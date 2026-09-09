@@ -15,8 +15,7 @@ export function canSeeAllProjects(role?: string | null): boolean {
 }
 
 /**
- * manage = מדידות / חשבונות / BOQ / מסמכים / דוחות — רק פרויקטים בבעלות PM
- * operational = יומני עבודה / תעודות משלוח — כל הפרויקטים גם ל-PM
+ * All PM scopes are limited to projects assigned through Project.ownerId.
  */
 export async function userCanAccessProject(opts: {
   userId: string;
@@ -34,9 +33,6 @@ export async function userCanAccessProject(opts: {
   if (canSeeAllProjects(opts.role)) return true;
 
   if (opts.role === PROJECT_MANAGER_ROLE) {
-    if (scope === "operational") {
-      return true;
-    }
     const owned = await prisma.project.findFirst({
       where: {
         id: opts.projectId,
@@ -58,7 +54,7 @@ export async function listProjectsForRole(opts: {
   mode?: "all" | "assigned";
 }) {
   const mode = opts.mode ?? "assigned";
-  if (canSeeAllProjects(opts.role) || mode === "all") {
+  if (canSeeAllProjects(opts.role)) {
     return prisma.project.findMany({
       where: { deletedAt: null },
       select: {

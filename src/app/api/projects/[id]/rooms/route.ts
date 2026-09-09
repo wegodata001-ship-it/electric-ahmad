@@ -2,10 +2,10 @@ import { NextRequest } from "next/server";
 import {
   OfficeAuthError,
   readOfficeSessionPayload,
-  requireOfficeUser,
 } from "@/lib/auth/office-session";
 import { ProjectRoomsRepository } from "@/repositories/project-rooms.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
+import { requireProjectPermission } from "@/lib/auth/assert-office";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -20,6 +20,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     }
 
     const { id: projectId } = await ctx.params;
+    await requireProjectPermission("view_all", projectId);
     const includeHidden =
       req.nextUrl.searchParams.get("includeHidden") === "1";
     const result = await ProjectRoomsRepository.listForOffice(
@@ -41,8 +42,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
-    await requireOfficeUser();
     const { id: projectId } = await ctx.params;
+    await requireProjectPermission("create", projectId);
     const body = await req.json();
     if (!body.name?.trim()) return apiError("שם החדר חובה", 400);
     const room = await ProjectRoomsRepository.create(projectId, {
@@ -60,8 +61,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 /** סידור מחדש: body.orderedIds = string[] */
 export async function PUT(req: NextRequest, ctx: Ctx) {
   try {
-    await requireOfficeUser();
     const { id: projectId } = await ctx.params;
+    await requireProjectPermission("edit_draft", projectId);
     const body = await req.json();
     const orderedIds = Array.isArray(body.orderedIds)
       ? body.orderedIds.map(String)

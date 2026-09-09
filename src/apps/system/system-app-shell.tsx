@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils";
 const FULL_NAV = [
   { href: "/system/approvals", label: "תיקונים", badge: true },
   { href: "/system/accounts", label: "עץ פרויקט", exact: false },
-  { href: "/system/users", label: "משתמשים" },
-  { href: "/system/workflow", label: "תהליכי עבודה" },
+  { href: "/system/users", label: "ניהול משתמשים" },
+  { href: "/system/workflow", label: "ציר תהליכים" },
   { href: "/system/documents", label: "מרכז מסמכים" },
   { href: "/system/settings", label: "הגדרות" },
 ];

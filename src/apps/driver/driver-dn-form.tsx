@@ -14,6 +14,28 @@ import { DN_PHOTO_STAGES } from "@/apps/shared/field-media-capture";
 
 type Project = { id: string; name: string; location?: string };
 type Line = { description: string; quantity: string; unit: string };
+type ExistingNote = {
+  projectId?: string | null;
+  address?: string | null;
+  clientName?: string | null;
+  noteDate?: string | null;
+  noteTime?: string | null;
+  notes?: string | null;
+  price?: string | number | null;
+  transportCost?: string | number | null;
+  financialNotes?: string | null;
+  foremanSignatureUrl?: string | null;
+  status?: string | null;
+  rejectionComment?: string | null;
+  documentNumber?: string | null;
+  items?: Array<{
+    description?: string | null;
+    quantity?: string | number | null;
+    unit?: string | null;
+  }>;
+  media?: Array<{ url?: string | null }>;
+};
+type SavedNote = { id: string };
 
 type Props = { editId?: string };
 
@@ -58,7 +80,7 @@ export function DriverDnForm({ editId }: Props) {
   useEffect(() => {
     if (!editId) return;
     apiClient
-      .get<any>(`/api/driver/delivery-notes/${editId}`)
+      .get<ExistingNote>(`/api/driver/delivery-notes/${editId}`)
       .then((n) => {
         setProjectId(n.projectId || "");
         setDestination(n.address || n.clientName || "");
@@ -71,11 +93,11 @@ export function DriverDnForm({ editId }: Props) {
         );
         setFinancialNotes(n.financialNotes || "");
         setSignature(n.foremanSignatureUrl || null);
-        setStatus(n.status);
+        setStatus(n.status ?? null);
         setRejection(n.rejectionComment || null);
         setDocNumber(n.documentNumber || null);
         if (n.price || n.transportCost || n.financialNotes) setShowPricing(true);
-        const items = (n.items || []).map((it: any) => ({
+        const items = (n.items || []).map((it) => ({
           description: it.description || "",
           quantity: String(it.quantity ?? 1),
           unit: it.unit || "יח'",
@@ -84,7 +106,11 @@ export function DriverDnForm({ editId }: Props) {
           items.length ? items : [{ description: "", quantity: "1", unit: "יח'" }]
         );
         if (Array.isArray(n.media)) {
-          setPhotos(n.media.map((m: any) => m.url).filter(Boolean));
+          setPhotos(
+            n.media
+              .map((m) => m.url)
+              .filter((url): url is string => Boolean(url))
+          );
         }
       })
       .catch((e) => setError(e.message));
@@ -147,14 +173,17 @@ export function DriverDnForm({ editId }: Props) {
         submit: false,
       };
 
-      let note: any;
+      let note: SavedNote;
       if (editId) {
-        note = await apiClient.patch(
+        note = await apiClient.patch<SavedNote>(
           `/api/driver/delivery-notes/${editId}`,
           payload
         );
       } else {
-        note = await apiClient.post("/api/driver/delivery-notes", payload);
+        note = await apiClient.post<SavedNote>(
+          "/api/driver/delivery-notes",
+          payload
+        );
       }
 
       const id = note.id as string;
@@ -173,8 +202,8 @@ export function DriverDnForm({ editId }: Props) {
 
       router.replace(`/driver/delivery-notes/${id}`);
       router.refresh();
-    } catch (e: any) {
-      setError(e.message || "שמירה נכשלה");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "שמירה נכשלה");
     } finally {
       setBusy(false);
     }
@@ -183,7 +212,7 @@ export function DriverDnForm({ editId }: Props) {
   const editable = !status || status === "draft" || status === "revision";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 overflow-x-hidden">
       <div>
         <h1 className="text-xl font-black">
           {editId ? "עריכת תעודה" : "תעודת משלוח חדשה"}
@@ -207,59 +236,66 @@ export function DriverDnForm({ editId }: Props) {
         </div>
       )}
 
-      <label className="block space-y-1.5">
-        <span className="text-sm font-bold text-slate-700">פרויקט</span>
-        <select
-          value={projectId}
-          disabled={!editable}
-          onChange={(e) => setProjectId(e.target.value)}
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-base"
-        >
-          <option value="">בחר פרויקט…</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="block space-y-1.5">
-        <span className="text-sm font-bold text-slate-700">יעד</span>
-        <input
-          value={destination}
-          disabled={!editable}
-          onChange={(e) => setDestination(e.target.value)}
-          placeholder="כתובת / שם מקבל"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-base"
-        />
-      </label>
-
-      <div className="grid grid-cols-2 gap-3">
+      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="border-b border-slate-100 pb-3 font-black text-slate-900">
+          פרטי משלוח
+        </h2>
         <label className="block space-y-1.5">
-          <span className="text-sm font-bold text-slate-700">תאריך</span>
-          <input
-            type="date"
-            value={noteDate}
+          <span className="text-sm font-bold text-slate-700">פרויקט</span>
+          <select
+            value={projectId}
             disabled={!editable}
-            onChange={(e) => setNoteDate(e.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-3 py-3.5 text-base"
+            onChange={(e) => setProjectId(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base"
+          >
+            <option value="">בחר פרויקט…</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block space-y-1.5">
+          <span className="text-sm font-bold text-slate-700">יעד</span>
+          <input
+            value={destination}
+            disabled={!editable}
+            onChange={(e) => setDestination(e.target.value)}
+            placeholder="כתובת / שם מקבל"
+            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-base"
           />
         </label>
-        <label className="block space-y-1.5">
-          <span className="text-sm font-bold text-slate-700">שעה</span>
-          <input
-            type="time"
-            value={noteTime}
-            disabled={!editable}
-            onChange={(e) => setNoteTime(e.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-3 py-3.5 text-base"
-          />
-        </label>
-      </div>
 
-      <div className="space-y-2">
-        <p className="text-sm font-bold text-slate-700">פריטים שנמסרו</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block min-w-0 space-y-1.5">
+            <span className="text-sm font-bold text-slate-700">תאריך</span>
+            <input
+              type="date"
+              value={noteDate}
+              disabled={!editable}
+              onChange={(e) => setNoteDate(e.target.value)}
+              className="w-full min-w-0 rounded-xl border border-slate-200 px-2 py-3 text-sm"
+            />
+          </label>
+          <label className="block min-w-0 space-y-1.5">
+            <span className="text-sm font-bold text-slate-700">שעה</span>
+            <input
+              type="time"
+              value={noteTime}
+              disabled={!editable}
+              onChange={(e) => setNoteTime(e.target.value)}
+              className="w-full min-w-0 rounded-xl border border-slate-200 px-2 py-3 text-sm"
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="border-b border-slate-100 pb-3 font-black text-slate-900">
+          פריטים
+        </h2>
         {lines.map((line, idx) => (
           <div key={idx} className="flex gap-2">
             <input
@@ -272,7 +308,7 @@ export function DriverDnForm({ editId }: Props) {
                 );
               }}
               placeholder="פריט"
-              className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-3 py-3 text-base"
+              className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-3 text-base"
             />
             <input
               value={line.quantity}
@@ -284,7 +320,7 @@ export function DriverDnForm({ editId }: Props) {
                 );
               }}
               inputMode="decimal"
-              className="w-20 rounded-2xl border border-slate-200 px-2 py-3 text-center text-base"
+              className="w-16 shrink-0 rounded-xl border border-slate-200 px-2 py-3 text-center text-base"
             />
           </div>
         ))}
@@ -292,31 +328,35 @@ export function DriverDnForm({ editId }: Props) {
           <button
             type="button"
             onClick={addLine}
-            className="text-sm font-bold text-slate-700 underline"
+            className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700"
           >
             + הוסף פריט
           </button>
         )}
-      </div>
+      </section>
 
-      <label className="block space-y-1.5">
-        <span className="text-sm font-bold text-slate-700">הערות</span>
-        <textarea
-          value={notes}
-          disabled={!editable}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={2}
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-base"
-        />
-      </label>
+      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="border-b border-slate-100 pb-3 font-black text-slate-900">
+          תיעוד
+        </h2>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-bold text-slate-700">הערות</span>
+          <textarea
+            value={notes}
+            disabled={!editable}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-base"
+          />
+        </label>
 
-      {editable && (
-        <div className="space-y-3">
-          <p className="text-sm font-bold text-slate-700">תמונות</p>
+        {editable && (
+          <div className="space-y-3">
+            <p className="text-sm font-bold text-slate-700">תמונות</p>
           <select
             value={photoStage}
             onChange={(e) => setPhotoStage(e.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-base"
+            className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
           >
             {DN_PHOTO_STAGES.map((s) => (
               <option key={s.value} value={s.value}>
@@ -324,22 +364,22 @@ export function DriverDnForm({ editId }: Props) {
               </option>
             ))}
           </select>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => cameraRef.current?.click()}
-              className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl bg-slate-900 text-white"
+              className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-white"
             >
-              <Camera className="h-5 w-5" />
-              <span className="text-xs font-black">מצלמה</span>
+              <Camera className="h-4 w-4" />
+              <span className="text-xs font-bold">מצלמה</span>
             </button>
             <button
               type="button"
               onClick={() => galleryRef.current?.click()}
-              className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-slate-200 bg-white"
+              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3"
             >
-              <ImageIcon className="h-5 w-5" />
-              <span className="text-xs font-black">גלריה</span>
+              <ImageIcon className="h-4 w-4" />
+              <span className="text-xs font-bold">גלריה</span>
             </button>
           </div>
           <input
@@ -365,7 +405,7 @@ export function DriverDnForm({ editId }: Props) {
                   key={i}
                   src={p}
                   alt=""
-                  className="h-16 w-16 rounded-xl object-cover"
+                  className="h-14 w-14 rounded-lg border border-slate-200 object-cover"
                   onClick={() =>
                     setPhotos((prev) => prev.filter((_, idx) => idx !== i))
                   }
@@ -373,18 +413,23 @@ export function DriverDnForm({ editId }: Props) {
               ))}
             </div>
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </section>
 
       {editable && (
-        <div className="rounded-3xl border border-slate-200 bg-white p-3">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="font-black text-slate-900">חתימת נהג</h2>
+          <p className="mb-3 mt-1 text-xs text-slate-500">
+            חובה לפני שליחת המסמך
+          </p>
           <SignaturePad
             value={signature}
             onChange={setSignature}
-            label="חתימת יוצר המסמך (חובה לפני שליחה)"
-            height={140}
+            label="אזור חתימה"
+            height={110}
           />
-        </div>
+        </section>
       )}
 
       <button
@@ -396,7 +441,7 @@ export function DriverDnForm({ editId }: Props) {
       </button>
 
       {showPricing && (
-        <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4">
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <label className="block space-y-1">
             <span className="text-xs font-bold text-slate-500">מחיר</span>
             <input
@@ -441,7 +486,7 @@ export function DriverDnForm({ editId }: Props) {
             type="button"
             disabled={busy}
             onClick={() => void save(true)}
-            className="min-h-[3.5rem] rounded-3xl bg-emerald-600 text-lg font-black text-white disabled:opacity-60"
+            className="min-h-14 rounded-2xl bg-slate-900 text-base font-black text-white disabled:opacity-60"
           >
             {busy ? "שולח…" : "שלח לאישור"}
           </button>
@@ -449,7 +494,7 @@ export function DriverDnForm({ editId }: Props) {
             type="button"
             disabled={busy}
             onClick={() => void save(false)}
-            className="min-h-[3.25rem] rounded-3xl border-2 border-slate-200 bg-white text-base font-bold text-slate-800 disabled:opacity-60"
+            className="min-h-14 rounded-2xl border border-slate-200 bg-white text-base font-bold text-slate-800 disabled:opacity-60"
           >
             שמור טיוטה
           </button>
@@ -460,7 +505,7 @@ export function DriverDnForm({ editId }: Props) {
         <button
           type="button"
           onClick={() => router.push("/driver/delivery-notes")}
-          className="w-full min-h-[3.25rem] rounded-3xl bg-slate-900 text-base font-bold text-white"
+          className="min-h-14 w-full rounded-2xl bg-slate-900 text-base font-bold text-white"
         >
           חזרה לרשימה
         </button>

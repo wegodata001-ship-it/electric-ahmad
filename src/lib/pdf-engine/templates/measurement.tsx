@@ -5,6 +5,7 @@ import {
   chunkArray,
   maxSectionsPerMeasurementChunk,
 } from "../column-chunking";
+import { calculateMeasurementQuantity } from "@/lib/measurement/quantities";
 
 export type MeasurementPdfModel = {
   title: string;
@@ -20,6 +21,7 @@ export type MeasurementPdfModel = {
     unit?: string | null;
     contractQuantity?: number;
     invoicedQuantity?: number;
+    previousApprovedQuantity?: number;
   }[];
   qty: (rowId: string, boqId: string) => number;
   clientSignedAt?: string | null;
@@ -42,18 +44,20 @@ export function MeasurementTemplate({ model }: { model: MeasurementPdfModel }) {
   const sectionTotal = (boqId: string) =>
     model.rooms.reduce((s, room) => s + model.qty(room.id, boqId), 0);
 
-  const sectionRemain = (s: Section) => {
-    const contract = Number(s.contractQuantity) || 0;
-    const invoiced = Number(s.invoicedQuantity) || 0;
-    return Math.max(0, contract - invoiced - sectionTotal(s.id));
-  };
+  const sectionMetrics = (s: Section) =>
+    calculateMeasurementQuantity({
+      contractQuantity: Number(s.contractQuantity) || 0,
+      previousApprovedQuantity:
+        Number(s.previousApprovedQuantity ?? s.invoicedQuantity) || 0,
+      currentQuantity: sectionTotal(s.id),
+    });
 
   /** Row total across ALL sections (full sheet) — shown in every chunk's סה״כ */
   const roomGrandTotal = (roomId: string) =>
     model.sections.reduce((acc, s) => acc + model.qty(roomId, s.id), 0);
 
-  const sheetGrandTotal = model.rooms.reduce(
-    (acc, room) => acc + roomGrandTotal(room.id),
+  const sheetCumulativeTotal = model.sections.reduce(
+    (sum, section) => sum + sectionMetrics(section).cumulativeQuantity,
     0
   );
 
@@ -90,9 +94,9 @@ export function MeasurementTemplate({ model }: { model: MeasurementPdfModel }) {
           chunkIndex={chunkIndex}
           chunkCount={chunkCount}
           sectionTotal={sectionTotal}
-          sectionRemain={sectionRemain}
+          sectionMetrics={sectionMetrics}
           roomGrandTotal={roomGrandTotal}
-          sheetGrandTotal={sheetGrandTotal}
+          sheetGrandTotal={sheetCumulativeTotal}
         />
       ))}
 
@@ -134,7 +138,7 @@ function MeasurementTableChunk({
   chunkIndex,
   chunkCount,
   sectionTotal,
-  sectionRemain,
+  sectionMetrics,
   roomGrandTotal,
   sheetGrandTotal,
 }: {
@@ -144,7 +148,7 @@ function MeasurementTableChunk({
   chunkIndex: number;
   chunkCount: number;
   sectionTotal: (id: string) => number;
-  sectionRemain: (s: Section) => number;
+  sectionMetrics: (s: Section) => ReturnType<typeof calculateMeasurementQuantity>;
   roomGrandTotal: (roomId: string) => number;
   sheetGrandTotal: number;
 }) {
@@ -200,7 +204,7 @@ function MeasurementTableChunk({
               className="border border-gray-400 px-2 py-2 text-right"
               style={{ width: "22%" }}
             >
-              חדר / יחידה
+              שורה / יחידה
             </th>
             {sections.map((s) => (
               <th
@@ -210,8 +214,13 @@ function MeasurementTableChunk({
                 <div className="font-mono text-[9px] opacity-90">{s.code}</div>
                 <div className="leading-tight">{s.description}</div>
                 <div className="mt-0.5 text-[8px] opacity-90">
-                  מאושר {formatNumber(Number(s.contractQuantity) || 0)}
+                  כמות חוזה {formatNumber(Number(s.contractQuantity) || 0)}
                 </div>
+                {sectionMetrics(s).isOverrun && (
+                  <div className="mt-0.5 text-[8px] font-black text-red-100">
+                    ⚠ חריגה +{formatNumber(sectionMetrics(s).overrunQuantity)}
+                  </div>
+                )}
               </th>
             ))}
             <th
@@ -251,13 +260,15 @@ function MeasurementTableChunk({
         </tbody>
         <tfoot>
           <tr className="bg-gray-100 font-bold">
-            <td className="border border-gray-400 px-2 py-1.5">סה״כ שבוצע</td>
+            <td className="border border-gray-400 px-2 py-1.5">
+              סה״כ שבוצע (מצטבר)
+            </td>
             {sections.map((s) => (
               <td
                 key={`t-${s.id}`}
                 className="border border-gray-400 px-1 py-1.5 text-center"
               >
-                {formatNumber(sectionTotal(s.id))}
+                {formatNumber(sectionMetrics(s).cumulativeQuantity)}
               </td>
             ))}
             <td className="border border-gray-400 px-1 py-1.5 text-center">
@@ -269,14 +280,21 @@ function MeasurementTableChunk({
               יתרה
             </td>
             {sections.map((s) => {
-              const rem = sectionRemain(s);
+              const metrics = sectionMetrics(s);
               return (
                 <td
                   key={`r-${s.id}`}
                   className="border border-gray-400 px-1 py-1.5 text-center font-bold"
-                  style={{ color: rem > 0 ? "#dc2626" : "#059669" }}
+                  style={{
+                    color: metrics.isOverrun
+                      ? "#dc2626"
+                      : metrics.isComplete
+                        ? "#059669"
+                        : "#374151",
+                  }}
                 >
-                  {formatNumber(rem)}
+                  {formatNumber(metrics.remainingQuantity)}
+                  {metrics.isOverrun ? " · חריגה מכמות חוזה" : ""}
                 </td>
               );
             })}
