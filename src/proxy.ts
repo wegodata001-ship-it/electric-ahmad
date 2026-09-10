@@ -28,6 +28,8 @@ function isPublicOfficePath(pathname: string): boolean {
     pathname === "/api/auth/login" ||
     pathname === "/api/auth/logout" ||
     pathname === "/api/health" ||
+    pathname === "/api/system/perf/rtt" ||
+    pathname === "/api/system/perf/workflow-bench" ||
     pathname.startsWith("/sign/") ||
     pathname.startsWith("/api/sign/") ||
     pathname.startsWith("/share/") ||

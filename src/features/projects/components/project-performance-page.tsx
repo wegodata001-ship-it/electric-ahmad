@@ -201,6 +201,23 @@ export function ProjectPerformancePage({
     setSaved(next);
   }
 
+  /** Instant UI update after workflow mutation — avoid blocking getSheet/listSheets RTTs. */
+  function patchSheetWorkflow(patch: {
+    status: string;
+    currentVersion?: number;
+    submittedAt?: string | null;
+    approvedAt?: string | null;
+    returnedAt?: string | null;
+    lastReturnComment?: string | null;
+  }) {
+    setSheet((prev: any) => (prev ? { ...prev, ...patch } : prev));
+    if (sheetId) {
+      setSheets((prev: any[]) =>
+        prev.map((s) => (s.id === sheetId ? { ...s, ...patch } : s))
+      );
+    }
+  }
+
   /** BOQ columns from sheet cells — avoids duplicate /api/boq when grid already has items. */
   function boqFromSheetCells(s: any): BoqItem[] {
     const map = new Map<string, BoqItem>();
@@ -744,19 +761,26 @@ export function ProjectPerformancePage({
     }
     setCompleting(true);
     try {
-      await invoicesWorkspaceService.submitForApproval(
+      const result = await invoicesWorkspaceService.submitForApproval(
         sheetId,
         selectedApproverIds
       );
-      const s = await invoicesWorkspaceService.getSheet(sheetId);
-      applySheet(s);
-      await loadSheets();
+      const lean = (result as any)?.sheet ?? result;
+      patchSheetWorkflow({
+        status: lean?.status ?? "pending_approval",
+        currentVersion: lean?.currentVersion ?? sheet?.currentVersion,
+        submittedAt: lean?.submittedAt ?? new Date().toISOString(),
+        approvedAt: null,
+        returnedAt: null,
+        lastReturnComment: null,
+      });
       setSubmitApproverOpen(false);
       toast.success(
         isRevision
           ? "הגרסה המתוקנת נשלחה מחדש לאישור"
           : "הדוח נשלח לאישור — סטטוס: ממתין לאישור"
       );
+      void loadSheets();
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -768,16 +792,18 @@ export function ProjectPerformancePage({
     if (!sheetId) return;
     setOpsDeciding(true);
     try {
-      await approvalsService.decide({
+      const result = await approvalsService.decide({
         kind: "measurement_sheet",
         documentId: sheetId,
         decision: "approved",
       });
-      const s = await invoicesWorkspaceService.getSheet(sheetId);
-      applySheet(s);
-      await loadSheets();
+      patchSheetWorkflow({
+        status: (result as any)?.status ?? "approved",
+        approvedAt: (result as any)?.approvedAt ?? new Date().toISOString(),
+      });
       toast.success("הדוח אושר — ניתן להפיק חשבון");
       setAskInvoice(true);
+      void loadSheets();
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -796,20 +822,24 @@ export function ProjectPerformancePage({
         rowId,
         comment: opsRejectComment.trim(),
       }));
-      await approvalsService.decide({
+      const result = await approvalsService.decide({
         kind: "measurement_sheet",
         documentId: sheetId,
         decision: "rejected",
         comment: opsRejectComment.trim(),
         reviewNotes: reviewNotes.length ? reviewNotes : undefined,
       });
-      const s = await invoicesWorkspaceService.getSheet(sheetId);
-      applySheet(s);
-      await loadSheets();
+      patchSheetWorkflow({
+        status: (result as any)?.status ?? "revision",
+        returnedAt: new Date().toISOString(),
+        lastReturnComment:
+          (result as any)?.lastReturnComment ?? opsRejectComment.trim(),
+      });
       setOpsRejectOpen(false);
       setOpsRejectComment("");
       setOpsMarkedRooms([]);
       toast.success("הדוח הוחזר לתיקון");
+      void loadSheets();
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -1064,7 +1094,7 @@ export function ProjectPerformancePage({
                 onClick={() => void handleOpsApprove()}
               >
                 <CheckCircle2 className="h-4 w-4" />
-                אשר
+                {opsDeciding ? "מאשר..." : "אשר"}
               </Button>
               <Button
                 size="sm"
@@ -1078,7 +1108,7 @@ export function ProjectPerformancePage({
                 }}
               >
                 <X className="h-4 w-4" />
-                החזר לתיקון
+                {opsDeciding ? "מחזיר לתיקון..." : "החזר לתיקון"}
               </Button>
             </>
           )}
@@ -1955,10 +1985,16 @@ export function ProjectPerformancePage({
               loading={completing}
             >
               {overrunSections.length
-                ? "המשך ושלח לאישור"
-                : isRevision
-                  ? "שמור ושלח מחדש לאישור"
-                  : "שלח לאישור"}
+                ? completing
+                  ? "שולח..."
+                  : "המשך ושלח לאישור"
+                : completing
+                  ? isRevision
+                    ? "שולח מחדש..."
+                    : "שולח..."
+                  : isRevision
+                    ? "שמור ושלח מחדש לאישור"
+                    : "שלח לאישור"}
             </Button>
           </div>
         </div>

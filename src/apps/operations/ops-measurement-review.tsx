@@ -85,15 +85,20 @@ export function OpsMeasurementReview({ sheetId }: { sheetId: string }) {
     setBusy(true);
     setError("");
     try {
-      await approvalsService.decide({
+      const result = await approvalsService.decide({
         kind: "measurement_sheet",
         documentId: sheetId,
         decision: "approved",
       });
-      const refreshed = await apiClient.get<any>(
-        `/api/measurement-sheets/${sheetId}`
+      setSheet((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              status: (result as any)?.status ?? "approved",
+              approvedAt: (result as any)?.approvedAt ?? new Date().toISOString(),
+            }
+          : prev
       );
-      setSheet(refreshed);
       setInfo("הדוח אושר");
     } catch (e: any) {
       setError(e.message);
@@ -117,8 +122,9 @@ export function OpsMeasurementReview({ sheetId }: { sheetId: string }) {
         comment: comment.trim(),
       });
       setRejectOpen(false);
-      router.push("/operations/approvals");
-      router.refresh();
+      setBusy(false);
+      router.replace("/operations/approvals");
+      return;
     } catch (e: any) {
       setError(e.message);
     } finally {

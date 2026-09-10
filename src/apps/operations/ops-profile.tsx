@@ -3,7 +3,7 @@
 import { usePortalSession } from "@/apps/shared/use-portal-session";
 
 export function OpsProfile() {
-  const { userName, loggingOut, logout } = usePortalSession("operations");
+  const { userName } = usePortalSession("operations");
 
   return (
     <div className="space-y-5">
@@ -16,15 +16,6 @@ export function OpsProfile() {
         <p className="text-sm text-stone-500">שם</p>
         <p className="mt-1 text-xl font-black">{userName || "—"}</p>
       </div>
-
-      <button
-        type="button"
-        onClick={() => void logout()}
-        disabled={loggingOut}
-        className="flex min-h-14 w-full items-center justify-center rounded-2xl border-2 border-stone-300 bg-white text-base font-bold disabled:opacity-60"
-      >
-        {loggingOut ? "…" : "יציאה מהמערכת"}
-      </button>
     </div>
   );
 }

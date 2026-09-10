@@ -49,10 +49,11 @@ export function usePortalSession(portalId: PortalId) {
         await fetch("/api/auth/logout", { method: "POST" });
       }
       clearClientMeCache();
-      router.replace("/login");
-      router.refresh();
-    } finally {
+      // Hard navigation so browser Back cannot reopen a protected cached page.
+      window.location.assign(portalId === "field" ? "/field/login" : "/login");
+    } catch {
       setLoggingOut(false);
+      router.replace(portalId === "field" ? "/field/login" : "/login");
     }
   }
 

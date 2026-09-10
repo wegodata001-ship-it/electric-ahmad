@@ -1,10 +1,12 @@
-import { NextRequest } from "next/server";
+import { after, NextRequest } from "next/server";
 import { MeasurementSheetsRepository } from "@/repositories/measurement-sheets.repository";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { parseJsonBody, ValidationError } from "@/lib/validation/parse-body";
 import { measurementSheetSubmitSchema } from "@/lib/validation/schemas";
 import { requireProjectPermission } from "@/lib/auth/assert-office";
 import { OfficeAuthError } from "@/lib/auth/office-session";
+import { prisma } from "@/lib/prisma";
+import { createAfterScheduler } from "@/lib/async/schedule-background";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -12,7 +14,10 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const existing = await MeasurementSheetsRepository.getById(id);
+    const existing = await prisma.measurementSheet.findUnique({
+      where: { id },
+      select: { id: true, projectId: true, status: true },
+    });
     if (!existing) return apiError("דף מדידה לא נמצא", 404);
     const session = await requireProjectPermission(
       "send_for_approval",
@@ -29,11 +34,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return apiError("יש לבחור לפחות מאשר אחד", 400);
     }
 
+    const schedule = createAfterScheduler(after, "ms-submit");
     const result = await MeasurementSheetsRepository.submitForApproval(
       id,
       approverIds,
       session.userId,
-      req.nextUrl.origin
+      req.nextUrl.origin,
+      schedule
     );
     return apiSuccess(result);
   } catch (error) {

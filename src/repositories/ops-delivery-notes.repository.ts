@@ -17,6 +17,15 @@ import {
 } from "@/lib/workflow/document-guards";
 import { AuditRepository } from "@/repositories/audit.repository";
 import { syncOpsDeliveryNoteArchiveDocument } from "@/lib/documents/official-document";
+import {
+  scheduleBackgroundOrAwait,
+  logBackgroundError,
+  type ScheduleBackground,
+} from "@/lib/async/schedule-background";
+import {
+  dnDecideApprovalSql,
+  dnSubmitForApprovalSql,
+} from "@/lib/db/workflow-mutations-dn";
 import { isTruckDriverRole } from "@/lib/auth/driver-permissions";
 import {
   OPERATIONS_MANAGER_ROLE,
@@ -425,7 +434,7 @@ export const OpsDeliveryNotesRepository = {
         status: "draft",
         userId: input.createdById,
         bumpVersion: false,
-      }).catch(() => undefined);
+      }).catch((err) => logBackgroundError("ops-dn-archive", err));
     }
     return mapNote(row);
   },
@@ -496,7 +505,7 @@ export const OpsDeliveryNotesRepository = {
         status: updated.status,
         userId: input.updatedById,
         bumpVersion: true,
-      }).catch(() => undefined);
+      }).catch((err) => logBackgroundError("ops-dn-archive", err));
     }
     return updated;
   },
@@ -526,69 +535,67 @@ export const OpsDeliveryNotesRepository = {
     );
   },
 
-  async submitForApproval(id: string, approverIds: string[], actorId: string) {
+  async submitForApproval(
+    id: string,
+    approverIds: string[],
+    actorId: string,
+    scheduleBackground?: ScheduleBackground
+  ) {
     if (!approverIds.length) throw new Error("יש לבחור לפחות מאשר אחד");
-    const existing = await prisma.opsDeliveryNote.findFirst({
-      where: { id, deletedAt: null },
+    const uniqueApproverIds = [...new Set(approverIds.filter(Boolean))];
+
+    const mutated = await dnSubmitForApprovalSql({
+      noteId: id,
+      actorId,
+      approverIds: uniqueApproverIds,
     });
-    if (!existing) throw new Error("תעודת משלוח לא נמצאה");
-    if (!isDocEditableStatus(existing.status)) {
+    if (!mutated) {
+      const existing = await prisma.opsDeliveryNote.findFirst({
+        where: { id, deletedAt: null },
+        select: { id: true, status: true },
+      });
+      if (!existing) throw new Error("תעודת משלוח לא נמצאה");
       throw new Error("המסמך אינו ניתן לשליחה לאישור במצב הנוכחי");
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.opsDeliveryNoteApproval.updateMany({
-        where: { opsDeliveryNoteId: id, status: "pending" },
-        data: { status: "cancelled" },
+    const isResubmit = Boolean(mutated.wasResubmit);
+
+    await scheduleBackgroundOrAwait(scheduleBackground, async () => {
+      await AuditRepository.log({
+        action: "UPDATE",
+        entityType: "OpsDeliveryNote",
+        entityId: id,
+        userId: actorId,
+        metadata: {
+          action: isResubmit ? "resubmitted" : "submitted",
+          approverIds: uniqueApproverIds,
+        },
       });
-      await tx.opsDeliveryNoteApproval.createMany({
-        data: approverIds.map((approverId) => ({
+      await notifyUsers(
+        uniqueApproverIds,
+        "תעודת משלוח ממתינה לאישור",
+        `${mutated.documentNumber} ממתינה לאישורך`,
+        `/operations/approvals`,
+        mutated.projectId
+      );
+      if (mutated.projectId) {
+        await syncOpsDeliveryNoteArchiveDocument({
           opsDeliveryNoteId: id,
-          approverId,
-          status: "pending" as DocApprovalStatus,
-        })),
-      });
-      await tx.opsDeliveryNote.update({
-        where: { id },
-        data: { status: "pending_approval", updatedById: actorId },
-      });
+          projectId: mutated.projectId,
+          documentNumber: mutated.documentNumber,
+          status: "pending_approval",
+          userId: actorId,
+          bumpVersion: true,
+        }).catch((err) => logBackgroundError("ops-dn-archive", err));
+      }
     });
 
-    const isResubmit = existing.status === "revision";
-    await addEvent(
+    return {
       id,
-      isResubmit ? "resubmitted" : "submitted",
-      isResubmit ? "נשלחה מחדש לאישור" : "נשלחה לאישור",
-      actorId
-    );
-    await AuditRepository.log({
-      action: "UPDATE",
-      entityType: "OpsDeliveryNote",
-      entityId: id,
-      userId: actorId,
-      metadata: {
-        action: isResubmit ? "resubmitted" : "submitted",
-        approverIds,
-      },
-    });
-    await notifyUsers(
-      approverIds,
-      "תעודת משלוח ממתינה לאישור",
-      `${existing.documentNumber} ממתינה לאישורך`,
-      `/operations/approvals`,
-      existing.projectId
-    );
-    if (existing.projectId) {
-      await syncOpsDeliveryNoteArchiveDocument({
-        opsDeliveryNoteId: id,
-        projectId: existing.projectId,
-        documentNumber: existing.documentNumber,
-        status: "pending_approval",
-        userId: actorId,
-        bumpVersion: true,
-      }).catch(() => undefined);
-    }
-    return this.getById(id);
+      documentNumber: mutated.documentNumber,
+      projectId: mutated.projectId,
+      status: "pending_approval" as const,
+    };
   },
 
   async decideApproval(
@@ -596,106 +603,109 @@ export const OpsDeliveryNotesRepository = {
     approverId: string,
     decision: "approved" | "rejected",
     comment?: string | null,
-    correctionMode?: "manual" | "note"
+    correctionMode?: "manual" | "note",
+    scheduleBackground?: ScheduleBackground
   ) {
-    const existing = await prisma.opsDeliveryNote.findFirst({
-      where: { id, deletedAt: null },
-      include: { approvals: true },
+    if (decision === "rejected" && !comment?.trim()) {
+      throw new Error("חובה לרשום סיבה להחזרה לתיקון");
+    }
+
+    const mutated = await dnDecideApprovalSql({
+      noteId: id,
+      approverId,
+      decision,
+      comment,
+      correctionMode,
     });
-    if (!existing) throw new Error("תעודת משלוח לא נמצאה");
 
-    const mine = existing.approvals.find(
-      (a) => a.approverId === approverId && a.status === "pending"
-    );
-    if (!mine) throw new Error("אין בקשת אישור ממתינה עבורך");
-
-    const creatorLink = await creatorDocLink(existing.createdById, id);
+    if (!mutated) {
+      const existing = await prisma.opsDeliveryNote.findFirst({
+        where: { id, deletedAt: null },
+        include: { approvals: true },
+      });
+      if (!existing) throw new Error("תעודת משלוח לא נמצאה");
+      const mine = existing.approvals.find(
+        (a) => a.approverId === approverId && a.status === "pending"
+      );
+      if (!mine) throw new Error("אין בקשת אישור ממתינה עבורך");
+      throw new Error("הבקשה כבר טופלה — רענון הדף");
+    }
 
     if (decision === "rejected") {
-      if (!comment?.trim()) throw new Error("חובה לרשום סיבה להחזרה לתיקון");
-      await prisma.$transaction(async (tx) => {
-        await tx.opsDeliveryNoteApproval.update({
-          where: { id: mine.id },
-          data: { status: "rejected", comment, decidedAt: new Date() },
+      await scheduleBackgroundOrAwait(scheduleBackground, async () => {
+        const creatorLink = await creatorDocLink(mutated.createdById, id);
+        await AuditRepository.log({
+          action: "UPDATE",
+          entityType: "OpsDeliveryNote",
+          entityId: id,
+          userId: approverId,
+          metadata: { action: "rejected", correctionMode, comment },
         });
-        await tx.opsDeliveryNoteApproval.updateMany({
-          where: { opsDeliveryNoteId: id, status: "pending" },
-          data: { status: "cancelled" },
-        });
-        await tx.opsDeliveryNote.update({
-          where: { id },
-          data: { status: "revision", updatedById: approverId },
-        });
+        await notifyUsers(
+          [mutated.createdById],
+          "תעודת משלוח נדחתה",
+          `${mutated.documentNumber}: ${comment}`,
+          creatorLink,
+          mutated.projectId
+        );
+        if (mutated.projectId) {
+          await syncOpsDeliveryNoteArchiveDocument({
+            opsDeliveryNoteId: id,
+            projectId: mutated.projectId,
+            documentNumber: mutated.documentNumber,
+            status: "revision",
+            userId: approverId,
+            bumpVersion: true,
+          }).catch((err) => logBackgroundError("ops-dn-archive", err));
+        }
       });
-      await addEvent(
+
+      return {
         id,
-        "returned",
-        correctionMode === "manual"
-          ? "המאשר ביצע החזרה לתיקון ידני"
-          : `הוחזרה לתיקון לפי הערה: ${comment}`,
-        approverId
-      );
+        documentNumber: mutated.documentNumber,
+        projectId: mutated.projectId,
+        status: "revision" as const,
+        approvalComplete: true,
+        decision: "rejected" as const,
+      };
+    }
+
+    await scheduleBackgroundOrAwait(scheduleBackground, async () => {
+      const creatorLink = await creatorDocLink(mutated.createdById, id);
       await AuditRepository.log({
         action: "UPDATE",
         entityType: "OpsDeliveryNote",
         entityId: id,
         userId: approverId,
-        metadata: { action: "rejected", correctionMode, comment },
+        metadata: { action: "approved", mode: "any_one" },
       });
       await notifyUsers(
-        [existing.createdById],
-        "תעודת משלוח נדחתה",
-        `${existing.documentNumber}: ${comment}`,
+        [mutated.createdById],
+        "תעודת משלוח אושרה",
+        `${mutated.documentNumber} אושרה`,
         creatorLink,
-        existing.projectId
+        mutated.projectId
       );
-      return this.getById(id);
-    }
-
-    // Any-one approval: first approver wins, cancel remaining pending
-    await prisma.$transaction(async (tx) => {
-      await tx.opsDeliveryNoteApproval.update({
-        where: { id: mine.id },
-        data: { status: "approved", comment: comment ?? null, decidedAt: new Date() },
-      });
-      await tx.opsDeliveryNoteApproval.updateMany({
-        where: { opsDeliveryNoteId: id, status: "pending" },
-        data: { status: "cancelled" },
-      });
-      await tx.opsDeliveryNote.update({
-        where: { id },
-        data: { status: "approved", updatedById: approverId },
-      });
+      if (mutated.projectId) {
+        await syncOpsDeliveryNoteArchiveDocument({
+          opsDeliveryNoteId: id,
+          projectId: mutated.projectId,
+          documentNumber: mutated.documentNumber,
+          status: "approved",
+          userId: approverId,
+          bumpVersion: true,
+        }).catch((err) => logBackgroundError("ops-dn-archive", err));
+      }
     });
 
-    await addEvent(id, "approved", "התעודה אושרה", approverId);
-    await AuditRepository.log({
-      action: "UPDATE",
-      entityType: "OpsDeliveryNote",
-      entityId: id,
-      userId: approverId,
-      metadata: { action: "approved", mode: "any_one" },
-    });
-    await notifyUsers(
-      [existing.createdById],
-      "תעודת משלוח אושרה",
-      `${existing.documentNumber} אושרה`,
-      creatorLink,
-      existing.projectId
-    );
-
-    if (existing.projectId) {
-      await syncOpsDeliveryNoteArchiveDocument({
-        opsDeliveryNoteId: id,
-        projectId: existing.projectId,
-        documentNumber: existing.documentNumber,
-        status: "approved",
-        userId: approverId,
-        bumpVersion: true,
-      }).catch(() => undefined);
-    }
-
-    return this.getById(id);
+    return {
+      id,
+      documentNumber: mutated.documentNumber,
+      projectId: mutated.projectId,
+      status: "approved" as const,
+      approvalComplete: true,
+      decision: "approved" as const,
+    };
   },
 
   async createClientSignLink(id: string, actorId: string, baseUrl: string) {
@@ -981,7 +991,7 @@ export const OpsDeliveryNotesRepository = {
         status: existing.status,
         userId: existing.updatedById || existing.createdById,
         bumpVersion: true,
-      }).catch(() => undefined);
+      }).catch((err) => logBackgroundError("ops-dn-archive", err));
     }
     return row;
   },

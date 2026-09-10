@@ -254,7 +254,6 @@ export function PmCreateWorkDiary() {
       }
 
       router.replace("/project/work-diaries");
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "שגיאה");
     } finally {

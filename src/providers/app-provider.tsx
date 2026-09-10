@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useAppStore } from "@/store/app.store";
 import { notificationService } from "@/features/notifications/services/notification.service";
 import { ToastProvider } from "@/components/ui/toast";
+import { AccessibilityProvider } from "@/components/accessibility/accessibility-provider";
+import { AccessibilityButton } from "@/components/accessibility/accessibility-button";
 
 function isPublicAuthPath(pathname: string): boolean {
   return (
@@ -28,5 +30,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .catch(() => setNotifications([]));
   }, [pathname, setNotifications]);
 
-  return <ToastProvider>{children}</ToastProvider>;
+  return (
+    <AccessibilityProvider>
+      <ToastProvider>
+        {children}
+        <AccessibilityButton />
+      </ToastProvider>
+    </AccessibilityProvider>
+  );
 }

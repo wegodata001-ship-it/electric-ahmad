@@ -203,12 +203,18 @@ export function ApprovalReviewPage({
       if (stillWaiting) {
         setInfo("האישור נרשם — ממתין למאשרים נוספים");
         setApproveOpen(false);
-        await reload();
+        setData((prev: any) =>
+          prev ? { ...prev, ...result, status: result?.status ?? prev.status } : prev
+        );
       } else {
         setInfo("המסמך אושר (מספיק אישור אחד)");
         setApproveOpen(false);
-        router.push(backHref);
-        router.refresh();
+        setData((prev: any) =>
+          prev ? { ...prev, ...result, status: result?.status ?? "approved" } : prev
+        );
+        setBusy(false);
+        router.replace(backHref);
+        return;
       }
     } catch (e: any) {
       setError(e.message || "שגיאה באישור");
@@ -225,7 +231,7 @@ export function ApprovalReviewPage({
     setBusy(true);
     setError("");
     try {
-      await approvalsService.decide({
+      const result = await approvalsService.decide({
         kind,
         documentId,
         decision: "rejected",
@@ -234,8 +240,14 @@ export function ApprovalReviewPage({
         rejectAttachments: rejectFiles.map((f) => f.url),
       });
       setRejectOpen(false);
-      router.push(backHref);
-      router.refresh();
+      setData((prev: any) =>
+        prev
+          ? { ...prev, ...(result as any), status: (result as any)?.status ?? "revision" }
+          : prev
+      );
+      setBusy(false);
+      router.replace(backHref);
+      return;
     } catch (e: any) {
       setError(e.message || "שגיאה בהחזרה");
     } finally {
@@ -312,8 +324,7 @@ export function ApprovalReviewPage({
     }
     setInfo("התיקון נשלח מחדש לאישור");
     setManualEdit(false);
-    router.push(backHref);
-    router.refresh();
+    router.replace(backHref);
   }
 
   async function sendConversation() {
@@ -429,7 +440,7 @@ export function ApprovalReviewPage({
               className="inline-flex min-h-12 items-center gap-1 rounded-2xl bg-red-50 px-5 font-black text-red-700"
             >
               <X className="h-5 w-5" />
-              החזר לתיקון
+              {busy ? "מחזיר לתיקון..." : "החזר לתיקון"}
             </button>
             <button
               type="button"
@@ -438,7 +449,7 @@ export function ApprovalReviewPage({
               className="inline-flex min-h-12 items-center gap-1 rounded-2xl bg-emerald-600 px-5 font-black text-white"
             >
               <Check className="h-5 w-5" />
-              אשר
+              {busy ? "מאשר..." : "אשר"}
             </button>
           </div>
         )}
@@ -922,7 +933,7 @@ export function ApprovalReviewPage({
                   className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-red-600 py-3 text-sm font-black text-white"
                 >
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  החזר לתיקון
+                  {busy ? "מחזיר לתיקון..." : "החזר לתיקון"}
                 </button>
               </div>
             </>
@@ -990,7 +1001,7 @@ export function ApprovalReviewPage({
               className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-emerald-600 py-3 text-sm font-black text-white"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              אשר
+              {busy ? "מאשר..." : "אשר"}
             </button>
           </div>
         </Modal>

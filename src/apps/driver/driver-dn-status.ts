@@ -13,18 +13,18 @@ export const DRIVER_DN_STATUS_LABEL: Record<string, string> = {
 export function driverDnStatusTone(status: string): string {
   switch (status) {
     case "draft":
-      return "bg-slate-100 text-slate-700";
+      return "bg-slate-100 text-[#64748B]";
     case "pending_approval":
     case "sent_to_client":
-      return "bg-amber-100 text-amber-900";
+      return "bg-[#FFF7ED] text-[#EA580C]";
     case "approved":
-      return "bg-emerald-100 text-emerald-800";
+      return "bg-[#ECFDF5] text-[#059669]";
     case "signed":
     case "closed":
-      return "bg-emerald-100 text-emerald-900";
+      return "bg-[#ECFDF5] text-[#059669]";
     case "revision":
-      return "bg-red-100 text-red-800";
+      return "bg-red-100 text-red-700";
     default:
-      return "bg-slate-100 text-slate-600";
+      return "bg-slate-100 text-[#64748B]";
   }
 }

@@ -20,6 +20,14 @@ import {
 } from "@/lib/auth/measurement-pm-approval-edit";
 import { PROJECT_MANAGER_ROLE } from "@/lib/auth/roles";
 import { calculateMeasurementQuantity } from "@/lib/measurement/quantities";
+import {
+  scheduleBackgroundOrAwait,
+  type ScheduleBackground,
+} from "@/lib/async/schedule-background";
+import {
+  msDecideApprovalSql,
+  msSubmitForApprovalSql,
+} from "@/lib/db/workflow-mutations-ms";
 
 function num(v: unknown): number {
   return Number(v ?? 0);
@@ -2376,12 +2384,19 @@ export class MeasurementSheetsRepository {
     sheetId: string,
     approverIds: string[],
     userId: string,
-    printBaseUrl?: string
+    printBaseUrl?: string,
+    scheduleBackground?: ScheduleBackground
   ) {
     if (!approverIds?.length) {
       throw new Error("יש לבחור מאשרים");
     }
-    return this.submitForApproval(sheetId, approverIds, userId, printBaseUrl);
+    return this.submitForApproval(
+      sheetId,
+      approverIds,
+      userId,
+      printBaseUrl,
+      scheduleBackground
+    );
   }
 
   static async ensureDocument(
@@ -2502,11 +2517,26 @@ export class MeasurementSheetsRepository {
     sheetId: string,
     approverIds: string[],
     userId: string,
-    printBaseUrl?: string
+    printBaseUrl?: string,
+    scheduleBackground?: ScheduleBackground
   ) {
-    const sheet = await this.getById(sheetId);
-    if (!sheet) throw new Error("דף מדידה לא נמצא");
-    if (!isSheetEditable(sheet.status) && sheet.status !== "pending_approval") {
+    if (!approverIds.length) {
+      throw new Error("יש לבחור לפחות מאשר אחד");
+    }
+    const uniqueApproverIds = [...new Set(approverIds.filter(Boolean))];
+
+    // Single round-trip: status-gated mutate + approvals + version + event
+    const mutated = await msSubmitForApprovalSql({
+      sheetId,
+      userId,
+      approverIds: uniqueApproverIds,
+    });
+    if (!mutated) {
+      const sheet = await prisma.measurementSheet.findUnique({
+        where: { id: sheetId },
+        select: { id: true, status: true },
+      });
+      if (!sheet) throw new Error("דף מדידה לא נמצא");
       if (
         sheet.status === "approved" ||
         sheet.status === "locked" ||
@@ -2514,114 +2544,62 @@ export class MeasurementSheetsRepository {
       ) {
         throw new Error("הדוח כבר אושר או חויב");
       }
+      throw new Error("הדוח כבר אושר או חויב");
     }
-    if (!approverIds.length) {
-      throw new Error("יש לבחור לפחות מאשר אחד");
-    }
-
-    const lastVer = await prisma.measurementSheetVersion.findFirst({
-      where: { sheetId },
-      orderBy: { version: "desc" },
-      select: { version: true },
-    });
-    const versionRow = (lastVer?.version ?? 0) + 1;
-    const docVersion =
-      sheet.status === "revision" || sheet.submittedAt
-        ? (sheet.currentVersion ?? 1) + 1
-        : Math.max(1, sheet.currentVersion ?? 1);
-    const snapshot = JSON.stringify(sheet);
-
-    await prisma.$transaction(async (tx) => {
-      await tx.measurementSheetApproval.updateMany({
-        where: { sheetId, status: "pending" },
-        data: { status: "cancelled" },
-      });
-
-      await tx.measurementSheetApproval.createMany({
-        data: approverIds.map((approverId) => ({
-          sheetId,
-          approverId,
-          status: "pending" as const,
-        })),
-      });
-
-      await tx.measurementSheetVersion.create({
-        data: {
-          sheetId,
-          version: versionRow,
-          status: "pending_approval",
-          snapshotJson: snapshot,
-          note:
-            sheet.status === "revision"
-              ? `V${docVersion} תוקן ונשלח מחדש לאישור`
-              : `V${docVersion} נשלח לאישור`,
-          actorId: userId,
-        },
-      });
-
-      await tx.measurementSheet.update({
-        where: { id: sheetId },
-        data: {
-          status: "pending_approval",
-          currentVersion: docVersion,
-          submittedAt: new Date(),
-          approvedAt: null,
-          returnedAt: null,
-          lastReturnComment: null,
-          updatedById: userId,
-        },
-      });
-    });
 
     const status: MeasurementSheetStatus = "pending_approval";
-    const doc = await this.ensureDocument(sheetId, userId, status, printBaseUrl);
+    const docVersion = mutated.currentVersion;
+    const leanSheet = {
+      id: mutated.id,
+      title: mutated.title,
+      projectId: mutated.projectId,
+      status,
+      currentVersion: docVersion,
+      sequenceNumber: mutated.sequenceNumber,
+      submittedAt: new Date().toISOString(),
+    };
 
-    await this.addEvent(
-      sheetId,
-      "submitted",
-      `V${docVersion} נשלח לאישור`,
-      userId,
-      { version: docVersion, approverIds }
-    );
+    await scheduleBackgroundOrAwait(scheduleBackground, async () => {
+      await this.ensureDocument(sheetId, userId, status, printBaseUrl);
 
-    // Field managers land on /field/approvals; office on /approvals.
-    const fieldApproverIds = await prisma.user.findMany({
-      where: { id: { in: approverIds }, role: "FIELD_MANAGER" },
-      select: { id: true },
+      const fieldApproverIds = await prisma.user.findMany({
+        where: { id: { in: uniqueApproverIds }, role: "FIELD_MANAGER" },
+        select: { id: true },
+      });
+      const fieldIds = new Set(fieldApproverIds.map((u) => u.id));
+      const officeIds = uniqueApproverIds.filter((id) => !fieldIds.has(id));
+      if (fieldIds.size) {
+        await this.notify(
+          [...fieldIds],
+          "דוח ביצוע ממתין לאישור",
+          `${mutated.title} (V${docVersion}) ממתין לאישורך`,
+          `/field/approvals`,
+          mutated.projectId
+        );
+      }
+      if (officeIds.length) {
+        await this.notify(
+          officeIds,
+          "דוח ביצוע ממתין לאישור",
+          `${mutated.title} (V${docVersion}) ממתין לאישורך`,
+          `/approvals`,
+          mutated.projectId
+        );
+      }
+
+      await prisma.activity.create({
+        data: {
+          projectId: mutated.projectId,
+          type: "status_changed",
+          title: "דוח ביצוע נשלח לאישור",
+          description: `${mutated.title} · V${docVersion}`,
+          userId,
+          metadata: JSON.stringify({ sheetId, version: docVersion, status }),
+        },
+      });
     });
-    const fieldIds = new Set(fieldApproverIds.map((u) => u.id));
-    const officeIds = approverIds.filter((id) => !fieldIds.has(id));
-    if (fieldIds.size) {
-      await this.notify(
-        [...fieldIds],
-        "דוח ביצוע ממתין לאישור",
-        `${sheet.title} (V${docVersion}) ממתין לאישורך`,
-        `/field/approvals`,
-        sheet.projectId
-      );
-    }
-    if (officeIds.length) {
-      await this.notify(
-        officeIds,
-        "דוח ביצוע ממתין לאישור",
-        `${sheet.title} (V${docVersion}) ממתין לאישורך`,
-        `/approvals`,
-        sheet.projectId
-      );
-    }
 
-    await prisma.activity.create({
-      data: {
-        projectId: sheet.projectId,
-        type: "status_changed",
-        title: "דוח ביצוע נשלח לאישור",
-        description: `${sheet.title} · V${docVersion}`,
-        userId,
-        metadata: JSON.stringify({ sheetId, version: docVersion, status }),
-      },
-    });
-
-    return { sheet: await this.getById(sheetId), document: doc };
+    return { sheet: leanSheet, document: null as { id: string } | null };
   }
 
   static async decideApproval(
@@ -2631,45 +2609,67 @@ export class MeasurementSheetsRepository {
     comment?: string | null,
     correctionMode?: "manual" | "note",
     reviewNotes?: { rowId?: string | null; boqItemId?: string | null; comment: string }[],
-    printBaseUrl?: string
+    printBaseUrl?: string,
+    scheduleBackground?: ScheduleBackground
   ) {
-    const sheet = await prisma.measurementSheet.findUnique({
-      where: { id: sheetId },
-      include: {
-        approvals: {
-          include: { approver: { select: { id: true, name: true } } },
-        },
-      },
+    if (decision === "rejected") {
+      if (!comment?.trim() && !(reviewNotes?.length)) {
+        throw new Error("חובה לרשום הערות מנהל להחזרה לתיקון");
+      }
+    }
+
+    const summary =
+      decision === "rejected"
+        ? correctionMode === "manual"
+          ? "תיקון ידני על ידי המאשר"
+          : comment?.trim() || "הוחזר לתיקון עם הערות על שורות"
+        : comment ?? null;
+
+    const mutated = await msDecideApprovalSql({
+      sheetId,
+      approverId,
+      decision,
+      comment: summary,
+      correctionMode,
     });
-    if (!sheet) throw new Error("דף מדידה לא נמצא");
 
-    const priorApproved = sheet.approvals.find((a) => a.status === "approved");
-    if (sheet.status === "approved" || sheet.status === "locked" || sheet.status === "invoiced") {
-      const when = sheet.approvedAt
-        ? new Date(sheet.approvedAt).toLocaleString("he-IL")
-        : "";
-      const who = priorApproved?.approver?.name || "מאשר אחר";
-      throw new Error(
-        `המסמך כבר אושר${who ? ` על ידי ${who}` : ""}${when ? ` ב־${when}` : ""} — לא ניתן לאשר שוב`
-      );
-    }
-    if (sheet.status === "revision") {
-      const rejector = sheet.approvals.find((a) => a.status === "rejected");
-      const who = rejector?.approver?.name;
-      throw new Error(
-        `המסמך הוחזר לתיקון${who ? ` על ידי ${who}` : ""}${
-          sheet.lastReturnComment ? `: ${sheet.lastReturnComment}` : ""
-        }. יש לתקן ולשלוח מחדש לפני אישור.`
-      );
-    }
-    if (sheet.status !== "pending_approval") {
-      throw new Error("המסמך אינו ממתין לאישור כעת");
-    }
+    if (!mutated) {
+      const sheet = await prisma.measurementSheet.findUnique({
+        where: { id: sheetId },
+        include: {
+          approvals: {
+            include: { approver: { select: { id: true, name: true } } },
+          },
+        },
+      });
+      if (!sheet) throw new Error("דף מדידה לא נמצא");
 
-    const mine = sheet.approvals.find(
-      (a) => a.approverId === approverId && a.status === "pending"
-    );
-    if (!mine) {
+      const priorApproved = sheet.approvals.find((a) => a.status === "approved");
+      if (
+        sheet.status === "approved" ||
+        sheet.status === "locked" ||
+        sheet.status === "invoiced"
+      ) {
+        const when = sheet.approvedAt
+          ? new Date(sheet.approvedAt).toLocaleString("he-IL")
+          : "";
+        const who = priorApproved?.approver?.name || "מאשר אחר";
+        throw new Error(
+          `המסמך כבר אושר${who ? ` על ידי ${who}` : ""}${when ? ` ב־${when}` : ""} — לא ניתן לאשר שוב`
+        );
+      }
+      if (sheet.status === "revision") {
+        const rejector = sheet.approvals.find((a) => a.status === "rejected");
+        const who = rejector?.approver?.name;
+        throw new Error(
+          `המסמך הוחזר לתיקון${who ? ` על ידי ${who}` : ""}${
+            sheet.lastReturnComment ? `: ${sheet.lastReturnComment}` : ""
+          }. יש לתקן ולשלוח מחדש לפני אישור.`
+        );
+      }
+      if (sheet.status !== "pending_approval") {
+        throw new Error("המסמך אינו ממתין לאישור כעת");
+      }
       if (priorApproved) {
         throw new Error(
           `המסמך כבר אושר על ידי ${priorApproved.approver?.name || "מאשר אחר"} — אין צורך באישור נוסף`
@@ -2678,148 +2678,64 @@ export class MeasurementSheetsRepository {
       throw new Error("אין בקשת אישור ממתינה עבורך");
     }
 
-    if (decision === "rejected") {
-      if (!comment?.trim() && !(reviewNotes?.length)) {
-        throw new Error("חובה לרשום הערות מנהל להחזרה לתיקון");
-      }
-      const summary =
-        correctionMode === "manual"
-          ? "תיקון ידני על ידי המאשר"
-          : comment?.trim() || "הוחזר לתיקון עם הערות על שורות";
-
-      await prisma.$transaction(async (tx) => {
-        await tx.measurementSheetApproval.update({
-          where: { id: mine.id },
-          data: { status: "rejected", comment: summary, decidedAt: new Date() },
-        });
-        await tx.measurementSheetApproval.updateMany({
-          where: { sheetId, status: "pending" },
-          data: { status: "cancelled" },
-        });
-        if (reviewNotes?.length) {
-          await tx.measurementSheetReviewNote.createMany({
-            data: reviewNotes
-              .filter((n) => n.comment.trim())
-              .map((n) => ({
-                sheetId,
-                rowId: n.rowId || null,
-                boqItemId: n.boqItemId || null,
-                comment: n.comment.trim(),
-                version: sheet.currentVersion,
-                authorId: approverId,
-              })),
-          });
-        }
-        const lastVer = await tx.measurementSheetVersion.findFirst({
-          where: { sheetId },
-          orderBy: { version: "desc" },
-          select: { version: true },
-        });
-        await tx.measurementSheetVersion.create({
-          data: {
+    if (decision === "rejected" && reviewNotes?.length) {
+      await prisma.measurementSheetReviewNote.createMany({
+        data: reviewNotes
+          .filter((n) => n.comment.trim())
+          .map((n) => ({
             sheetId,
-            version: (lastVer?.version ?? 0) + 1,
-            status: "revision",
-            snapshotJson: "{}",
-            note: `V${sheet.currentVersion} הוחזר לתיקון: ${summary}`,
-            actorId: approverId,
-          },
-        });
-        await tx.measurementSheet.update({
-          where: { id: sheetId },
-          data: {
-            status: "revision",
-            returnedAt: new Date(),
-            lastReturnComment: summary,
-            updatedById: approverId,
-          },
-        });
+            rowId: n.rowId || null,
+            boqItemId: n.boqItemId || null,
+            comment: n.comment.trim(),
+            version: mutated.currentVersion,
+            authorId: approverId,
+          })),
+      });
+    }
+
+    if (decision === "rejected") {
+      await scheduleBackgroundOrAwait(scheduleBackground, async () => {
+        await this.ensureDocument(sheetId, approverId, "revision", printBaseUrl);
+        const fixLink = `/system/accounts?projectId=${mutated.projectId}&module=performance&sheetId=${sheetId}`;
+        await this.notify(
+          [mutated.createdById],
+          "דוח ביצוע דורש תיקון",
+          `${mutated.title}: ${summary}`,
+          fixLink,
+          mutated.projectId
+        );
       });
 
-      await this.ensureDocument(sheetId, approverId, "revision", printBaseUrl);
-      await this.addEvent(
-        sheetId,
-        "returned",
-        correctionMode === "manual"
-          ? "המאשר ביצע החזרה לתיקון ידני"
-          : `הוחזר לתיקון לפי הערה: ${summary}`,
-        approverId,
-        { reviewNotes, correctionMode }
-      );
-      const fixLink = `/system/accounts?projectId=${sheet.projectId}&module=performance&sheetId=${sheetId}`;
-      await this.notify(
-        [sheet.createdById],
-        "דוח ביצוע דורש תיקון",
-        `${sheet.title}: ${summary}`,
-        fixLink,
-        sheet.projectId
-      );
-
       return {
-        ...(await this.getById(sheetId)),
+        id: sheetId,
+        status: "revision" as const,
+        projectId: mutated.projectId,
+        title: mutated.title,
+        currentVersion: mutated.currentVersion,
+        lastReturnComment: summary,
         approvalComplete: true,
         decision: "rejected" as const,
       };
     }
 
-    // any_one — אישור אחד מספיק; שאר הבקשות נסגרות מיד
     const approvedAt = new Date();
-    await prisma.$transaction(async (tx) => {
-      await tx.measurementSheetApproval.update({
-        where: { id: mine.id },
-        data: {
-          status: "approved",
-          comment: comment ?? null,
-          decidedAt: approvedAt,
-        },
-      });
-      await tx.measurementSheetApproval.updateMany({
-        where: { sheetId, status: "pending" },
-        data: { status: "cancelled" },
-      });
-      const lastVer = await tx.measurementSheetVersion.findFirst({
-        where: { sheetId },
-        orderBy: { version: "desc" },
-        select: { version: true },
-      });
-      await tx.measurementSheetVersion.create({
-        data: {
-          sheetId,
-          version: (lastVer?.version ?? 0) + 1,
-          status: "approved",
-          snapshotJson: "{}",
-          note: `V${sheet.currentVersion} אושר (אישור יחיד)`,
-          actorId: approverId,
-        },
-      });
-      await tx.measurementSheet.update({
-        where: { id: sheetId },
-        data: {
-          status: "approved",
-          approvedAt,
-          updatedById: approverId,
-        },
-      });
+    await scheduleBackgroundOrAwait(scheduleBackground, async () => {
+      await this.ensureDocument(sheetId, approverId, "approved", printBaseUrl);
+      await this.notify(
+        [mutated.createdById],
+        "דוח ביצוע אושר",
+        `${mutated.title} אושר — ניתן להפיק חשבון`,
+        `/system/accounts?projectId=${mutated.projectId}&module=performance&sheetId=${sheetId}`,
+        mutated.projectId
+      );
     });
 
-    await this.ensureDocument(sheetId, approverId, "approved", printBaseUrl);
-    await this.addEvent(
-      sheetId,
-      "approved",
-      `V${sheet.currentVersion} אושר`,
-      approverId,
-      { mode: "any_one" }
-    );
-    await this.notify(
-      [sheet.createdById],
-      "דוח ביצוע אושר",
-      `${sheet.title} אושר — ניתן להפיק חשבון`,
-      `/system/accounts?projectId=${sheet.projectId}&module=performance&sheetId=${sheetId}`,
-      sheet.projectId
-    );
-
     return {
-      ...(await this.getById(sheetId)),
+      id: sheetId,
+      status: "approved" as const,
+      projectId: mutated.projectId,
+      title: mutated.title,
+      currentVersion: mutated.currentVersion,
       approvalComplete: true,
       decision: "approved" as const,
       approvedAt: approvedAt.toISOString(),

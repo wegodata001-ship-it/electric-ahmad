@@ -120,6 +120,59 @@ function eventTime(value: string) {
   });
 }
 
+const URL_RE = /https?:\/\/[^\s]+/gi;
+const FILE_NAME_RE =
+  /[\w.\-()[\]]+\.(?:jpe?g|png|gif|webp|pdf|docx?|xlsx?|heic|mp4|mov)\b/i;
+
+function extractUrl(value: string): string | null {
+  const match = value.match(URL_RE);
+  return match?.[0] ?? null;
+}
+
+function fileNameFromText(value: string): string | null {
+  try {
+    const url = extractUrl(value);
+    if (url) {
+      const path = new URL(url).pathname;
+      const name = decodeURIComponent(path.split("/").pop() || "");
+      if (name) return name;
+    }
+  } catch {
+    /* keep fallback below */
+  }
+  const fileMatch = value.match(FILE_NAME_RE);
+  return fileMatch?.[0] ?? null;
+}
+
+function textWithoutUrls(value: string) {
+  return value.replace(URL_RE, " ").replace(/\s+/g, " ").trim();
+}
+
+function isAttachmentLike(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (extractUrl(trimmed)) return true;
+  if (FILE_NAME_RE.test(trimmed) && trimmed.length > 40) return true;
+  return /קובץ|מצורף|attachment|whatsapp_image/i.test(trimmed);
+}
+
+/** Soft-truncate long filenames for display; full value stays in the link. */
+function shortFileName(name: string, max = 36) {
+  if (name.length <= max) return name;
+  const extIndex = name.lastIndexOf(".");
+  if (extIndex > 0 && name.length - extIndex <= 8) {
+    const ext = name.slice(extIndex);
+    const keep = Math.max(8, max - ext.length - 1);
+    return `${name.slice(0, keep)}…${ext}`;
+  }
+  return `${name.slice(0, max - 1)}…`;
+}
+
+const wrapText =
+  "max-w-full min-w-0 break-words [overflow-wrap:anywhere] whitespace-normal";
+const wrapLtr =
+  "max-w-full min-w-0 break-all [overflow-wrap:anywhere] whitespace-normal [direction:ltr]";
+
 export function WorkflowCenterPage() {
   const pathname = usePathname();
   const apiPath = pathname.startsWith("/field")
@@ -211,11 +264,11 @@ export function WorkflowCenterPage() {
   }, [data.items]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5" dir="rtl">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+    <div className="mx-auto w-full max-w-6xl min-w-0 space-y-5 overflow-x-hidden" dir="rtl">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-black text-slate-950">מרכז תהליכים</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className={`mt-1 text-sm text-slate-500 ${wrapText}`}>
             מעקב אחר מסמכים, אישורים, תיקונים וחשבונות
           </p>
         </div>
@@ -332,7 +385,7 @@ export function WorkflowCenterPage() {
           {grouped.map(([label, events]) => (
             <section key={label}>
               <h2 className="mb-3 text-sm font-black text-slate-700">{label}</h2>
-              <div className="relative space-y-1 before:absolute before:top-4 before:bottom-4 before:right-[19px] before:w-px before:bg-slate-200">
+              <div className="relative min-w-0 space-y-1 before:absolute before:top-4 before:bottom-4 before:right-[19px] before:w-px before:bg-slate-200">
                 {events.map((event) => (
                   <TimelineRow
                     key={event.id}
@@ -358,42 +411,111 @@ export function WorkflowCenterPage() {
         {detailLoading ? (
           <p className="py-10 text-center text-sm text-slate-400">טוען…</p>
         ) : (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4 overflow-x-hidden">
             {selected && (
               <a
                 href={selected.documentUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white"
+                className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white"
               >
-                <ExternalLink className="h-4 w-4" />
+                <ExternalLink className="h-4 w-4 shrink-0" />
                 פתיחת המסמך
               </a>
             )}
-            <div className="relative space-y-4 before:absolute before:top-3 before:bottom-3 before:right-[7px] before:w-px before:bg-slate-200">
+            <div className="relative min-w-0 space-y-4 before:absolute before:top-3 before:bottom-3 before:right-[7px] before:w-px before:bg-slate-200">
               {documentEvents.map((event) => (
-                <div key={event.id} className="relative pr-7">
+                <div key={event.id} className="relative min-w-0 pr-7">
                   <span
                     className={`absolute right-0 top-1.5 h-3.5 w-3.5 rounded-full ring-4 ring-white ${TONE[event.tone].dot}`}
                   />
-                  <p className="text-sm font-bold text-slate-900">
-                    {event.message}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {new Date(event.occurredAt).toLocaleString("he-IL")}
-                    {event.actorName ? ` · ${event.actorName}` : ""}
-                  </p>
-                  {event.note && (
-                    <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800">
-                      סיבה: {event.note}
+                  <div className="min-w-0">
+                    <EventMessage text={event.message} />
+                    <p className={`mt-1 text-xs text-slate-500 ${wrapText}`}>
+                      {new Date(event.occurredAt).toLocaleString("he-IL")}
+                      {event.actorName ? ` · ${event.actorName}` : ""}
                     </p>
-                  )}
+                    {event.note && <CorrectionNote note={event.note} />}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         )}
       </Modal>
+    </div>
+  );
+}
+
+function EventMessage({ text }: { text: string }) {
+  const url = extractUrl(text);
+  const fileName = fileNameFromText(text);
+  const cleaned = textWithoutUrls(text);
+  const attachmentOnly =
+    isAttachmentLike(text) && (!cleaned || cleaned.length < 8);
+
+  if (attachmentOnly && (url || fileName)) {
+    return (
+      <div className="min-w-0 space-y-1">
+        <p className="text-sm font-black text-slate-950">קובץ מצורף</p>
+        {fileName && (
+          <p className={`text-xs font-semibold text-slate-600 ${wrapLtr}`} title={fileName}>
+            {shortFileName(fileName)}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <p className={`font-black text-slate-950 ${wrapText}`}>{cleaned || text}</p>
+  );
+}
+
+function CorrectionNote({ note }: { note: string }) {
+  const url = extractUrl(note);
+  const fileName = fileNameFromText(note);
+  const cleaned = textWithoutUrls(note);
+  const showAttachment = isAttachmentLike(note) && Boolean(url || fileName);
+
+  return (
+    <div
+      className={`mt-2 box-border w-full max-w-full rounded-lg border-r-2 border-red-400 bg-red-50 px-3 py-2 text-xs text-red-800 ${wrapText}`}
+      dir="rtl"
+    >
+      {cleaned ? (
+        <p className={wrapText}>
+          <span className="font-bold">סיבה: </span>
+          {cleaned}
+        </p>
+      ) : (
+        <p className="font-bold">סיבה:</p>
+      )}
+      {showAttachment && (
+        <div className="mt-2 min-w-0 space-y-1.5 border-t border-red-200/70 pt-2">
+          <p className="font-bold text-red-900">קובץ מצורף</p>
+          {fileName && (
+            <p className={`font-semibold text-red-900/80 ${wrapLtr}`} title={fileName}>
+              {shortFileName(fileName)}
+            </p>
+          )}
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(clickEvent) => clickEvent.stopPropagation()}
+              className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-lg bg-white px-2.5 text-[11px] font-bold text-red-800 ring-1 ring-red-200"
+            >
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+              צפייה בקובץ
+            </a>
+          )}
+        </div>
+      )}
+      {!showAttachment && !cleaned && note && (
+        <p className={`mt-1 ${wrapLtr}`}>{note}</p>
+      )}
     </div>
   );
 }
@@ -405,6 +527,10 @@ function TimelineRow({
   event: DocumentTimelineEvent;
   onOpenTimeline: () => void;
 }) {
+  const noteUrl = event.note ? extractUrl(event.note) : null;
+  const messageUrl = extractUrl(event.message);
+  const attachmentUrl = noteUrl || messageUrl;
+
   return (
     <article
       role="button"
@@ -413,16 +539,16 @@ function TimelineRow({
       onKeyDown={(keyEvent) => {
         if (keyEvent.key === "Enter" || keyEvent.key === " ") onOpenTimeline();
       }}
-      className="group relative grid cursor-pointer grid-cols-[40px_1fr] gap-3 rounded-2xl px-1 py-3 transition hover:bg-white hover:shadow-sm sm:grid-cols-[70px_40px_1fr]"
+      className="group relative grid w-full min-w-0 cursor-pointer grid-cols-[40px_minmax(0,1fr)] gap-3 rounded-2xl px-1 py-3 transition hover:bg-white hover:shadow-sm sm:grid-cols-[70px_40px_minmax(0,1fr)]"
     >
-      <time className="hidden pt-1 text-left text-xs font-bold text-slate-500 sm:block">
+      <time className="hidden min-w-0 pt-1 text-left text-xs font-bold text-slate-500 sm:block">
         {eventTime(event.occurredAt)}
       </time>
-      <div className="relative z-10 grid h-10 w-10 place-items-center rounded-full bg-white ring-1 ring-slate-200">
+      <div className="relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white ring-1 ring-slate-200">
         <EventIcon event={event} />
       </div>
-      <div className="min-w-0 pb-1">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="min-w-0 max-w-full flex-1 space-y-2 pb-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-slate-400 sm:hidden">
             {eventTime(event.occurredAt)}
           </span>
@@ -435,26 +561,36 @@ function TimelineRow({
             {KIND_LABELS[event.kind]}
           </span>
         </div>
-        <p className="mt-1 font-black text-slate-950">{event.message}</p>
-        <p className="mt-1 text-sm text-slate-600">
+        <EventMessage text={event.message} />
+        <p className={`text-sm text-slate-600 ${wrapText}`}>
           {event.projectName}
           {event.actorName ? ` · ${event.actorName}` : ""}
         </p>
-        {event.note && (
-          <p className="mt-2 rounded-lg border-r-2 border-red-400 bg-red-50 px-3 py-2 text-xs text-red-800">
-            סיבה: {event.note}
-          </p>
-        )}
-        <a
-          href={event.documentUrl}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(clickEvent) => clickEvent.stopPropagation()}
-          className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-blue-700 opacity-80 group-hover:opacity-100"
-        >
-          פתיחת המסמך
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+        {event.note && <CorrectionNote note={event.note} />}
+        <div className="flex min-w-0 flex-wrap gap-2 pt-0.5">
+          {attachmentUrl && (
+            <a
+              href={attachmentUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(clickEvent) => clickEvent.stopPropagation()}
+              className="inline-flex min-h-9 max-w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700"
+            >
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+              קובץ מצורף
+            </a>
+          )}
+          <a
+            href={event.documentUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(clickEvent) => clickEvent.stopPropagation()}
+            className="inline-flex min-h-9 max-w-full items-center gap-1 rounded-lg text-xs font-bold text-blue-700 opacity-90 group-hover:opacity-100"
+          >
+            פתיחת המסמך
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+          </a>
+        </div>
       </div>
     </article>
   );

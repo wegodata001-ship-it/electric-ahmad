@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { FieldNotifications } from "@/apps/field/field-notifications";
 
 export default function Page() {
-  redirect("/field");
+  return <FieldNotifications />;
 }

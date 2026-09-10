@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronUp,
   FolderOpen,
-  LogOut,
   Package,
   Phone,
   UserRound,
@@ -22,7 +21,7 @@ import {
 
 /** Compact field profile without duplicate top-level tabs. */
 export function FieldProfile() {
-  const { userName, loggingOut, logout } = usePortalSession("field");
+  const { userName } = usePortalSession("field");
   const [dashboard, setDashboard] = useState<FieldDashboard | null>(null);
   const [showDocuments, setShowDocuments] = useState(false);
 
@@ -93,19 +92,6 @@ export function FieldProfile() {
             <MyDocumentsPanel apiPath="/api/field/my-documents" />
           </div>
         )}
-      </section>
-
-      <section className="border-t border-slate-200 pt-4">
-        <p className="mb-2 text-sm font-black text-slate-700">חשבון</p>
-        <button
-          type="button"
-          onClick={() => void logout()}
-          disabled={loggingOut}
-          className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 font-bold text-red-700 disabled:opacity-60"
-        >
-          <LogOut className="h-5 w-5" />
-          {loggingOut ? "יוצא…" : "יציאה מהמערכת"}
-        </button>
       </section>
     </div>
   );

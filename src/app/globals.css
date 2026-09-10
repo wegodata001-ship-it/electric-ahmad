@@ -45,6 +45,8 @@
 
 html {
   direction: rtl;
+  --a11y-font-scale: 1;
+  font-size: calc(16px * var(--a11y-font-scale, 1));
 }
 
 body {
@@ -53,6 +55,95 @@ body {
   font-family: var(--font-heebo), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Accessibility (data attributes on <html>) ─────────────────────────── */
+html[data-a11y-contrast="high"] {
+  --background: #ffffff;
+  --foreground: #000000;
+  --card: #ffffff;
+  --border: #000000;
+  --muted: #111111;
+  --primary: #0000ee;
+  color-scheme: light;
+}
+
+html[data-a11y-contrast="high"] body {
+  background: #ffffff;
+  color: #000000;
+}
+
+html[data-a11y-contrast="high"] a {
+  color: #0000ee;
+  text-decoration-thickness: 2px;
+}
+
+html[data-a11y-contrast="high"] button,
+html[data-a11y-contrast="high"] input,
+html[data-a11y-contrast="high"] select,
+html[data-a11y-contrast="high"] textarea {
+  border-color: #000000 !important;
+  color: #000000;
+}
+
+html[data-a11y-contrast="high"] :focus-visible {
+  outline: 3px solid #0000ee !important;
+  outline-offset: 2px !important;
+}
+
+html[data-a11y-grayscale="on"] {
+  filter: grayscale(1);
+}
+
+html[data-a11y-links="on"] a,
+html[data-a11y-links="on"] [role="link"] {
+  text-decoration: underline !important;
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 0.1em;
+}
+
+html[data-a11y-font="readable"] body {
+  font-family: Arial, Tahoma, "Segoe UI", sans-serif !important;
+  letter-spacing: 0.015em;
+}
+
+html[data-a11y-spacing="wide"] body {
+  letter-spacing: 0.04em;
+  word-spacing: 0.1em;
+  line-height: 1.75;
+}
+
+html[data-a11y-spacing="wide"] p,
+html[data-a11y-spacing="wide"] li,
+html[data-a11y-spacing="wide"] label,
+html[data-a11y-spacing="wide"] td,
+html[data-a11y-spacing="wide"] th {
+  line-height: 1.75;
+}
+
+html[data-a11y-motion="reduce"],
+html[data-a11y-motion="reduce"] *,
+html[data-a11y-motion="reduce"] *::before,
+html[data-a11y-motion="reduce"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 ::-webkit-scrollbar {

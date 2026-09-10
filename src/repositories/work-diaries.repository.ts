@@ -14,15 +14,28 @@ import {
 } from "@/lib/documents/sign-tokens";
 import { encryptShareToken } from "@/lib/documents/share-token-vault";
 import { WorkflowRepository } from "@/repositories/workflow.repository";
-import { isEditableStatus } from "@/lib/workflow/status-engine";
+import {
+  isEditableStatus,
+  WorkflowTransitionError,
+} from "@/lib/workflow/status-engine";
 import {
   syncWorkDiaryArchiveDocument,
   mapLegacyDiaryStatusToWorkflow,
 } from "@/lib/workflow/work-diary-documents";
 import { WORKFLOW_STATUS_LABELS } from "@/lib/workflow/types";
 import type { WorkflowStatus } from "@/lib/workflow/types";
+import { notifyWorkflowUsers } from "@/lib/workflow/notifications";
 import { ensureMiscSitesProject } from "@/lib/field/misc-sites-project";
 import { AuditRepository } from "@/repositories/audit.repository";
+import {
+  scheduleBackgroundOrAwait,
+  logBackgroundError,
+  type ScheduleBackground,
+} from "@/lib/async/schedule-background";
+import {
+  workflowDecideAnyOneSql,
+  workflowSubmitAnyOneSql,
+} from "@/lib/db/workflow-mutations-wd";
 
 export type WorkItemInput = {
   description: string;
@@ -124,7 +137,7 @@ async function actorFromUserId(userId: string) {
     select: { id: true, role: true, name: true },
   });
   if (!u) throw new Error("משתמש לא נמצא");
-  return { userId: u.id, role: u.role, name: u.name };
+  return { userId: u.id, role: u.role, name: u.name ?? undefined };
 }
 
 function resolveWorkflowStatus(row: any): WorkflowStatus {
@@ -771,22 +784,77 @@ export const WorkDiariesRepository = {
         documentId: existing.workflowDocumentId,
         action: "cancel",
         actor,
-      }).catch(() => undefined);
+      }).catch((err) =>
+        logBackgroundError("work-diary-workflow-cancel", err)
+      );
     }
   },
 
-  async submitForApproval(id: string, approverIds: string[], actorId: string) {
+  async submitForApproval(
+    id: string,
+    approverIds: string[],
+    actorId: string,
+    scheduleBackground?: ScheduleBackground,
+    actorOverride?: { userId: string; role: string; name?: string | null }
+  ) {
     if (!approverIds.length) throw new Error("יש לבחור לפחות מאשר אחד");
+    const uniqueApproverIds = [...new Set(approverIds.filter(Boolean))];
+
+    // Fast path: single CTE when WorkflowDocument already linked
+    const mutated = await workflowSubmitAnyOneSql({
+      workDiaryId: id,
+      actorId,
+      approverIds: uniqueApproverIds,
+      actorName: actorOverride?.name,
+    });
+
+    if (mutated) {
+      const status = (mutated.status as WorkflowStatus) ?? "pending_approval";
+      await scheduleBackgroundOrAwait(scheduleBackground, async () => {
+        await notifyWorkflowUsers({
+          userIds: uniqueApproverIds,
+          projectId: mutated.diaryProjectId,
+          title: "מסמך ממתין לאישור",
+          message: `${mutated.diaryDocumentNumber} ממתין לאישורך`,
+          link: `/approvals`,
+        });
+        await syncWorkDiaryArchiveDocument({
+          workflowDocumentId: mutated.id,
+          workDiaryId: id,
+          projectId: mutated.diaryProjectId,
+          documentNumber: mutated.diaryDocumentNumber,
+          title: mutated.title,
+          status,
+          userId: actorId,
+        });
+      });
+      return {
+        id,
+        documentNumber: mutated.diaryDocumentNumber,
+        projectId: mutated.diaryProjectId,
+        status,
+        statusLabel: WORKFLOW_STATUS_LABELS[status] ?? status,
+        workflowDocumentId: mutated.id,
+      };
+    }
+
+    // Slow path: create WorkflowDocument first (legacy / unmigrated diaries)
     const existing = await prisma.workDiary.findFirst({
       where: { id, deletedAt: null },
       include: { workflowDocument: true },
     });
     if (!existing) throw new Error("יומן עבודה לא נמצא");
 
-    let workflowDocumentId = existing.workflowDocumentId;
-    const actor = await actorFromUserId(actorId);
+    const actor =
+      actorOverride && actorOverride.userId === actorId
+        ? {
+            userId: actorOverride.userId,
+            role: actorOverride.role,
+            name: actorOverride.name ?? undefined,
+          }
+        : await actorFromUserId(actorId);
 
-    if (!workflowDocumentId) {
+    if (!existing.workflowDocumentId) {
       const wfDoc = await WorkflowRepository.create({
         kind: "WORK_DIARY",
         projectId: existing.projectId,
@@ -801,36 +869,50 @@ export const WorkDiariesRepository = {
         where: { id },
         data: { workflowDocumentId: wfDoc.id },
       });
-      workflowDocumentId = wfDoc.id;
+    } else {
+      throw new WorkflowTransitionError(
+        `מעבר לא מותר: ${existing.workflowDocument?.status ?? existing.status} → submit (WORK_DIARY)`
+      );
     }
 
-    const wfId = workflowDocumentId as string;
-
-    const wfStatus = existing.workflowDocument
-      ? (existing.workflowDocument.status as WorkflowStatus)
-      : mapLegacyDiaryStatusToWorkflow(existing.status);
-
-    const action =
-      wfStatus === "revision" ? ("resubmit" as const) : ("submit" as const);
-
-    const wf = await WorkflowRepository.transition({
-      documentId: wfId,
-      action,
-      approverIds,
-      actor,
-    });
-
-    await syncWorkDiaryArchiveDocument({
-      workflowDocumentId: wfId,
+    const retry = await workflowSubmitAnyOneSql({
       workDiaryId: id,
-      projectId: existing.projectId,
-      documentNumber: existing.documentNumber,
-      title: wf?.title,
-      status: (wf?.status as WorkflowStatus) ?? "pending_approval",
-      userId: actorId,
+      actorId,
+      approverIds: uniqueApproverIds,
+      actorName: actor.name,
+    });
+    if (!retry) {
+      throw new WorkflowTransitionError("מעבר לא מותר: submit (WORK_DIARY)");
+    }
+
+    const status = (retry.status as WorkflowStatus) ?? "pending_approval";
+    await scheduleBackgroundOrAwait(scheduleBackground, async () => {
+      await notifyWorkflowUsers({
+        userIds: uniqueApproverIds,
+        projectId: retry.diaryProjectId,
+        title: "מסמך ממתין לאישור",
+        message: `${retry.diaryDocumentNumber} ממתין לאישורך`,
+        link: `/approvals`,
+      });
+      await syncWorkDiaryArchiveDocument({
+        workflowDocumentId: retry.id,
+        workDiaryId: id,
+        projectId: retry.diaryProjectId,
+        documentNumber: retry.diaryDocumentNumber,
+        title: retry.title,
+        status,
+        userId: actorId,
+      });
     });
 
-    return this.getById(id);
+    return {
+      id,
+      documentNumber: retry.diaryDocumentNumber,
+      projectId: retry.diaryProjectId,
+      status,
+      statusLabel: WORKFLOW_STATUS_LABELS[status] ?? status,
+      workflowDocumentId: retry.id,
+    };
   },
 
   async decideApproval(
@@ -838,85 +920,77 @@ export const WorkDiariesRepository = {
     approverId: string,
     decision: "approved" | "rejected",
     comment?: string | null,
-    correctionMode?: "manual" | "note"
+    correctionMode?: "manual" | "note",
+    scheduleBackground?: ScheduleBackground,
+    actorOverride?: { userId: string; role: string; name?: string | null }
   ) {
-    const existing = await prisma.workDiary.findFirst({
-      where: { id, deletedAt: null },
-      include: { workflowDocument: true },
-    });
-    if (!existing) throw new Error("יומן עבודה לא נמצא");
-    if (!existing.workflowDocumentId) {
-      throw new Error("יומן זה עדיין לא מחובר למנוע Workflow — יש להריץ מיגרציה");
+    if (decision === "rejected" && !comment?.trim()) {
+      throw new WorkflowTransitionError("חובה לרשום הערות להחזרה לתיקון");
     }
 
-    const actor = await actorFromUserId(approverId);
-    const wf = await WorkflowRepository.transition({
-      documentId: existing.workflowDocumentId,
-      action: decision === "approved" ? "approve" : "reject",
+    const mutated = await workflowDecideAnyOneSql({
+      workDiaryId: id,
+      actorId: approverId,
+      decision,
       comment,
       correctionMode,
-      actor,
+      actorName: actorOverride?.name,
     });
 
-    const wfStatus = (wf?.status as WorkflowStatus) ?? "approved";
+    if (!mutated) {
+      const existing = await prisma.workDiary.findFirst({
+        where: { id, deletedAt: null },
+        include: { workflowDocument: true },
+      });
+      if (!existing) throw new Error("יומן עבודה לא נמצא");
+      if (!existing.workflowDocumentId) {
+        throw new Error("יומן זה עדיין לא מחובר למנוע Workflow — יש להריץ מיגרציה");
+      }
+      throw new WorkflowTransitionError("אין בקשת אישור ממתינה עבורך");
+    }
+
+    const wfStatus = (mutated.status as WorkflowStatus) ?? "approved";
     const diaryStatus: WorkDiaryStatus =
       decision === "rejected" || wfStatus === "revision"
         ? "revision"
-        : wfStatus === "approved"
-          ? "approved"
-          : "pending_approval";
+        : "approved";
 
-    await prisma.workDiary.update({
-      where: { id },
-      data: { status: diaryStatus, updatedById: approverId },
+    await scheduleBackgroundOrAwait(scheduleBackground, async () => {
+      await syncWorkDiaryArchiveDocument({
+        workflowDocumentId: mutated.id,
+        workDiaryId: id,
+        projectId: mutated.diaryProjectId,
+        documentNumber: mutated.diaryDocumentNumber,
+        title: mutated.title,
+        status: wfStatus,
+        userId: approverId,
+      });
+
+      if (decision === "rejected" && mutated.diaryCreatedById) {
+        await notifyWorkflowUsers({
+          userIds: [mutated.diaryCreatedById],
+          projectId: mutated.diaryProjectId,
+          title: "מסמך דורש תיקון",
+          message: `${mutated.diaryDocumentNumber}: ${comment?.trim() || "הוחזר לתיקון"}`,
+        });
+      }
+      if (decision === "approved" && wfStatus === "approved") {
+        await notifyUsers(
+          [mutated.diaryCreatedById],
+          "יומן עבודה אושר",
+          `${mutated.diaryDocumentNumber} אושר`,
+          `/field/work-diaries/${id}`,
+          mutated.diaryProjectId
+        );
+      }
     });
 
-    // Sync legacy WorkDiaryApproval rows (inbox uses Workflow; keep legacy aligned)
-    await prisma.workDiaryApproval.updateMany({
-      where: { workDiaryId: id, approverId, status: "pending" },
-      data: {
-        status: decision === "approved" ? "approved" : "rejected",
-        comment: comment?.trim() || null,
-        decidedAt: new Date(),
-      },
-    });
-    // Any-one / reject: close remaining pending requests
-    await prisma.workDiaryApproval.updateMany({
-      where: { workDiaryId: id, status: "pending" },
-      data: { status: "cancelled" },
-    });
-
-    await syncWorkDiaryArchiveDocument({
-      workflowDocumentId: existing.workflowDocumentId,
-      workDiaryId: id,
-      projectId: existing.projectId,
-      documentNumber: existing.documentNumber,
-      title: wf?.title,
-      status: wfStatus,
-      userId: approverId,
-    });
-
-    if (decision === "rejected") {
-      await notifyUsers(
-        [existing.createdById],
-        "יומן עבודה הוחזר לתיקון",
-        `${existing.documentNumber}: ${comment}`,
-        `/field/work-diaries/${id}`,
-        existing.projectId
-      );
-    } else if (wfStatus === "approved") {
-      await notifyUsers(
-        [existing.createdById],
-        "יומן עבודה אושר",
-        `${existing.documentNumber} אושר`,
-        `/field/work-diaries/${id}`,
-        existing.projectId
-      );
-    }
-
-    const diary = await this.getById(id);
     return {
-      ...diary,
+      id,
+      documentNumber: mutated.diaryDocumentNumber,
+      projectId: mutated.diaryProjectId,
+      status: diaryStatus,
+      statusLabel: WORKFLOW_STATUS_LABELS[wfStatus] ?? diaryStatus,
       approvalComplete: decision === "approved" && wfStatus === "approved",
       awaitingOtherApprovers: false,
     };
@@ -1316,7 +1390,7 @@ export const WorkDiariesRepository = {
       status: wfStatus,
       userId: actorId,
       bumpVersion: true,
-    }).catch(() => undefined);
+    }).catch((err) => logBackgroundError("work-diary-archive:media", err));
 
     const diary = await this.getById(id);
     return (

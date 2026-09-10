@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { after, NextRequest } from "next/server";
 import { requireOfficeUser } from "@/lib/auth/office-session";
 import { requireFieldManager } from "@/lib/auth/field-session";
 import {
@@ -13,18 +13,30 @@ import { WorkflowTransitionError } from "@/lib/workflow/status-engine";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { parseJsonBody } from "@/lib/validation/parse-body";
 import { approvalsDecisionSchema } from "@/lib/validation/schemas";
+import { createAfterScheduler } from "@/lib/async/schedule-background";
 
 async function resolveApproverSession(): Promise<{
   userId: string;
   role: string;
+  name?: string | null;
   isField: boolean;
 }> {
   try {
     const office = await requireOfficeUser();
-    return { userId: office.userId, role: office.role, isField: false };
+    return {
+      userId: office.userId,
+      role: office.role,
+      name: office.userName ?? office.username,
+      isField: false,
+    };
   } catch {
     const field = await requireFieldManager();
-    return { userId: field.userId, role: field.role, isField: true };
+    return {
+      userId: field.userId,
+      role: field.role,
+      name: field.userName ?? field.username,
+      isField: true,
+    };
   }
 }
 
@@ -73,6 +85,12 @@ export async function POST(req: NextRequest) {
     const rejectReasonId = body.rejectReasonId;
     const rejectAttachments = body.rejectAttachments ?? [];
     const approveOptions = body.approveOptions ?? {};
+    const schedule = createAfterScheduler(after, "approvals-pending");
+    const actor = {
+      userId: session.userId,
+      role: session.role,
+      name: session.name,
+    };
 
     if (decision === "rejected" && correctionMode === "manual") {
       comment = "תיקון ידני על ידי המאשר";
@@ -107,7 +125,8 @@ export async function POST(req: NextRequest) {
         comment,
         correctionMode,
         reviewNotes,
-        req.nextUrl.origin
+        req.nextUrl.origin,
+        schedule
       );
       return apiSuccess(sheet);
     }
@@ -130,7 +149,9 @@ export async function POST(req: NextRequest) {
         session.userId,
         decision,
         comment,
-        correctionMode
+        correctionMode,
+        schedule,
+        actor
       );
     } else if (kind === "delivery_note") {
       result = await OpsDeliveryNotesRepository.decideApproval(
@@ -138,7 +159,8 @@ export async function POST(req: NextRequest) {
         session.userId,
         decision,
         comment,
-        correctionMode
+        correctionMode,
+        schedule
       );
     } else if (kind === "measurement_sheet") {
       result = await MeasurementSheetsRepository.decideApproval(
@@ -148,78 +170,88 @@ export async function POST(req: NextRequest) {
         comment,
         correctionMode,
         reviewNotes,
-        req.nextUrl.origin
+        req.nextUrl.origin,
+        schedule
       );
     } else {
       return apiError("סוג מסמך לא תקין");
     }
 
-    // Post-approve options (best-effort)
+    // Post-approve options — archive sync is already scheduled inside decide*;
+    // only run optional client-link / explicit re-archive in background.
     if (decision === "approved" && result?.approvalComplete !== false) {
       if (approveOptions.saveToDocuments !== false) {
-        try {
-          const { DocumentsHubRepository } = await import(
-            "@/repositories/documents-hub.repository"
-          );
-          await DocumentsHubRepository.ensureInArchive({
-            kind: kind!,
-            entityId: documentId,
-            userId: session.userId,
-            baseUrl: req.nextUrl.origin,
-          });
-          result.savedToDocuments = true;
-        } catch {
-          /* optional — יומן כבר מסונכרן לעיתים */
-        }
+        result.savedToDocuments = true;
+        schedule(async () => {
+          try {
+            const { DocumentsHubRepository } = await import(
+              "@/repositories/documents-hub.repository"
+            );
+            await DocumentsHubRepository.ensureInArchive({
+              kind: kind!,
+              entityId: documentId,
+              userId: session.userId,
+              baseUrl: req.nextUrl.origin,
+            });
+          } catch {
+            /* optional — יומן כבר מסונכרן לעיתים */
+          }
+        });
       }
       if (approveOptions.sendToClient && kind === "measurement_sheet") {
-        try {
-          await MeasurementSheetsRepository.createClientSignLink(
-            documentId,
-            session.userId,
-            req.nextUrl.origin
-          );
-          result.clientLinkCreated = true;
-        } catch {
-          /* optional */
-        }
+        schedule(async () => {
+          try {
+            await MeasurementSheetsRepository.createClientSignLink(
+              documentId,
+              session.userId,
+              req.nextUrl.origin
+            );
+          } catch {
+            /* optional */
+          }
+        });
+        result.clientLinkCreated = true;
       }
       if (
         approveOptions.sendToClient &&
         kind === "work_diary" &&
         result?.status === "approved"
       ) {
-        try {
-          await WorkDiariesRepository.createClientSignLink(
-            documentId,
-            session.userId,
-            req.nextUrl.origin
-          );
-          result.clientLinkCreated = true;
-        } catch {
-          /* optional */
-        }
+        schedule(async () => {
+          try {
+            await WorkDiariesRepository.createClientSignLink(
+              documentId,
+              session.userId,
+              req.nextUrl.origin
+            );
+          } catch {
+            /* optional */
+          }
+        });
+        result.clientLinkCreated = true;
       }
       if (
         approveOptions.sendToClient &&
         kind === "delivery_note" &&
         (result?.status === "approved" || result?.status === "sent_to_client")
       ) {
-        try {
-          const { hasDocumentPermission } = await import(
-            "@/lib/auth/document-permissions"
-          );
-          if (hasDocumentPermission(session.role, "send_to_client")) {
-            await OpsDeliveryNotesRepository.createClientSignLink(
-              documentId,
-              session.userId,
-              req.nextUrl.origin
+        schedule(async () => {
+          try {
+            const { hasDocumentPermission } = await import(
+              "@/lib/auth/document-permissions"
             );
-            result.clientLinkCreated = true;
+            if (hasDocumentPermission(session.role, "send_to_client")) {
+              await OpsDeliveryNotesRepository.createClientSignLink(
+                documentId,
+                session.userId,
+                req.nextUrl.origin
+              );
+            }
+          } catch {
+            /* optional */
           }
-        } catch {
-          /* optional */
-        }
+        });
+        result.clientLinkCreated = true;
       }
     }
 

@@ -251,7 +251,6 @@ export function PmCreateDeliveryNote() {
       }
 
       router.replace("/project/delivery-notes");
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "שגיאה");
     } finally {

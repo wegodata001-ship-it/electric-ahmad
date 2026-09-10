@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clock, GitBranch, Home, User } from "lucide-react";
+import { Clock, GitBranch, Home, LogOut, User } from "lucide-react";
 import { usePortalSession } from "@/apps/shared/use-portal-session";
+import { PortalNotificationsMenu } from "@/apps/shared/portal-notifications-menu";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -15,7 +16,7 @@ const TABS = [
 
 export function FieldAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { userName, ready } = usePortalSession("field");
+  const { userName, ready, loggingOut, logout } = usePortalSession("field");
 
   if (!ready) {
     return (
@@ -33,20 +34,37 @@ export function FieldAppShell({ children }: { children: React.ReactNode }) {
       data-layout="portal"
       data-theme="light"
     >
-      <header className="sticky top-0 z-30 flex h-14 items-center border-b border-[#E2E8F0] bg-white px-4">
-        <div className="mx-auto w-full max-w-lg">
-          <p className="text-xs font-semibold text-[#2563EB]">מנהל עבודה</p>
-          <p className="truncate text-sm font-bold text-[#0F172A]">
-            {userName || "מנהל עבודה"}
-          </p>
+      <header className="sticky top-0 z-40 flex h-14 items-center border-b border-[#E2E8F0] bg-white px-4">
+        <div className="mx-auto flex w-full max-w-lg min-w-0 items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-[#2563EB]">מנהל עבודה</p>
+            <p className="truncate text-sm font-bold text-[#0F172A]">
+              {userName || "מנהל עבודה"}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <PortalNotificationsMenu notificationsHref="/field/notifications" />
+            <button
+              type="button"
+              onClick={() => void logout()}
+              disabled={loggingOut}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[11px] border border-[#E2E8F0] bg-white px-2.5 text-xs font-bold text-[#334155] transition hover:bg-[#F8FAFC] disabled:opacity-60"
+              aria-label="יציאה"
+            >
+              <LogOut className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden min-[375px]:inline">
+                {loggingOut ? "…" : "יציאה"}
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-32 pt-5">
+      <main className="mx-auto w-full max-w-lg min-w-0 flex-1 overflow-x-hidden px-4 pb-32 pt-5">
         {children}
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#E2E8F0] bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(15,23,42,0.04)]">
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#E2E8F0] bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(15,23,42,0.04)]">
         <div className="mx-auto flex max-w-lg items-stretch justify-between px-1">
           {TABS.map((tab) => {
             const exact = "exact" in tab && tab.exact;

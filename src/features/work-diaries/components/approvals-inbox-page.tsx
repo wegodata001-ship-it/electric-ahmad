@@ -86,7 +86,10 @@ export function ApprovalsInboxPage() {
         documentId: item.documentId,
         decision: "approved",
       });
-      await reload();
+      setPending((prev: any[]) =>
+        prev.filter((p) => p.documentId !== item.documentId)
+      );
+      void reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : "שגיאה באישור");
     } finally {
@@ -109,10 +112,16 @@ export function ApprovalsInboxPage() {
         decision: "rejected",
         comment: rejectReason.trim(),
       });
+      const rejected = rejectFor;
+      setPending((prev: any[]) =>
+        prev.filter((p) => p.documentId !== rejected.documentId)
+      );
       setRejectFor(null);
       setRejectReason("");
       setTab("fixes");
-      await reload();
+      setBusyId(null);
+      void reload();
+      return;
     } catch (e) {
       setError(e instanceof Error ? e.message : "שגיאה בהחזרה לתיקון");
     } finally {

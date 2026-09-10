@@ -3,6 +3,10 @@ import type { ConversationMessage } from "@/lib/engines/conversation";
 import { prisma } from "@/lib/prisma";
 import { getWorkflowDefinition } from "@/lib/workflow/definitions";
 import { notifyWorkflowUsers } from "@/lib/workflow/notifications";
+import {
+  scheduleBackgroundOrAwait,
+  type ScheduleBackground,
+} from "@/lib/async/schedule-background";
 import { assertOverrideAllowed } from "@/lib/workflow/override";
 import {
   assertTransition,
@@ -20,6 +24,7 @@ import type {
 } from "@/lib/workflow/types";
 import { WORKFLOW_STATUS_LABELS } from "@/lib/workflow/types";
 import type {
+  Prisma,
   WorkflowDocKind as PrismaKind,
   WorkflowStatus as PrismaStatus,
   ClientSignatureStatus as PrismaClientSig,
@@ -294,6 +299,7 @@ export class WorkflowRepository {
     comment?: string | null;
     approverIds?: string[];
     correctionMode?: "manual" | "note";
+    scheduleBackground?: ScheduleBackground;
   }) {
     const existing = await prisma.workflowDocument.findUnique({
       where: { id: input.documentId },
@@ -313,6 +319,8 @@ export class WorkflowRepository {
       approverIds: input.approverIds,
     });
 
+    let approvalAlreadyClaimed = false;
+
     // אישור — any_one (ברירת מחדל) או all_must לפי הגדרת המסמך
     if (input.action === "approve") {
       const mine = existing.approvals.find(
@@ -321,33 +329,51 @@ export class WorkflowRepository {
       if (!mine) {
         throw new WorkflowTransitionError("אין בקשת אישור ממתינה עבורך");
       }
-      await prisma.workflowApproval.update({
-        where: { id: mine.id },
-        data: {
-          status: "approved",
-          comment: input.comment ?? null,
-          decidedAt: new Date(),
-        },
-      });
 
-      if (definition.approvalMode === "any_one") {
-        await prisma.workflowApproval.updateMany({
-          where: { documentId: input.documentId, status: "pending" },
-          data: { status: "cancelled" },
-        });
-      } else {
-        const pending = await prisma.workflowApproval.count({
-          where: { documentId: input.documentId, status: "pending" },
-        });
-        if (pending > 0) {
-          await this.addEvent(input.documentId, {
-            type: "partial_approved",
-            message: "אישור חלקי התקבל",
-            fromStatus: from,
-            actorId: input.actor.userId,
+      if (definition.approvalMode !== "any_one") {
+        await prisma.$transaction(async (tx) => {
+          const claimed = await tx.workflowApproval.updateMany({
+            where: { id: mine.id, status: "pending" },
+            data: {
+              status: "approved",
+              comment: input.comment ?? null,
+              decidedAt: new Date(),
+            },
           });
-          return this.getById(input.documentId);
+          if (claimed.count === 0) {
+            throw new WorkflowTransitionError("הבקשה כבר טופלה — רענון הדף");
+          }
+          const pending = await tx.workflowApproval.count({
+            where: { documentId: input.documentId, status: "pending" },
+          });
+          if (pending > 0) {
+            await tx.workflowEvent.create({
+              data: {
+                documentId: input.documentId,
+                type: "partial_approved",
+                message: "אישור חלקי התקבל",
+                fromStatus: from as PrismaStatus,
+                actorId: input.actor.userId,
+              },
+            });
+          }
+        });
+        const pendingLeft = await prisma.workflowApproval.count({
+          where: { documentId: input.documentId, status: "pending" },
+        });
+        if (pendingLeft > 0) {
+          return {
+            id: existing.id,
+            kind: existing.kind,
+            projectId: existing.projectId,
+            title: existing.title,
+            documentNumber: existing.documentNumber,
+            status: from,
+            version: existing.version,
+            createdById: existing.createdById,
+          };
         }
+        approvalAlreadyClaimed = true;
       }
     }
 
@@ -358,43 +384,23 @@ export class WorkflowRepository {
       if (!mine) {
         throw new WorkflowTransitionError("אין בקשת אישור ממתינה עבורך");
       }
-      await prisma.workflowApproval.update({
-        where: { id: mine.id },
-        data: {
-          status: "rejected",
-          comment: input.comment?.trim() || null,
-          decidedAt: new Date(),
-        },
-      });
-      await prisma.workflowApproval.updateMany({
-        where: { documentId: input.documentId, status: "pending" },
-        data: { status: "cancelled" },
-      });
     }
 
-    if (input.action === "submit" || input.action === "resubmit") {
-      await prisma.workflowApproval.updateMany({
-        where: { documentId: input.documentId, status: "pending" },
-        data: { status: "cancelled" },
-      });
-      const ids = [...new Set((input.approverIds ?? []).filter(Boolean))];
-      if (ids.length) {
-        await prisma.workflowApproval.createMany({
-          data: ids.map((approverId) => ({
-            documentId: input.documentId,
-            approverId,
-            status: "pending" as const,
-          })),
-        });
-        await notifyWorkflowUsers({
-          userIds: ids,
-          projectId: existing.projectId,
-          title: "מסמך ממתין לאישור",
-          message: `${existing.documentNumber} ממתין לאישורך`,
-          link: `/approvals`,
-        });
-      }
-    }
+    const ids =
+      input.action === "submit" || input.action === "resubmit"
+        ? [...new Set((input.approverIds ?? []).filter(Boolean))]
+        : [];
+
+    const eventMessage =
+      input.action === "reject"
+        ? input.correctionMode === "manual"
+          ? `${input.actor.name || "המאשר"} ביצע החזרה לתיקון ידני`
+          : `${input.actor.name || "המאשר"} החזיר לתיקון לפי הערה: ${
+              input.comment?.trim() || "ללא פירוט"
+            }`
+        : input.action === "resubmit"
+          ? "נשלח מחדש לאישור"
+          : `${WORKFLOW_STATUS_LABELS[from]} → ${WORKFLOW_STATUS_LABELS[transition.to]}`;
 
     const clientSigUpdate: Partial<{
       clientSignatureStatus: PrismaClientSig;
@@ -406,56 +412,139 @@ export class WorkflowRepository {
       clientSigUpdate.clientSignatureStatus = "signed";
     }
 
-    await prisma.workflowDocument.update({
-      where: { id: input.documentId },
-      data: {
-        status: transition.to as PrismaStatus,
-        updatedById: input.actor.userId,
-        ...clientSigUpdate,
-      },
-    });
+    await prisma.$transaction(async (tx) => {
+      if (input.action === "approve" && !approvalAlreadyClaimed) {
+        const mine = existing.approvals.find(
+          (a) => a.approverId === input.actor.userId && a.status === "pending"
+        );
+        if (!mine) throw new WorkflowTransitionError("אין בקשת אישור ממתינה עבורך");
+        const claimed = await tx.workflowApproval.updateMany({
+          where: { id: mine.id, status: "pending" },
+          data: {
+            status: "approved",
+            comment: input.comment ?? null,
+            decidedAt: new Date(),
+          },
+        });
+        if (claimed.count === 0) {
+          throw new WorkflowTransitionError("הבקשה כבר טופלה — רענון הדף");
+        }
+        if (definition.approvalMode === "any_one") {
+          await tx.workflowApproval.updateMany({
+            where: { documentId: input.documentId, status: "pending" },
+            data: { status: "cancelled" },
+          });
+        }
+      }
 
-    await this.bumpVersion(
-      input.documentId,
-      transition.to,
-      input.actor.userId,
-      `${input.action}: ${WORKFLOW_STATUS_LABELS[transition.to]}`
-    );
+      if (input.action === "reject") {
+        const mine = existing.approvals.find(
+          (a) => a.approverId === input.actor.userId && a.status === "pending"
+        );
+        if (!mine) throw new WorkflowTransitionError("אין בקשת אישור ממתינה עבורך");
+        const claimed = await tx.workflowApproval.updateMany({
+          where: { id: mine.id, status: "pending" },
+          data: {
+            status: "rejected",
+            comment: input.comment?.trim() || null,
+            decidedAt: new Date(),
+          },
+        });
+        if (claimed.count === 0) {
+          throw new WorkflowTransitionError("הבקשה כבר טופלה — רענון הדף");
+        }
+        await tx.workflowApproval.updateMany({
+          where: { documentId: input.documentId, status: "pending" },
+          data: { status: "cancelled" },
+        });
+      }
 
-    const eventMessage =
-      input.action === "reject"
-        ? input.correctionMode === "manual"
-          ? `${input.actor.name || "המאשר"} ביצע החזרה לתיקון ידני`
-          : `${input.actor.name || "המאשר"} החזיר לתיקון לפי הערה: ${
-              input.comment?.trim() || "ללא פירוט"
-            }`
-        : input.action === "resubmit"
-          ? "נשלח מחדש לאישור"
-        : `${WORKFLOW_STATUS_LABELS[from]} → ${WORKFLOW_STATUS_LABELS[transition.to]}`;
+      if (input.action === "submit" || input.action === "resubmit") {
+        await tx.workflowApproval.updateMany({
+          where: { documentId: input.documentId, status: "pending" },
+          data: { status: "cancelled" },
+        });
+        if (ids.length) {
+          await tx.workflowApproval.createMany({
+            data: ids.map((approverId) => ({
+              documentId: input.documentId,
+              approverId,
+              status: "pending" as const,
+            })),
+          });
+        }
+      }
 
-    await this.addEvent(input.documentId, {
-      type: input.action,
-      message: eventMessage,
-      fromStatus: from,
-      toStatus: transition.to,
-      actorId: input.actor.userId,
-      metadata: {
-        comment: input.comment,
-        approverIds: input.approverIds,
-        correctionMode: input.correctionMode,
-      },
-    });
-
-    if (input.action === "reject" && existing.createdById) {
-      await notifyWorkflowUsers({
-        userIds: [existing.createdById],
-        projectId: existing.projectId,
-        title: "מסמך דורש תיקון",
-        message: `${existing.documentNumber}: ${input.comment?.trim() || "הוחזר לתיקון"}`,
+      const nextVersion = existing.version + 1;
+      await tx.workflowDocument.update({
+        where: { id: input.documentId },
+        data: {
+          status: transition.to as PrismaStatus,
+          version: nextVersion,
+          updatedById: input.actor.userId,
+          ...clientSigUpdate,
+        },
       });
-    }
+      await tx.workflowDocVersion.create({
+        data: {
+          documentId: input.documentId,
+          version: nextVersion,
+          status: transition.to as PrismaStatus,
+          note: `${input.action}: ${WORKFLOW_STATUS_LABELS[transition.to]}`,
+          actorId: input.actor.userId,
+          snapshotJson: "{}",
+        },
+      });
+      await tx.workflowEvent.create({
+        data: {
+          documentId: input.documentId,
+          type: input.action,
+          message: eventMessage,
+          fromStatus: from as PrismaStatus,
+          toStatus: transition.to as PrismaStatus,
+          actorId: input.actor.userId,
+          metadata: JSON.stringify({
+            comment: input.comment,
+            approverIds: input.approverIds,
+            correctionMode: input.correctionMode,
+          }),
+        },
+      });
+    });
 
-    return this.getById(input.documentId);
+    await scheduleBackgroundOrAwait(input.scheduleBackground, async () => {
+      if (
+        (input.action === "submit" || input.action === "resubmit") &&
+        ids.length
+      ) {
+        await notifyWorkflowUsers({
+          userIds: ids,
+          projectId: existing.projectId,
+          title: "מסמך ממתין לאישור",
+          message: `${existing.documentNumber} ממתין לאישורך`,
+          link: `/approvals`,
+        });
+      }
+      if (input.action === "reject" && existing.createdById) {
+        await notifyWorkflowUsers({
+          userIds: [existing.createdById],
+          projectId: existing.projectId,
+          title: "מסמך דורש תיקון",
+          message: `${existing.documentNumber}: ${input.comment?.trim() || "הוחזר לתיקון"}`,
+        });
+      }
+    });
+
+    return {
+      id: existing.id,
+      kind: existing.kind,
+      projectId: existing.projectId,
+      title: existing.title,
+      documentNumber: existing.documentNumber,
+      status: transition.to,
+      version: existing.version + 1,
+      createdById: existing.createdById,
+    };
   }
 
   /**
