@@ -194,7 +194,7 @@ export function SystemProjectDashboard() {
 
               <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
                 <InfoField icon={User} label="לקוח" value={selected.contractor} />
-                <InfoField icon={User} label="מנהל פרויקט" value={selected.foremanName || "—"} />
+                <InfoField icon={User} label="מנהל פרויקט" value={selected.ownerName || "טרם הוקצה מנהל פרויקט"} />
                 <InfoField icon={TrendingUp} label="אחוז ביצוע" value={formatPercent(selected.progress)} />
                 <InfoField icon={CalendarDays} label="תאריך התחלה" value={formatDate(selected.startDate)} />
                 <InfoField icon={CalendarDays} label="תאריך סיום" value={formatDate(selected.endDate)} />

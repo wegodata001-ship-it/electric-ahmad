@@ -44,6 +44,11 @@ export const DOCUMENT_ARCHIVE_FOLDERS = [
     folderNames: ["חוזים"],
   },
   {
+    id: "original",
+    label: "מסמך מקור",
+    folderNames: ["מסמך מקור"],
+  },
+  {
     id: "plans",
     label: "תוכניות",
     folderNames: ["תוכניות"],
@@ -116,6 +121,9 @@ export function guessDocumentFolderId(input: {
   if (folder.startsWith("קבלות") || name.includes("קבלה")) return "receipt";
   if (folder.startsWith("הצעות מחיר") || name.includes("הצעת מחיר")) {
     return "quote";
+  }
+  if (folder.startsWith("מסמך מקור") || name.includes("מסמך מקור")) {
+    return "original";
   }
   if (folder.startsWith("חוזים") || name.includes("חוזה")) return "contract";
   if (folder.startsWith("תוכניות") || name.includes("תוכנית") || input.type === "dwg") {

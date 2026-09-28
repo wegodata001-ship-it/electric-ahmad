@@ -181,6 +181,7 @@ export function InvoicesWorkspacePage() {
                   sheetCount: tree.sheets?.length,
                   invoiceCount: tree.invoices?.length,
                   documentCount: tree.documents?.length,
+                  workDiaryCount: tree.workDiaries?.length ?? tree.workDiaryCount,
                 }}
               />
 
@@ -213,7 +214,10 @@ export function InvoicesWorkspacePage() {
                   />
                 )}
                 {activeModule === "workDiaries" && (
-                  <ProjectWorkDiariesPanel projectId={tree.project.id} />
+                  <ProjectWorkDiariesPanel
+                    projectId={tree.project.id}
+                    projectName={tree.project.name}
+                  />
                 )}
                 {activeModule === "deliveries" && (
                   <ProjectDeliveryNotesPanel projectId={tree.project.id} />

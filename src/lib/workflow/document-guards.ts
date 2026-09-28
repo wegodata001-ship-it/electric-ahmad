@@ -41,6 +41,8 @@ export const UNIVERSAL_IMMUTABLE_STATUSES: readonly string[] = [
 export const DIARY_EDITABLE_STATUSES: readonly string[] = [
   "draft",
   "revision",
+  "assigned",
+  "in_progress",
 ] as const;
 
 /** Ops (portal) delivery notes editable statuses. */

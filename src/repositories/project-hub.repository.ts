@@ -37,6 +37,8 @@ type HubSqlRow = {
   foremanId: string | null;
   foremanFirstName: string | null;
   foremanLastName: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
   boqItemCount: number;
   boqCompletedQty: unknown;
   boqAvgProgress: unknown;
@@ -56,6 +58,8 @@ type HubSqlRow = {
   documentTotal: number;
   documentRecent: number;
   diaryTotal: number;
+  diaryCompleted: number;
+  diaryInProgress: number;
   diaryLastAt: Date | null;
   deliveryTotal: number;
   deliveryOpen: number;
@@ -127,6 +131,8 @@ function mapHubRow(row: HubSqlRow) {
       axisLabel,
       foremanName,
       foremanId: row.foremanId ?? null,
+      ownerId: row.ownerId ?? null,
+      ownerName: row.ownerName ?? null,
     },
     cards: {
       boq: {
@@ -163,6 +169,8 @@ function mapHubRow(row: HubSqlRow) {
       },
       workDiaries: {
         total: num(row.diaryTotal),
+        completed: num(row.diaryCompleted),
+        inProgress: num(row.diaryInProgress),
         lastAt: iso(row.diaryLastAt),
       },
       deliveries: {
@@ -298,10 +306,23 @@ export class ProjectHubRepository {
       diaries AS (
         SELECT
           COUNT(*)::int AS total,
-          MAX("workDate") AS last_at
-        FROM "WorkDiary"
-        WHERE "projectId" = ${projectId}
-          AND "deletedAt" IS NULL
+          COUNT(*) FILTER (
+            WHERE COALESCE(wd.status::text, d.status::text) IN (
+              'approved', 'completed', 'signed', 'client_signed',
+              'sent_to_client', 'locked', 'used_for_measurement',
+              'used_for_account', 'used_for_invoice'
+            )
+          )::int AS completed,
+          COUNT(*) FILTER (
+            WHERE COALESCE(wd.status::text, d.status::text) IN (
+              'assigned', 'in_progress', 'pending_approval', 'revision'
+            )
+          )::int AS in_progress,
+          MAX(d."workDate") AS last_at
+        FROM "WorkDiary" d
+        LEFT JOIN "WorkflowDocument" wd ON wd.id = d."workflowDocumentId"
+        WHERE d."projectId" = ${projectId}
+          AND d."deletedAt" IS NULL
       ),
       deliveries AS (
         SELECT
@@ -337,6 +358,8 @@ export class ProjectHubRepository {
         e.id AS "foremanId",
         e."firstName" AS "foremanFirstName",
         e."lastName" AS "foremanLastName",
+        p."ownerId" AS "ownerId",
+        ou.name AS "ownerName",
         boq.item_count AS "boqItemCount",
         boq.completed_qty AS "boqCompletedQty",
         boq.avg_progress AS "boqAvgProgress",
@@ -356,12 +379,15 @@ export class ProjectHubRepository {
         docs.total AS "documentTotal",
         docs.recent AS "documentRecent",
         diaries.total AS "diaryTotal",
+        diaries.completed AS "diaryCompleted",
+        diaries.in_progress AS "diaryInProgress",
         diaries.last_at AS "diaryLastAt",
         deliveries.total AS "deliveryTotal",
         deliveries.open AS "deliveryOpen",
         auth.user_id AS "authUserId"
       FROM "Project" p
       LEFT JOIN "Employee" e ON e.id = p."foremanId"
+      LEFT JOIN "User" ou ON ou.id = p."ownerId"
       LEFT JOIN auth ON true
       CROSS JOIN boq
       CROSS JOIN sheets

@@ -16,6 +16,7 @@ import { ProjectBoqPanel } from "@/features/projects/components/panels/project-b
 import { ProjectDeliveryNotesPanel } from "@/features/projects/components/panels/project-delivery-notes-panel";
 import { ProjectWorkDiariesPanel } from "@/features/projects/components/panels/project-work-diaries-panel";
 import { ProjectDashboardPanel } from "@/apps/system/project-dashboard-panel";
+import { OriginalProjectFileCard } from "@/features/projects/components/original-project-file-card";
 import {
   ADMIN_PROJECT_MODULE_IDS,
   ProjectModulesNavTree,
@@ -24,7 +25,13 @@ import {
 } from "@/features/projects/components/project-modules-nav-tree";
 import { cn } from "@/lib/utils";
 import { fetchClientMe } from "@/lib/auth/client-me";
-import { isSystemAdminRole } from "@/lib/auth/document-permissions";
+import {
+  hasDocumentPermission,
+  isSystemAdminRole,
+} from "@/lib/auth/document-permissions";
+import { OPERATIONS_MANAGER_ROLE } from "@/lib/auth/roles";
+import { apiClient } from "@/lib/api/client";
+import { ProjectManagerSelect } from "@/features/projects/components/project-manager-select";
 
 const ProjectInvoicesPage = dynamic(
   () =>
@@ -57,6 +64,8 @@ type TreeProject = {
   name: string;
   contractNumber?: string;
   contractor?: string;
+  ownerId?: string | null;
+  ownerName?: string | null;
 };
 
 function PanelLoading() {
@@ -98,6 +107,10 @@ export function AdminProjectWorkspace({
   const [mobileProjectsOpen, setMobileProjectsOpen] = useState(false);
   const [treeStats, setTreeStats] = useState<ProjectNavTreeStats | undefined>();
   const [canDeleteProjects, setCanDeleteProjects] = useState(false);
+  const [canFilterPm, setCanFilterPm] = useState(false);
+  const [canCreateWorkDiary, setCanCreateWorkDiary] = useState(false);
+  const [diaryCreateKey, setDiaryCreateKey] = useState(0);
+  const [ownerFilter, setOwnerFilter] = useState("");
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
   const [deleteProject, setDeleteProject] = useState<TreeProject | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
@@ -109,9 +122,12 @@ export function AdminProjectWorkspace({
   useEffect(() => {
     fetchClientMe("/api/auth/me")
       .then((json) => {
-        setCanDeleteProjects(
-          Boolean(json.success && isSystemAdminRole(json.data?.role))
+        const role = json.success ? json.data?.role : null;
+        setCanDeleteProjects(Boolean(isSystemAdminRole(role)));
+        setCanFilterPm(
+          Boolean(isSystemAdminRole(role) || role === OPERATIONS_MANAGER_ROLE)
         );
+        setCanCreateWorkDiary(hasDocumentPermission(role, "create"));
       })
       .catch(() => setCanDeleteProjects(false));
   }, []);
@@ -216,14 +232,34 @@ export function AdminProjectWorkspace({
       .getTree(selectedId)
       .then((tree) => {
         if (cancelled) return;
-        setTreeStats({
+        const nextStats = {
           boqCount: tree.boqCount,
           sheetCount: tree.sheets?.length,
           invoiceCount: tree.invoices?.length,
           documentCount: tree.documents?.length,
           workDiaryCount: tree.workDiaries?.length ?? tree.workDiaryCount,
           deliveryCount: tree.deliveries?.length ?? tree.deliveryCount,
-        });
+        };
+        setTreeStats(nextStats);
+        apiClient
+          .get<{
+            counts?: {
+              total: number;
+              completed: number;
+              inProgress: number;
+            };
+          }>(`/api/work-diaries?projectId=${selectedId}&take=1`)
+          .then((r) => {
+            if (cancelled || !r.counts) return;
+            setTreeStats((prev) => ({
+              ...prev,
+              ...nextStats,
+              workDiaryCount: r.counts!.total,
+              workDiaryCompleted: r.counts!.completed,
+              workDiaryInProgress: r.counts!.inProgress,
+            }));
+          })
+          .catch(() => undefined);
       })
       .catch(() => {
         if (!cancelled) setTreeStats(undefined);
@@ -233,9 +269,17 @@ export function AdminProjectWorkspace({
     };
   }, [selectedId]);
 
+  const visibleProjects = useMemo(() => {
+    if (!ownerFilter) return projects;
+    if (ownerFilter === "unassigned") {
+      return projects.filter((p) => !p.ownerId);
+    }
+    return projects.filter((p) => p.ownerId === ownerFilter);
+  }, [projects, ownerFilter]);
+
   const selected = useMemo(
-    () => projects.find((p) => p.id === selectedId) ?? null,
-    [projects, selectedId]
+    () => visibleProjects.find((p) => p.id === selectedId) ?? null,
+    [visibleProjects, selectedId]
   );
 
   const selectProject = useCallback((id: string) => {
@@ -348,13 +392,38 @@ export function AdminProjectWorkspace({
               פרויקט חדש
             </Link>
           )}
+          {canFilterPm && projectScope === "all" && (
+            <div className="mb-3 px-1">
+              <p className="mb-1 text-[10px] font-semibold text-slate-400">
+                סינון לפי מנהל פרויקט
+              </p>
+              <ProjectManagerSelect
+                value={ownerFilter === "unassigned" ? "" : ownerFilter}
+                onChange={(id) => setOwnerFilter(id)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800"
+              />
+              <button
+                type="button"
+                className="mt-1 text-[11px] font-semibold text-slate-500 hover:underline"
+                onClick={() =>
+                  setOwnerFilter((current) =>
+                    current === "unassigned" ? "" : "unassigned"
+                  )
+                }
+              >
+                {ownerFilter === "unassigned"
+                  ? "הצג את כל הפרויקטים"
+                  : "הצג ללא מנהל פרויקט"}
+              </button>
+            </div>
+          )}
           <div className="max-h-[40vh] space-y-1 overflow-y-auto lg:max-h-[70vh]">
-            {projects.length === 0 && (
+            {visibleProjects.length === 0 && (
               <p className="px-3 py-6 text-center text-sm text-slate-400">
                 אין פרויקטים
               </p>
             )}
-            {projects.map((p) => (
+            {visibleProjects.map((p) => (
               <div key={p.id} className="relative flex items-stretch">
                 <button
                   type="button"
@@ -424,7 +493,13 @@ export function AdminProjectWorkspace({
                 onSelect={selectModule}
                 stats={treeStats}
                 moduleIds={ADMIN_PROJECT_MODULE_IDS}
+                canCreateWorkDiary={canCreateWorkDiary}
+                onCreateWorkDiary={() => {
+                  selectModule("workDiaries");
+                  setDiaryCreateKey((k) => k + 1);
+                }}
               />
+              <OriginalProjectFileCard projectId={selectedId} />
 
               <div
                 id="project-module-content"
@@ -476,7 +551,19 @@ export function AdminProjectWorkspace({
                         label="יומני עבודה — ניתן לבחור כל פרויקט במערכת"
                       />
                     )}
-                    <ProjectWorkDiariesPanel projectId={effectiveOpsProjectId} />
+                    <ProjectWorkDiariesPanel
+                      projectId={effectiveOpsProjectId}
+                      projectName={selected.name}
+                      openCreateKey={diaryCreateKey}
+                      onCountsChange={(counts) =>
+                        setTreeStats((prev) => ({
+                          ...prev,
+                          workDiaryCount: counts.total,
+                          workDiaryCompleted: counts.completed,
+                          workDiaryInProgress: counts.inProgress,
+                        }))
+                      }
+                    />
                   </div>
                 )}
                 {activeModule === "documents" && (

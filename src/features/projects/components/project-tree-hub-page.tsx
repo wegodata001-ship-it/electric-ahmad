@@ -25,6 +25,7 @@ import {
 import { PROJECT_STATUS_COLORS, PROJECT_STATUS_LABELS } from "@/constants";
 import type { ProjectStatus } from "@/types";
 import { cn } from "@/lib/utils";
+import { OriginalProjectFileCard } from "@/features/projects/components/original-project-file-card";
 
 type HubData = {
   project: {
@@ -39,6 +40,7 @@ type HubData = {
     completedValue: number;
     invoicedValue: number;
     foremanName?: string;
+    ownerName?: string | null;
     axisLabel: string;
   };
   cards: {
@@ -61,7 +63,12 @@ type HubData = {
       invoicedAmount?: number;
     };
     documents: { total: number; recent: number };
-    workDiaries?: { total: number; lastAt: string | null };
+    workDiaries?: {
+      total: number;
+      completed?: number;
+      inProgress?: number;
+      lastAt: string | null;
+    };
     deliveries?: { total: number; open: number };
   };
 };
@@ -170,10 +177,9 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
           "border-indigo-300 hover:border-indigo-500 bg-gradient-to-b from-indigo-50 to-white",
         iconBg: "bg-indigo-600",
         lines: [
-          `${c.workDiaries?.total ?? 0} ימי עבודה`,
-          c.workDiaries?.lastAt
-            ? `אחרון: ${formatDate(c.workDiaries.lastAt)}`
-            : "אין דיווח",
+          `${c.workDiaries?.total ?? 0} יומנים`,
+          `${c.workDiaries?.completed ?? 0} הושלמו`,
+          `${c.workDiaries?.inProgress ?? 0} בטיפול`,
         ],
       },
       {
@@ -371,6 +377,8 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
           גרור להזזה · זום בכפתורים למעלה
         </p>
       </div>
+
+      <OriginalProjectFileCard projectId={project.id} />
     </div>
   );
 }
@@ -455,11 +463,14 @@ function RootCard({
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
         <Meta label="מספר פרויקט" value={project.contractNumber} />
         <Meta label="לקוח" value={project.contractor} />
-        <Meta label="מנהל פרויקט" value={project.foremanName || "—"} />
+        <Meta label="מנהל פרויקט" value={project.ownerName || "טרם הוקצה מנהל פרויקט"} />
         <Meta label="התקדמות" value={formatPercent(project.progress)} />
         <Meta label="סכום חוזה" value={formatCurrency(project.contractValue)} />
         <Meta label="שבוצע" value={formatCurrency(project.completedValue)} />
         <Meta label="שחויב" value={formatCurrency(project.invoicedValue)} />
+        <div className="col-span-2 sm:col-span-3">
+          <OriginalProjectFileCard projectId={project.id} compact />
+        </div>
       </div>
 
       <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">

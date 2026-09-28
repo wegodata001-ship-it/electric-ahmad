@@ -22,6 +22,11 @@ import type { BoqItem, Project } from "@/types";
 import { Badge, Button, Card } from "@/components/ui";
 import { formatCurrency, formatDate, formatPercent } from "@/utils/format";
 import { PROJECT_STATUS_COLORS, PROJECT_STATUS_LABELS } from "@/constants";
+import { fetchClientMe } from "@/lib/auth/client-me";
+import { isSystemAdminRole } from "@/lib/auth/document-permissions";
+import { OPERATIONS_MANAGER_ROLE } from "@/lib/auth/roles";
+import { ProjectManagerSelect } from "@/features/projects/components/project-manager-select";
+import { OriginalProjectFileCard } from "@/features/projects/components/original-project-file-card";
 
 const DashboardCharts = dynamic(
   () =>
@@ -60,10 +65,28 @@ export function ProjectDashboardPanel({
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [hubData, setHubData] = useState<HubData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [canAssignPm, setCanAssignPm] = useState(false);
+  const [editingPm, setEditingPm] = useState(false);
+  const [pmDraft, setPmDraft] = useState("");
+  const [savingPm, setSavingPm] = useState(false);
+  const [pmError, setPmError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchClientMe("/api/auth/me")
+      .then((json) => {
+        const role = json.success ? json.data?.role : null;
+        setCanAssignPm(
+          Boolean(isSystemAdminRole(role) || role === OPERATIONS_MANAGER_ROLE)
+        );
+      })
+      .catch(() => setCanAssignPm(false));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setEditingPm(false);
+    setPmError(null);
     Promise.all([
       projectService.getById(projectId),
       boqService.getByProject(projectId).catch(() => [] as BoqItem[]),
@@ -74,6 +97,7 @@ export function ProjectDashboardPanel({
       .then(([p, boq, hub]) => {
         if (cancelled) return;
         setProject(p ?? null);
+        setPmDraft(p?.ownerId ?? "");
         setBoqItems(boq);
         setHubData(hub);
       })
@@ -84,6 +108,27 @@ export function ProjectDashboardPanel({
       cancelled = true;
     };
   }, [projectId]);
+
+  async function saveProjectManager() {
+    if (!project) return;
+    setSavingPm(true);
+    setPmError(null);
+    try {
+      const updated = await projectService.assignProjectManager(
+        project.id,
+        pmDraft || null
+      );
+      setProject(updated);
+      setPmDraft(updated.ownerId ?? "");
+      setEditingPm(false);
+    } catch (error) {
+      setPmError(
+        error instanceof Error ? error.message : "שמירת מנהל הפרויקט נכשלה"
+      );
+    } finally {
+      setSavingPm(false);
+    }
+  }
 
   const kpis = useMemo(() => {
     const h = hubData?.cards;
@@ -156,11 +201,69 @@ export function ProjectDashboardPanel({
 
         <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
           <InfoField icon={User} label="לקוח" value={project.contractor} />
-          <InfoField
-            icon={User}
-            label="מנהל פרויקט"
-            value={project.foremanName || "—"}
-          />
+          <div className="flex items-start gap-2 sm:col-span-2 lg:col-span-1">
+            <User className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] text-slate-400">מנהל פרויקט</p>
+              {editingPm ? (
+                <div className="mt-1 space-y-2">
+                  <ProjectManagerSelect
+                    value={pmDraft}
+                    onChange={setPmDraft}
+                    disabled={savingPm}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => void saveProjectManager()}
+                      disabled={savingPm}
+                    >
+                      {savingPm ? "שומר…" : "שמירה"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingPm(false);
+                        setPmDraft(project.ownerId ?? "");
+                        setPmError(null);
+                      }}
+                      disabled={savingPm}
+                    >
+                      ביטול
+                    </Button>
+                  </div>
+                  {pmError && (
+                    <p className="text-xs text-red-600">{pmError}</p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <p
+                    className={
+                      project.ownerName
+                        ? "truncate font-semibold text-slate-800"
+                        : "truncate font-semibold text-amber-700"
+                    }
+                  >
+                    {project.ownerName || "טרם הוקצה מנהל פרויקט"}
+                  </p>
+                  {canAssignPm && (
+                    <button
+                      type="button"
+                      className="mt-1 text-xs font-semibold text-primary-700 hover:underline"
+                      onClick={() => {
+                        setPmDraft(project.ownerId ?? "");
+                        setEditingPm(true);
+                      }}
+                    >
+                      שינוי מנהל פרויקט
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
           <InfoField
             icon={TrendingUp}
             label="אחוז ביצוע"
@@ -170,11 +273,6 @@ export function ProjectDashboardPanel({
             icon={CalendarDays}
             label="תאריך התחלה"
             value={formatDate(project.startDate)}
-          />
-          <InfoField
-            icon={CalendarDays}
-            label="תאריך סיום"
-            value={formatDate(project.endDate)}
           />
           <InfoField
             icon={BarChart3}
@@ -193,6 +291,7 @@ export function ProjectDashboardPanel({
               Math.max(0, project.contractValue - project.completedValue)
             )}
           />
+          <OriginalProjectFileCard projectId={project.id} compact />
         </div>
 
         <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-slate-100">

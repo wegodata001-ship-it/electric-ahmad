@@ -107,9 +107,11 @@ const includeDetail = {
       location: true,
       contractor: true,
       contractNumber: true,
+      owner: { select: { id: true, name: true } },
     },
   },
   foreman: { select: { id: true, firstName: true, lastName: true, phone: true } },
+  createdBy: { select: { id: true, name: true } },
   workItems: { orderBy: { sortOrder: "asc" as const } },
   workers: { orderBy: { sortOrder: "asc" as const } },
   equipment: { orderBy: { sortOrder: "asc" as const } },
@@ -216,6 +218,9 @@ function mapDiary(row: any) {
     workflowDocumentId: row.workflowDocumentId ?? row.workflowDocument?.id ?? null,
     projectId: row.projectId,
     createdById: row.createdById,
+    createdBy: row.createdBy
+      ? { id: row.createdBy.id, name: row.createdBy.name }
+      : null,
     createdByRole: row.createdByRole ?? null,
     createdCrossProject: row.createdCrossProject ?? false,
     customSiteName: row.customSiteName ?? null,
@@ -249,6 +254,8 @@ function mapDiary(row: any) {
           location: row.project.location,
           contractor: row.project.contractor,
           contractNumber: row.project.contractNumber,
+          ownerId: row.project.owner?.id ?? null,
+          ownerName: row.project.owner?.name ?? null,
         }
       : null,
     foreman: row.foreman
@@ -314,6 +321,101 @@ function mapDiary(row: any) {
       actor: e.actor,
     })),
   };
+}
+
+const COMPLETED_WORKFLOW_STATUSES = new Set<string>([
+  "approved",
+  "sent_to_client",
+  "client_signed",
+  "used_for_measurement",
+  "used_for_account",
+  "used_for_invoice",
+  "locked",
+  "completed",
+  "signed",
+]);
+
+const IN_PROGRESS_WORKFLOW_STATUSES = new Set<string>([
+  "assigned",
+  "in_progress",
+  "pending_approval",
+  "revision",
+]);
+
+const SYSTEM_ADMIN_ROLES = [
+  "ADMIN",
+  "SYSTEM_MANAGER",
+  "admin",
+  "מנהל מערכת",
+] as const;
+
+function legacyStatusForWorkflow(status: WorkflowStatus): WorkDiaryStatus {
+  if (status === "assigned") return "assigned";
+  if (status === "in_progress") return "in_progress";
+  if (status === "revision") return "revision";
+  if (status === "draft") return "draft";
+  if (status === "pending_approval") return "pending_approval";
+  if (status === "sent_to_client") return "sent_to_client";
+  if (status === "client_signed") return "signed";
+  if (status === "approved" || status === "locked") return "completed";
+  return "completed";
+}
+
+async function requireActiveFieldForeman(foremanId: string) {
+  const employee = await prisma.employee.findFirst({
+    where: {
+      id: foremanId,
+      isDeleted: false,
+      status: "active",
+    },
+    include: {
+      user: {
+        select: { id: true, name: true, phone: true, role: true, status: true },
+      },
+    },
+  });
+  if (!employee) throw new Error("מנהל שטח לא נמצא");
+  if (!employee.user || employee.user.status !== "ACTIVE") {
+    throw new Error("יש לבחור מנהל שטח פעיל עם משתמש מערכת");
+  }
+  if (employee.user.role !== "FIELD_MANAGER") {
+    throw new Error("ניתן להקצות רק למנהל שטח פעיל");
+  }
+  return employee;
+}
+
+async function ensureDiaryWorkflowDoc(
+  diary: {
+    id: string;
+    projectId: string;
+    documentNumber: string;
+    workflowDocumentId: string | null;
+    createdById: string;
+  },
+  actor: { userId: string; role: string; name?: string }
+) {
+  if (diary.workflowDocumentId) return diary.workflowDocumentId;
+  const wf = await WorkflowRepository.create({
+    kind: "WORK_DIARY",
+    projectId: diary.projectId,
+    title: `יומן עבודה ${diary.documentNumber}`,
+    documentNumber: diary.documentNumber,
+    legacyEntityType: "WorkDiary",
+    legacyEntityId: diary.id,
+    currentOwnerId: actor.userId,
+    actor,
+  });
+  await prisma.workDiary.update({
+    where: { id: diary.id },
+    data: { workflowDocumentId: wf.id },
+  });
+  return wf.id;
+}
+
+function formatWorkDate(value: Date | string) {
+  const iso = typeof value === "string" ? value : value.toISOString();
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${y}`;
 }
 
 async function notifyUsers(
@@ -389,6 +491,12 @@ export const WorkDiariesRepository = {
       include: {
         project: { select: { id: true, name: true } },
         foreman: { select: { id: true, firstName: true, lastName: true } },
+        createdBy: { select: { id: true, name: true } },
+        workItems: {
+          orderBy: { sortOrder: "asc" as const },
+          take: 4,
+          select: { description: true },
+        },
         workflowDocument: { select: { id: true, status: true, version: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -406,6 +514,7 @@ export const WorkDiariesRepository = {
         statusLabel: WORKFLOW_STATUS_LABELS[status as WorkflowStatus] ?? status,
         workflowDocumentId: row.workflowDocumentId,
         workDate: row.workDate.toISOString().slice(0, 10),
+        workSummary: row.workSummary,
         workType: row.workType,
         clientName: row.clientName,
         customSiteName: row.customSiteName ?? null,
@@ -417,6 +526,12 @@ export const WorkDiariesRepository = {
               name: `${row.foreman.firstName} ${row.foreman.lastName}`,
             }
           : null,
+        createdBy: row.createdBy
+          ? { id: row.createdBy.id, name: row.createdBy.name }
+          : null,
+        workItems: (row.workItems ?? []).map((item) => ({
+          description: item.description,
+        })),
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
       };
@@ -753,6 +868,374 @@ export const WorkDiariesRepository = {
       });
     });
 
+    const after = await this.getById(id);
+    if (after?.status === "assigned") {
+      try {
+        await this.startAssignment(id, input.updatedById);
+      } catch {
+        /* start is best-effort when field saves an assigned diary */
+      }
+      return this.getById(id);
+    }
+    return after;
+  },
+
+  async listActiveFieldManagers() {
+    const rows = await prisma.employee.findMany({
+      where: {
+        isDeleted: false,
+        status: "active",
+        user: { role: "FIELD_MANAGER", status: "ACTIVE" },
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        user: { select: { id: true, name: true, phone: true } },
+      },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    });
+    return rows
+      .filter((row) => row.user)
+      .map((row) => ({
+        id: row.id,
+        userId: row.user!.id,
+        name: `${row.firstName} ${row.lastName}`.trim(),
+        phone: row.user!.phone || row.phone,
+      }));
+  },
+
+  async projectCounts(projectId: string) {
+    const rows = await prisma.workDiary.findMany({
+      where: { projectId, deletedAt: null },
+      select: {
+        status: true,
+        workflowDocument: { select: { status: true } },
+      },
+    });
+    let completed = 0;
+    let inProgress = 0;
+    let assigned = 0;
+    let draft = 0;
+    for (const row of rows) {
+      const status = String(
+        row.workflowDocument?.status ??
+          mapLegacyDiaryStatusToWorkflow(row.status)
+      );
+      if (COMPLETED_WORKFLOW_STATUSES.has(status)) completed += 1;
+      else if (status === "assigned") {
+        assigned += 1;
+        inProgress += 1;
+      } else if (IN_PROGRESS_WORKFLOW_STATUSES.has(status)) inProgress += 1;
+      else if (status === "draft") draft += 1;
+    }
+    return {
+      total: rows.length,
+      completed,
+      inProgress,
+      assigned,
+      draft,
+    };
+  },
+
+  async assignToForeman(
+    id: string,
+    actorId: string,
+    opts?: { foremanId?: string; origin?: string }
+  ) {
+    const existing = await prisma.workDiary.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        project: { select: { id: true, name: true } },
+        workflowDocument: true,
+      },
+    });
+    if (!existing) throw new Error("יומן עבודה לא נמצא");
+
+    const foremanId = opts?.foremanId || existing.foremanId;
+    const foreman = await requireActiveFieldForeman(foremanId);
+    const actor = await actorFromUserId(actorId);
+    const workflowDocumentId = await ensureDiaryWorkflowDoc(existing, actor);
+
+    if (foremanId !== existing.foremanId) {
+      await prisma.workDiary.update({
+        where: { id },
+        data: { foremanId, updatedById: actorId },
+      });
+    }
+
+    await WorkflowRepository.transition({
+      documentId: workflowDocumentId,
+      action: "assign",
+      actor,
+    });
+
+    await prisma.workDiary.update({
+      where: { id },
+      data: { status: "assigned", updatedById: actorId },
+    });
+    await prisma.workflowDocument.update({
+      where: { id: workflowDocumentId },
+      data: { currentOwnerId: foreman.user!.id },
+    });
+
+    const projectName = existing.project?.name || "פרויקט";
+    const dateLabel = formatWorkDate(existing.workDate);
+    const fieldLink = `/field/work-diaries/${id}`;
+    await notifyUsers(
+      [foreman.user!.id],
+      "יומן עבודה חדש",
+      `${projectName}\n${dateLabel}`,
+      fieldLink,
+      existing.projectId
+    );
+
+    await prisma.workDiaryEvent.create({
+      data: {
+        workDiaryId: id,
+        action: "assigned",
+        message: `נשלח למנהל שטח ${foreman.firstName} ${foreman.lastName}`,
+        actorId,
+        metadata: JSON.stringify({
+          foremanId,
+          fieldUserId: foreman.user!.id,
+        }),
+      },
+    });
+
+    await syncWorkDiaryArchiveDocument({
+      workflowDocumentId,
+      workDiaryId: id,
+      projectId: existing.projectId,
+      documentNumber: existing.documentNumber,
+      status: "assigned",
+      userId: actorId,
+    }).catch((err) => logBackgroundError("work-diary-archive:assign", err));
+
+    const { whatsappShareUrl } = await import("@/lib/documents/sign-tokens");
+    const origin = (opts?.origin || "").replace(/\/$/, "");
+    const openUrl = origin ? `${origin}${fieldLink}` : fieldLink;
+    const message = `יומן עבודה חדש\n${projectName}\n${dateLabel}\n\nפתח יומן:\n${openUrl}`;
+
+    return {
+      diary: await this.getById(id),
+      whatsappUrl: whatsappShareUrl(foreman.user!.phone || foreman.phone, message),
+      message,
+    };
+  },
+
+  async reassignForeman(id: string, newForemanId: string, actorId: string) {
+    const existing = await prisma.workDiary.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        project: { select: { name: true } },
+        foreman: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            user: { select: { id: true, name: true } },
+          },
+        },
+        workflowDocument: true,
+      },
+    });
+    if (!existing) throw new Error("יומן עבודה לא נמצא");
+    if (existing.foremanId === newForemanId) {
+      throw new Error("היומן כבר מוקצה למנהל שטח זה");
+    }
+
+    const next = await requireActiveFieldForeman(newForemanId);
+    const fromName = existing.foreman
+      ? `${existing.foreman.firstName} ${existing.foreman.lastName}`.trim()
+      : "—";
+    const toName = `${next.firstName} ${next.lastName}`.trim();
+    const actor = await actorFromUserId(actorId);
+
+    await prisma.workDiary.update({
+      where: { id },
+      data: { foremanId: newForemanId, updatedById: actorId },
+    });
+    if (existing.workflowDocumentId) {
+      await prisma.workflowDocument.update({
+        where: { id: existing.workflowDocumentId },
+        data: { currentOwnerId: next.user!.id },
+      });
+    }
+
+    const projectName = existing.project?.name || "פרויקט";
+    const dateLabel = formatWorkDate(existing.workDate);
+    await notifyUsers(
+      [next.user!.id],
+      "יומן עבודה חדש",
+      `${projectName}\n${dateLabel}`,
+      `/field/work-diaries/${id}`,
+      existing.projectId
+    );
+
+    await prisma.workDiaryEvent.create({
+      data: {
+        workDiaryId: id,
+        action: "reassigned",
+        message: `הועבר מ-${fromName} אל ${toName}`,
+        actorId,
+        metadata: JSON.stringify({
+          fromForemanId: existing.foremanId,
+          fromName,
+          toForemanId: newForemanId,
+          toName,
+          changedBy: actor.name || actorId,
+        }),
+      },
+    });
+
+    await AuditRepository.log({
+      action: "UPDATE",
+      entityType: "WorkDiary",
+      entityId: id,
+      userId: actorId,
+      metadata: {
+        action: "reassign_field_manager",
+        from: fromName,
+        to: toName,
+        fromForemanId: existing.foremanId,
+        toForemanId: newForemanId,
+        changedBy: actor.name || actorId,
+        date: new Date().toISOString(),
+      },
+    });
+
+    return this.getById(id);
+  },
+
+  async startAssignment(id: string, actorId: string) {
+    const existing = await prisma.workDiary.findFirst({
+      where: { id, deletedAt: null },
+      include: { workflowDocument: true },
+    });
+    if (!existing) throw new Error("יומן עבודה לא נמצא");
+    const actor = await actorFromUserId(actorId);
+    const workflowDocumentId = await ensureDiaryWorkflowDoc(existing, actor);
+    const current = existing.workflowDocument
+      ? (existing.workflowDocument.status as WorkflowStatus)
+      : mapLegacyDiaryStatusToWorkflow(existing.status);
+    if (current === "in_progress") return this.getById(id);
+    await WorkflowRepository.transition({
+      documentId: workflowDocumentId,
+      action: "start",
+      actor,
+    });
+    await prisma.workDiary.update({
+      where: { id },
+      data: { status: "in_progress", updatedById: actorId },
+    });
+    await syncWorkDiaryArchiveDocument({
+      workflowDocumentId,
+      workDiaryId: id,
+      projectId: existing.projectId,
+      documentNumber: existing.documentNumber,
+      status: "in_progress",
+      userId: actorId,
+    }).catch((err) => logBackgroundError("work-diary-archive:start", err));
+    return this.getById(id);
+  },
+
+  async completeAssignment(id: string, actorId: string, origin?: string) {
+    const existing = await prisma.workDiary.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        project: { select: { name: true } },
+        foreman: { select: { firstName: true, lastName: true } },
+        workflowDocument: true,
+      },
+    });
+    if (!existing) throw new Error("יומן עבודה לא נמצא");
+    const actor = await actorFromUserId(actorId);
+    const workflowDocumentId = await ensureDiaryWorkflowDoc(existing, actor);
+    await WorkflowRepository.transition({
+      documentId: workflowDocumentId,
+      action: "complete_field",
+      actor,
+    });
+    await prisma.workDiary.update({
+      where: { id },
+      data: { status: "completed", updatedById: actorId },
+    });
+
+    const admins = await prisma.user.findMany({
+      where: { status: "ACTIVE", role: { in: [...SYSTEM_ADMIN_ROLES] } },
+      select: { id: true },
+    });
+    const projectName = existing.project?.name || "פרויקט";
+    const foremanName = existing.foreman
+      ? `${existing.foreman.firstName} ${existing.foreman.lastName}`.trim()
+      : "מנהל שטח";
+    const dateLabel = formatWorkDate(existing.workDate);
+    const officeLink = `/system/accounts?projectId=${existing.projectId}&module=workDiaries`;
+    await notifyUsers(
+      [...admins.map((u) => u.id), existing.createdById],
+      "יומן עבודה הושלם",
+      `${projectName}\n${foremanName}\n${dateLabel}`,
+      officeLink,
+      existing.projectId
+    );
+
+    await syncWorkDiaryArchiveDocument({
+      workflowDocumentId,
+      workDiaryId: id,
+      projectId: existing.projectId,
+      documentNumber: existing.documentNumber,
+      status: "approved",
+      userId: actorId,
+      printBaseUrl: origin,
+    }).catch((err) => logBackgroundError("work-diary-archive:complete", err));
+
+    return this.getById(id);
+  },
+
+  async returnAssignment(id: string, actorId: string, comment: string) {
+    const trimmed = comment.trim();
+    if (!trimmed) throw new Error("חובה לרשום הערה להחזרה לתיקון");
+    const existing = await prisma.workDiary.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        project: { select: { name: true } },
+        foreman: { include: { user: { select: { id: true } } } },
+        workflowDocument: true,
+      },
+    });
+    if (!existing) throw new Error("יומן עבודה לא נמצא");
+    const actor = await actorFromUserId(actorId);
+    const workflowDocumentId = await ensureDiaryWorkflowDoc(existing, actor);
+    await WorkflowRepository.transition({
+      documentId: workflowDocumentId,
+      action: "return_field",
+      actor,
+      comment: trimmed,
+    });
+    await prisma.workDiary.update({
+      where: { id },
+      data: { status: "revision", updatedById: actorId },
+    });
+    const fieldUserId = existing.foreman.user?.id;
+    if (fieldUserId) {
+      await notifyUsers(
+        [fieldUserId],
+        "יומן עבודה הוחזר לתיקון",
+        `${existing.project?.name || "פרויקט"}: ${trimmed}`,
+        `/field/work-diaries/${id}`,
+        existing.projectId
+      );
+    }
+    await syncWorkDiaryArchiveDocument({
+      workflowDocumentId,
+      workDiaryId: id,
+      projectId: existing.projectId,
+      documentNumber: existing.documentNumber,
+      status: "revision",
+      userId: actorId,
+    }).catch((err) => logBackgroundError("work-diary-archive:return", err));
     return this.getById(id);
   },
 

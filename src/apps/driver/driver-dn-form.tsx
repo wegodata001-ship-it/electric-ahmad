@@ -1,21 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Building2,
-  Calendar,
   Camera,
-  Check,
-  Clock,
-  FileText,
+  Eye,
   ImageIcon,
-  Package,
-  PenLine,
+  Minus,
   Plus,
-  Send,
   Trash2,
-  Truck,
   X,
 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
@@ -27,7 +20,13 @@ import {
 } from "@/apps/driver/driver-dn-status";
 import { DN_PHOTO_STAGES } from "@/apps/shared/field-media-capture";
 
-type Project = { id: string; name: string; location?: string };
+type BoqOpt = { id: string; description: string; unit: string };
+type Project = {
+  id: string;
+  name: string;
+  location?: string;
+  contractor?: string;
+};
 type Line = { description: string; quantity: string; unit: string };
 type ExistingNote = {
   projectId?: string | null;
@@ -55,9 +54,7 @@ type SavedNote = { id: string };
 type Props = { editId?: string };
 
 const inputClass =
-  "w-full min-h-[52px] rounded-xl border border-[#DCE4EF] bg-[#F8FAFC] px-4 text-base text-[#0F172A] outline-none transition focus:border-[#2563EB] focus:bg-white focus:shadow-[0_0_0_3px_rgba(37,99,235,0.12)] disabled:opacity-60";
-
-const labelClass = "block text-sm font-semibold text-[#334155]";
+  "w-full min-h-10 rounded-lg border border-[#DCE4EF] bg-white px-3 text-sm text-[#0F172A] outline-none focus:border-[#2563EB] disabled:opacity-60";
 
 export function DriverDnForm({ editId }: Props) {
   const router = useRouter();
@@ -67,6 +64,7 @@ export function DriverDnForm({ editId }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [destination, setDestination] = useState("");
+  const [destTouched, setDestTouched] = useState(false);
   const [noteDate, setNoteDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
@@ -83,13 +81,15 @@ export function DriverDnForm({ editId }: Props) {
   const [signature, setSignature] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoStage, setPhotoStage] = useState("cargo");
+  const [preview, setPreview] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
   const [docNumber, setDocNumber] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [showPricing, setShowPricing] = useState(false);
   const [draftSavedHint, setDraftSavedHint] = useState(false);
+  const [boqOpen, setBoqOpen] = useState(false);
+  const [boqItems, setBoqItems] = useState<BoqOpt[]>([]);
 
   useEffect(() => {
     apiClient
@@ -105,6 +105,7 @@ export function DriverDnForm({ editId }: Props) {
       .then((n) => {
         setProjectId(n.projectId || "");
         setDestination(n.address || n.clientName || "");
+        setDestTouched(true);
         setNoteDate(String(n.noteDate || "").slice(0, 10));
         setNoteTime(n.noteTime || "");
         setNotes(n.notes || "");
@@ -117,7 +118,6 @@ export function DriverDnForm({ editId }: Props) {
         setStatus(n.status ?? null);
         setRejection(n.rejectionComment || null);
         setDocNumber(n.documentNumber || null);
-        if (n.price || n.transportCost || n.financialNotes) setShowPricing(true);
         const items = (n.items || []).map((it) => ({
           description: it.description || "",
           quantity: String(it.quantity ?? 1),
@@ -137,8 +137,48 @@ export function DriverDnForm({ editId }: Props) {
       .catch((e) => setError(e.message));
   }, [editId]);
 
-  function addLine() {
-    setLines((prev) => [...prev, { description: "", quantity: "1", unit: "יח'" }]);
+  const selectedProject = projects.find((p) => p.id === projectId);
+
+  useEffect(() => {
+    if (!projectId) {
+      setBoqItems([]);
+      return;
+    }
+    apiClient
+      .get<{ items: BoqOpt[] }>(
+        `/api/driver/projects?projectId=${encodeURIComponent(projectId)}`
+      )
+      .then((d) => setBoqItems(d.items || []))
+      .catch(() => setBoqItems([]));
+  }, [projectId]);
+
+  function applyProject(id: string) {
+    setProjectId(id);
+    const project = projects.find((p) => p.id === id);
+    if (!project || destTouched) return;
+    const auto = [project.contractor, project.location]
+      .map((v) => v?.trim())
+      .filter(Boolean)
+      .join(" · ");
+    if (auto) setDestination(auto);
+  }
+
+  function addLine(preset?: Partial<Line>) {
+    setLines((prev) => [
+      ...prev,
+      {
+        description: preset?.description || "",
+        quantity: preset?.quantity || "1",
+        unit: preset?.unit || "יח'",
+      },
+    ]);
+  }
+
+  function setQty(idx: number, next: number) {
+    const qty = String(Math.max(0, next));
+    setLines((prev) =>
+      prev.map((line, i) => (i === idx ? { ...line, quantity: qty } : line))
+    );
   }
 
   async function onPickPhoto(file: File | null) {
@@ -233,118 +273,78 @@ export function DriverDnForm({ editId }: Props) {
   }
 
   const editable = !status || status === "draft" || status === "revision";
-  const selectedProject = projects.find((p) => p.id === projectId);
   const displayStatus = status || (draftSavedHint ? "draft" : "draft");
-  const statusDotClass =
-    displayStatus === "pending_approval" || displayStatus === "sent_to_client"
-      ? "bg-[#EA580C]"
-      : displayStatus === "approved" ||
-          displayStatus === "signed" ||
-          displayStatus === "closed"
-        ? "bg-[#059669]"
-        : displayStatus === "revision"
-          ? "bg-red-500"
-          : "bg-[#94A3B8]";
 
   return (
-    <div className="space-y-4 overflow-x-hidden pb-4">
-      <div className="flex items-start gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#FFF7ED] text-[#EA580C]">
-          {editId ? <FileText className="h-5 w-5" /> : <Truck className="h-5 w-5" />}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-black text-[#0F172A]">
-            {editId ? "עריכת תעודה" : "תעודת משלוח חדשה"}
-          </h1>
-          <p className="mt-1 text-sm text-[#64748B]">
-            יצירת תעודת משלוח חדשה לפרויקט
+    <div className="overflow-x-hidden pb-24">
+      <header className="mb-3">
+        <h1 className="text-lg font-black text-[#0F172A]">
+          {editId ? "עריכת תעודה" : "תעודת משלוח חדשה"}
+        </h1>
+        {selectedProject && (
+          <p className="mt-0.5 truncate text-sm text-[#64748B]">
+            {selectedProject.name}
           </p>
-          {docNumber && (
-            <p className="mt-1 text-sm font-semibold text-[#64748B]">
-              {docNumber}
-            </p>
-          )}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#64748B]">
-              תעודת משלוח
-              <span
-                className={`h-2 w-2 rounded-full ${statusDotClass}`}
-                aria-hidden
-              />
-              {draftSavedHint && !status
-                ? "נשמרה טיוטה"
-                : DRIVER_DN_STATUS_LABEL[displayStatus] || "טיוטה"}
-            </span>
-            {status && (
-              <span
-                className={`inline-block rounded-full px-2.5 py-1 text-[11px] font-bold ${driverDnStatusTone(status)}`}
-              >
-                {DRIVER_DN_STATUS_LABEL[status] || status}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
+        )}
+        {docNumber && (
+          <p className="text-xs font-semibold text-[#94A3B8]">{docNumber}</p>
+        )}
+        {(status || draftSavedHint) && (
+          <span
+            className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${driverDnStatusTone(displayStatus)}`}
+          >
+            {draftSavedHint && !status
+              ? "נשמרה טיוטה"
+              : DRIVER_DN_STATUS_LABEL[displayStatus] || "טיוטה"}
+          </span>
+        )}
+      </header>
 
       {rejection && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <p className="font-bold">נדחתה</p>
-          <p className="mt-1">{rejection}</p>
+          <p>{rejection}</p>
         </div>
       )}
 
-      <SectionCard
-        title="פרטי משלוח"
-        accent="blue"
-        icon={<Truck className="h-4 w-4" />}
-      >
-        <label className="block space-y-1.5">
-          <span className={labelClass}>פרויקט</span>
-          <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[#2563EB]">
-              <Building2 className="h-4 w-4" />
-            </span>
-            <select
-              value={projectId}
-              disabled={!editable}
-              onChange={(e) => setProjectId(e.target.value)}
-              className={`${inputClass} border-[#BFDBFE] bg-[#EFF6FF] pr-10`}
-            >
-              <option value="">בחר פרויקט…</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {selectedProject && (
-            <span className="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#EFF6FF] px-2.5 py-1 text-[11px] font-bold text-[#2563EB]">
-              פרויקט נבחר
-              <span className="truncate font-semibold text-[#0F172A]">
-                {selectedProject.name}
-              </span>
-            </span>
-          )}
+      <section className="space-y-2">
+        <h2 className="text-sm font-bold text-[#0F172A]">פרטי משלוח</h2>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-[#64748B]">
+            פרויקט *
+          </span>
+          <select
+            value={projectId}
+            disabled={!editable}
+            onChange={(e) => applyProject(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">בחר פרויקט</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </label>
-
-        <label className="block space-y-1.5">
-          <span className={labelClass}>יעד</span>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-[#64748B]">
+            יעד / מקבל
+          </span>
           <input
             value={destination}
             disabled={!editable}
-            onChange={(e) => setDestination(e.target.value)}
-            placeholder="כתובת / שם מקבל"
+            onChange={(e) => {
+              setDestTouched(true);
+              setDestination(e.target.value);
+            }}
+            placeholder="שם / כתובת"
             className={inputClass}
           />
         </label>
-
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block min-w-0 space-y-1.5">
-            <span className={`${labelClass} inline-flex items-center gap-1.5`}>
-              <span className="grid h-6 w-6 place-items-center rounded-md bg-[#EFF6FF] text-[#2563EB]">
-                <Calendar className="h-3.5 w-3.5" />
-              </span>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="min-w-0">
+            <span className="mb-1 block text-xs font-semibold text-[#64748B]">
               תאריך
             </span>
             <input
@@ -352,14 +352,11 @@ export function DriverDnForm({ editId }: Props) {
               value={noteDate}
               disabled={!editable}
               onChange={(e) => setNoteDate(e.target.value)}
-              className={`${inputClass} px-2 text-sm`}
+              className={`${inputClass} px-2`}
             />
           </label>
-          <label className="block min-w-0 space-y-1.5">
-            <span className={`${labelClass} inline-flex items-center gap-1.5`}>
-              <span className="grid h-6 w-6 place-items-center rounded-md bg-[#F5F3FF] text-[#7C3AED]">
-                <Clock className="h-3.5 w-3.5" />
-              </span>
+          <label className="min-w-0">
+            <span className="mb-1 block text-xs font-semibold text-[#64748B]">
               שעה
             </span>
             <input
@@ -367,20 +364,45 @@ export function DriverDnForm({ editId }: Props) {
               value={noteTime}
               disabled={!editable}
               onChange={(e) => setNoteTime(e.target.value)}
-              className={`${inputClass} px-2 text-sm`}
+              className={`${inputClass} px-2`}
             />
           </label>
         </div>
-      </SectionCard>
+      </section>
 
-      <SectionCard
-        title="פריטים"
-        accent="purple"
-        icon={<Package className="h-4 w-4" />}
-      >
-        <div className="space-y-0 divide-y divide-[#E8EEF6]">
+      <section className="mt-4 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-[#0F172A]">פריטים</h2>
+          {editable && boqItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setBoqOpen((v) => !v)}
+              className="text-xs font-bold text-[#2563EB]"
+            >
+              בחר פריט מהפרויקט
+            </button>
+          )}
+        </div>
+        {boqOpen && boqItems.length > 0 && (
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-[#DCE4EF] bg-white">
+            {boqItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="block w-full truncate px-3 py-2 text-right text-sm hover:bg-slate-50"
+                onClick={() => {
+                  addLine({ description: item.description, unit: item.unit });
+                  setBoqOpen(false);
+                }}
+              >
+                {item.description}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="space-y-1.5">
           {lines.map((line, idx) => (
-            <div key={idx} className="flex gap-2 py-3 first:pt-0 last:pb-0">
+            <div key={idx} className="flex min-w-0 items-center gap-1.5">
               <input
                 value={line.description}
                 disabled={!editable}
@@ -392,60 +414,65 @@ export function DriverDnForm({ editId }: Props) {
                     )
                   );
                 }}
-                placeholder="שם הפריט"
-                className={`${inputClass} min-w-0 flex-1 px-3`}
+                placeholder="פריט / תיאור"
+                className={`${inputClass} min-w-0 flex-1`}
               />
-              <input
+              <QtyStepper
                 value={line.quantity}
                 disabled={!editable}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setLines((prev) =>
-                    prev.map((l, i) => (i === idx ? { ...l, quantity: v } : l))
-                  );
-                }}
-                inputMode="decimal"
-                aria-label="כמות"
-                className={`${inputClass} w-16 shrink-0 px-2 text-center`}
+                onChange={(qty) => setQty(idx, qty)}
               />
+              {editable && (
+                <button
+                  type="button"
+                  aria-label="מחק פריט"
+                  onClick={() =>
+                    setLines((prev) =>
+                      prev.length === 1
+                        ? [{ description: "", quantity: "1", unit: "יח'" }]
+                        : prev.filter((_, i) => i !== idx)
+                    )
+                  }
+                  className="grid h-10 w-9 shrink-0 place-items-center rounded-lg text-red-500"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </div>
           ))}
         </div>
         {editable && (
           <button
             type="button"
-            onClick={addLine}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[#2563EB] bg-[#EFF6FF] px-3 text-sm font-bold text-[#2563EB]"
+            onClick={() => addLine()}
+            className="inline-flex min-h-10 items-center gap-1 text-sm font-bold text-[#2563EB]"
           >
             <Plus className="h-4 w-4" />
             הוסף פריט
           </button>
         )}
-      </SectionCard>
+      </section>
 
-      <SectionCard
-        title="תיעוד"
-        accent="orange"
-        icon={<Camera className="h-4 w-4" />}
-      >
-        <label className="block space-y-1.5">
-          <span className={labelClass}>הערות</span>
+      <section className="mt-4 space-y-2">
+        <h2 className="text-sm font-bold text-[#0F172A]">תיעוד</h2>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-[#64748B]">
+            הערות
+          </span>
           <textarea
             value={notes}
             disabled={!editable}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
-            className="w-full rounded-xl border border-[#DCE4EF] bg-[#F8FAFC] px-4 py-3 text-base text-[#0F172A] outline-none transition focus:border-[#2563EB] focus:bg-white focus:shadow-[0_0_0_3px_rgba(37,99,235,0.12)] disabled:opacity-60"
+            className="w-full rounded-lg border border-[#DCE4EF] px-3 py-2 text-sm outline-none focus:border-[#2563EB]"
           />
         </label>
-
         {editable && (
-          <div className="space-y-3">
-            <p className={labelClass}>תמונות</p>
+          <>
             <select
               value={photoStage}
               onChange={(e) => setPhotoStage(e.target.value)}
-              className={`${inputClass} min-h-[44px] py-2.5 text-sm`}
+              className={inputClass}
             >
               {DN_PHOTO_STAGES.map((s) => (
                 <option key={s.value} value={s.value}>
@@ -457,18 +484,18 @@ export function DriverDnForm({ editId }: Props) {
               <button
                 type="button"
                 onClick={() => cameraRef.current?.click()}
-                className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0F172A] px-3 text-white"
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-[#0F172A] text-sm font-bold text-white"
               >
                 <Camera className="h-4 w-4" />
-                <span className="text-xs font-bold">מצלמה</span>
+                מצלמה
               </button>
               <button
                 type="button"
                 onClick={() => galleryRef.current?.click()}
-                className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#2563EB] bg-white px-3 text-[#2563EB]"
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[#2563EB] bg-white text-sm font-bold text-[#2563EB]"
               >
                 <ImageIcon className="h-4 w-4" />
-                <span className="text-xs font-bold">גלריה</span>
+                גלריה
               </button>
             </div>
             <input
@@ -477,139 +504,125 @@ export function DriverDnForm({ editId }: Props) {
               accept="image/*"
               capture="environment"
               className="hidden"
-              onChange={(e) => void onPickPhoto(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                void onPickPhoto(e.target.files?.[0] || null);
+                e.target.value = "";
+              }}
             />
             <input
               ref={galleryRef}
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) => void onPickPhoto(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                void onPickPhoto(e.target.files?.[0] || null);
+                e.target.value = "";
+              }}
             />
-            {photos.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {photos.map((p, i) => (
-                  <div key={i} className="relative">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p}
-                      alt=""
-                      className="h-14 w-14 rounded-lg border border-[#DCE4EF] object-cover"
-                    />
+          </>
+        )}
+        {photos.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {photos.map((p, i) => (
+              <div key={i} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p}
+                  alt=""
+                  className="h-14 w-14 rounded-lg border border-[#DCE4EF] object-cover"
+                />
+                <div className="absolute inset-x-0 bottom-0 flex overflow-hidden rounded-b-lg">
+                  <button
+                    type="button"
+                    aria-label="צפייה"
+                    onClick={() => setPreview(p)}
+                    className="grid h-5 flex-1 place-items-center bg-black/55 text-white"
+                  >
+                    <Eye className="h-3 w-3" />
+                  </button>
+                  {editable && (
                     <button
                       type="button"
-                      aria-label="מחק תמונה"
+                      aria-label="מחיקה"
                       onClick={() =>
                         setPhotos((prev) => prev.filter((_, idx) => idx !== i))
                       }
-                      className="absolute -left-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-white text-red-600 shadow-sm ring-1 ring-[#DCE4EF]"
+                      className="grid h-5 flex-1 place-items-center bg-red-600/90 text-white"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
-            )}
+            ))}
           </div>
         )}
-      </SectionCard>
+      </section>
 
       {editable && (
-        <SectionCard
-          title="חתימת יוצר המסמך"
-          accent="green"
-          icon={<PenLine className="h-4 w-4" />}
-        >
-          <p className="mb-2 text-xs text-[#64748B]">חובה לפני שליחת המסמך</p>
-          {signature && (
-            <span className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-bold text-[#059669]">
-              <Check className="h-3.5 w-3.5" />
-              חתימה נקלטה
-            </span>
-          )}
-          <div className="overflow-hidden rounded-xl border border-[#CBD5E1] bg-white">
-            <SignaturePad
-              value={signature}
-              onChange={setSignature}
-              label="אזור חתימה"
-              height={110}
-            />
-          </div>
-        </SectionCard>
+        <section className="mt-4 space-y-1.5">
+          <h2 className="text-sm font-bold text-[#0F172A]">חתימה</h2>
+          <SignaturePad
+            value={signature}
+            onChange={setSignature}
+            label="חתימת מוסר / מקבל"
+            placeholder="חתום כאן"
+            height={96}
+            showClear={false}
+          />
+        </section>
       )}
 
-      <button
-        type="button"
-        onClick={() => setShowPricing((v) => !v)}
-        className="text-sm font-bold text-[#64748B] underline"
-      >
-        {showPricing ? "הסתר תמחור" : "תמחור (אופציונלי)"}
-      </button>
-
-      {showPricing && (
-        <div className="space-y-3 rounded-2xl border border-[#DCE4EF] bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.05)]">
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-[#64748B]">מחיר</span>
-            <input
-              value={price}
-              disabled={!editable}
-              onChange={(e) => setPrice(e.target.value)}
-              inputMode="decimal"
-              className={inputClass}
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-[#64748B]">
-              עלות הובלה
-            </span>
-            <input
-              value={transportCost}
-              disabled={!editable}
-              onChange={(e) => setTransportCost(e.target.value)}
-              inputMode="decimal"
-              className={inputClass}
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-[#64748B]">
-              הערות כספיות
-            </span>
-            <input
-              value={financialNotes}
-              disabled={!editable}
-              onChange={(e) => setFinancialNotes(e.target.value)}
-              className={inputClass}
-            />
-          </label>
+      <label className="mt-4 block">
+        <span className="mb-1 block text-xs font-semibold text-[#64748B]">
+          סכום / תמורה (אופציונלי)
+        </span>
+        <div className="relative">
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-[#94A3B8]">
+            ₪
+          </span>
+          <input
+            value={price}
+            disabled={!editable}
+            onChange={(e) => setPrice(e.target.value)}
+            inputMode="decimal"
+            className={`${inputClass} pr-8`}
+          />
         </div>
-      )}
+      </label>
 
       {error && (
-        <p className="flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">
+        <p className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
           <X className="mt-0.5 h-4 w-4 shrink-0" />
           {error}
         </p>
       )}
 
       {editable && (
-        <div className="grid gap-3 pt-1">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void save(true)}
-            className="inline-flex min-h-[58px] items-center justify-center gap-2 rounded-[14px] bg-[#059669] text-base font-bold text-white transition active:bg-[#047857] disabled:opacity-60"
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#E2E8F0] bg-white/95 px-3 pt-2 backdrop-blur">
+          <div
+            className="mx-auto grid max-w-2xl grid-cols-2 gap-2"
+            style={{
+              paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))",
+            }}
           >
-            <Send className="h-4 w-4" />
-            {busy ? "שולח…" : "שלח לאישור"}
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void save(false)}
-            className="min-h-[52px] rounded-[14px] border border-[#DCE4EF] bg-white text-base font-bold text-[#0F172A] disabled:opacity-60"
-          >
-            שמור טיוטה
-          </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void save(false)}
+              className="min-h-11 rounded-lg border border-[#DCE4EF] bg-white text-sm font-bold text-[#0F172A] disabled:opacity-60"
+            >
+              שמור טיוטה
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void save(true)}
+              className="min-h-11 rounded-lg bg-[#059669] text-sm font-bold text-white disabled:opacity-60"
+            >
+              {busy ? "שולח…" : "שלח לאישור"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -617,60 +630,68 @@ export function DriverDnForm({ editId }: Props) {
         <button
           type="button"
           onClick={() => router.push("/driver/delivery-notes")}
-          className="min-h-[58px] w-full rounded-[14px] bg-[#0F172A] text-base font-bold text-white"
+          className="mt-4 min-h-11 w-full rounded-lg bg-[#0F172A] text-sm font-bold text-white"
         >
           חזרה לרשימה
+        </button>
+      )}
+
+      {preview && (
+        <button
+          type="button"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setPreview(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={preview}
+            alt=""
+            className="max-h-[80dvh] max-w-full rounded-xl object-contain"
+          />
         </button>
       )}
     </div>
   );
 }
 
-function SectionCard({
-  title,
-  accent,
-  icon,
-  children,
+function QtyStepper({
+  value,
+  onChange,
+  disabled,
 }: {
-  title: string;
-  accent: "blue" | "purple" | "orange" | "green";
-  icon: ReactNode;
-  children: ReactNode;
+  value: string;
+  onChange: (qty: number) => void;
+  disabled?: boolean;
 }) {
-  const accents = {
-    blue: {
-      bar: "bg-[#2563EB]",
-      iconBg: "bg-[#EFF6FF] text-[#2563EB]",
-    },
-    purple: {
-      bar: "bg-[#7C3AED]",
-      iconBg: "bg-[#F5F3FF] text-[#7C3AED]",
-    },
-    orange: {
-      bar: "bg-[#EA580C]",
-      iconBg: "bg-[#FFF7ED] text-[#EA580C]",
-    },
-    green: {
-      bar: "bg-[#059669]",
-      iconBg: "bg-[#ECFDF5] text-[#059669]",
-    },
-  }[accent];
-
+  const n = Number(value) || 0;
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-[#DCE4EF] bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.05)] sm:p-5">
-      <span
-        className={`absolute inset-x-0 top-0 h-0.5 ${accents.bar}`}
-        aria-hidden
+    <div className="flex h-10 shrink-0 items-center rounded-lg border border-[#DCE4EF] bg-white">
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label="הקטן כמות"
+        onClick={() => onChange(n - 1)}
+        className="grid h-10 w-8 place-items-center text-[#334155] disabled:opacity-40"
+      >
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      <input
+        value={value}
+        disabled={disabled}
+        inputMode="decimal"
+        aria-label="כמות"
+        onChange={(e) => onChange(Number(e.target.value) || 0)}
+        className="h-10 w-8 bg-transparent text-center text-sm outline-none"
       />
-      <h2 className="mb-4 flex items-center gap-2 border-b border-[#E8EEF6] pb-3 font-black text-[#0F172A]">
-        <span
-          className={`grid h-8 w-8 place-items-center rounded-lg ${accents.iconBg}`}
-        >
-          {icon}
-        </span>
-        {title}
-      </h2>
-      <div className="space-y-3">{children}</div>
-    </section>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label="הגדל כמות"
+        onClick={() => onChange(n + 1)}
+        className="grid h-10 w-8 place-items-center text-[#334155] disabled:opacity-40"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }

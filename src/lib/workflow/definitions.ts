@@ -1,6 +1,23 @@
 import type { WorkflowDefinition, WorkflowDocKind } from "./types";
 
 const DIARY_TRANSITIONS: WorkflowDefinition["transitions"] = [
+  { from: "draft", action: "assign", to: "assigned" },
+  { from: "revision", action: "assign", to: "assigned" },
+  { from: "assigned", action: "start", to: "in_progress" },
+  { from: "assigned", action: "complete_field", to: "approved" },
+  { from: "in_progress", action: "complete_field", to: "approved" },
+  {
+    from: "assigned",
+    action: "return_field",
+    to: "revision",
+    requiresComment: true,
+  },
+  {
+    from: "in_progress",
+    action: "return_field",
+    to: "revision",
+    requiresComment: true,
+  },
   { from: "draft", action: "submit", to: "pending_approval", requiresApprovers: true },
   { from: "revision", action: "resubmit", to: "pending_approval", requiresApprovers: true },
   { from: "pending_approval", action: "approve", to: "approved" },
@@ -120,7 +137,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowDocKind, WorkflowDefinition> =
     labelHe: "יומן עבודה",
     numberPrefix: "WD",
     initialStatus: "draft",
-    editableStatuses: ["draft", "revision"],
+    editableStatuses: ["draft", "revision", "assigned", "in_progress"],
     transitions: DIARY_TRANSITIONS,
     gateMeasurementOnClientSignature: true,
     approvalMode: "any_one",

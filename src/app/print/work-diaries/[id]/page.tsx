@@ -87,6 +87,7 @@ export default async function Page({
             siteLabel: diary.siteLabel,
             clientName: diary.clientName,
             address: diary.address,
+            projectManagerName: diary.project?.ownerName,
             foremanName: diary.foreman?.name,
             foremanSignatureUrl: diary.foremanSignatureUrl,
             foremanSignedName: diary.foremanSignedName,

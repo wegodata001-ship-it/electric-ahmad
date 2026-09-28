@@ -7,6 +7,7 @@ import { projectService } from "@/services";
 import { formatCurrency } from "@/utils/format";
 import type { ParsedBoqItem, ParsedContractBoqResult, ParsedProjectDetails } from "@/lib/ai/types";
 import { cleanBoqDescription } from "@/utils/boq-text";
+import { ProjectManagerSelect } from "@/features/projects/components/project-manager-select";
 
 interface ProjectReviewFormProps {
   projectId: string;
@@ -84,6 +85,7 @@ export function ProjectReviewForm({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ownerId, setOwnerId] = useState("");
 
   const missing = useMemo(() => new Set(initialMissing), [initialMissing]);
 
@@ -125,6 +127,7 @@ export function ProjectReviewForm({
           contractValue: Number(project.contractValue),
         },
         items: items as unknown as Record<string, unknown>[],
+        ownerId: ownerId || null,
       });
       router.push(`/projects/${result.project.id}`);
     } catch (err) {
@@ -211,6 +214,17 @@ export function ProjectReviewForm({
             required
             missing={missing.has("project.contractValue")}
           />
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">
+              מנהל פרויקט
+            </label>
+            <ProjectManagerSelect value={ownerId} onChange={setOwnerId} />
+            {!ownerId && (
+              <p className="mt-1 text-xs text-amber-700">
+                טרם הוקצה מנהל פרויקט
+              </p>
+            )}
+          </div>
         </div>
       </Card>
 

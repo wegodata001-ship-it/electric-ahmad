@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       projectId: body.projectId || null,
       foremanId: session.foremanId,
       noteDate: body.noteDate ? new Date(body.noteDate) : new Date(),
+      noteTime: body.noteTime ? String(body.noteTime).slice(0, 8) : null,
       clientName: String(body.clientName).trim(),
       address: body.address,
       vehicleNumber: body.vehicleNumber,

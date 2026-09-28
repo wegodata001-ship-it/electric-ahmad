@@ -31,6 +31,8 @@ export type ProjectNavTreeStats = {
   invoiceCount?: number;
   documentCount?: number;
   workDiaryCount?: number;
+  workDiaryCompleted?: number;
+  workDiaryInProgress?: number;
   deliveryCount?: number;
 };
 
@@ -128,7 +130,11 @@ const ALL_MODULES: ModuleNode[] = [
     accent:
       "border-indigo-300 bg-gradient-to-b from-indigo-50 to-white hover:border-indigo-500",
     iconBg: "bg-indigo-600",
-    lines: (s) => [`${s?.workDiaryCount ?? 0} ימי עבודה`],
+    lines: (s) => [
+      `${s?.workDiaryCount ?? 0} יומנים`,
+      `${s?.workDiaryCompleted ?? 0} הושלמו`,
+      `${s?.workDiaryInProgress ?? 0} בטיפול`,
+    ],
   },
   {
     id: "deliveries",
@@ -157,6 +163,8 @@ type Props = {
   stats?: ProjectNavTreeStats;
   /** Which nodes to show; defaults to the classic 6-module invoices tree */
   moduleIds?: ProjectModuleId[];
+  canCreateWorkDiary?: boolean;
+  onCreateWorkDiary?: () => void;
 };
 
 export function ProjectModulesNavTree({
@@ -165,6 +173,8 @@ export function ProjectModulesNavTree({
   onSelect,
   stats,
   moduleIds = DEFAULT_PROJECT_MODULE_IDS,
+  canCreateWorkDiary,
+  onCreateWorkDiary,
 }: Props) {
   const modules = moduleIds
     .map((id) => ALL_MODULES.find((m) => m.id === id))
@@ -191,6 +201,8 @@ export function ProjectModulesNavTree({
               active={activeModule === m.id}
               onSelect={onSelect}
               large
+              canCreateWorkDiary={canCreateWorkDiary}
+              onCreateWorkDiary={onCreateWorkDiary}
             />
           ))}
         </div>
@@ -221,12 +233,14 @@ export function ProjectModulesNavTree({
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.04 * (rowIndex * 4 + i) }}
                 >
-                  <ModuleButton
-                    node={m}
-                    stats={stats}
-                    active={activeModule === m.id}
-                    onSelect={onSelect}
-                  />
+                    <ModuleButton
+                      node={m}
+                      stats={stats}
+                      active={activeModule === m.id}
+                      onSelect={onSelect}
+                      canCreateWorkDiary={canCreateWorkDiary}
+                      onCreateWorkDiary={onCreateWorkDiary}
+                    />
                 </motion.div>
               ))}
             </div>
@@ -313,14 +327,20 @@ function ModuleButton({
   active,
   onSelect,
   large,
+  canCreateWorkDiary,
+  onCreateWorkDiary,
 }: {
   node: ModuleNode;
   stats?: ProjectNavTreeStats;
   active: boolean;
   onSelect: (id: ProjectModuleId) => void;
   large?: boolean;
+  canCreateWorkDiary?: boolean;
+  onCreateWorkDiary?: () => void;
 }) {
   const Icon = node.icon;
+  const showCreate =
+    node.id === "workDiaries" && canCreateWorkDiary && onCreateWorkDiary;
   return (
     <button
       type="button"
@@ -356,6 +376,26 @@ function ModuleButton({
               {line}
             </p>
           ))}
+          {showCreate && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCreateWorkDiary();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onCreateWorkDiary();
+                }
+              }}
+              className="mt-2 inline-flex rounded-lg bg-[#1e40af] px-2.5 py-1 text-[11px] font-bold text-white"
+            >
+              + יומן חדש
+            </span>
+          )}
         </div>
       </div>
     </button>

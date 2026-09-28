@@ -56,7 +56,11 @@ export async function GET(req: NextRequest) {
       returnedCount: items.length,
     });
 
-    return apiSuccess({ items, pageInfo });
+    const counts = projectId
+      ? await WorkDiariesRepository.projectCounts(projectId)
+      : null;
+
+    return apiSuccess({ items, pageInfo, counts });
   } catch (error) {
     return handleApiError(error);
   }
@@ -98,6 +102,18 @@ export async function POST(req: NextRequest) {
       createdByRole: session.role,
       createdCrossProject: creationAccess.crossProject,
     });
+
+    if (body.assign && diary) {
+      const assigned = await WorkDiariesRepository.assignToForeman(
+        diary.id,
+        session.userId,
+        {
+          foremanId: String(body.foremanId),
+          origin: req.nextUrl.origin,
+        }
+      );
+      return apiSuccess(assigned, 201);
+    }
 
     return apiSuccess(diary, 201);
   } catch (error) {

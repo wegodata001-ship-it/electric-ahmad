@@ -16,6 +16,7 @@ const TABS = [
 
 export function FieldAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const hideNav = pathname === "/field/delivery-notes/new";
   const { userName, ready, loggingOut, logout } = usePortalSession("field");
 
   if (!ready) {
@@ -60,10 +61,17 @@ export function FieldAppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-lg min-w-0 flex-1 overflow-x-hidden px-4 pb-32 pt-5">
+      <main
+        className={
+          hideNav
+            ? "mx-auto w-full max-w-lg min-w-0 flex-1 overflow-x-hidden px-3 pt-3"
+            : "mx-auto w-full max-w-lg min-w-0 flex-1 overflow-x-hidden px-4 pb-32 pt-5"
+        }
+      >
         {children}
       </main>
 
+      {!hideNav && (
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#E2E8F0] bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(15,23,42,0.04)]">
         <div className="mx-auto flex max-w-lg items-stretch justify-between px-1">
           {TABS.map((tab) => {
@@ -88,6 +96,7 @@ export function FieldAppShell({ children }: { children: React.ReactNode }) {
           })}
         </div>
       </nav>
+      )}
     </div>
   );
 }

@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const items = await WorkDiariesRepository.list({
       foremanId: session.foremanId,
       status: status || undefined,
-      take: 50,
+      take: 80,
     });
     return apiSuccess({ items });
   } catch (error) {

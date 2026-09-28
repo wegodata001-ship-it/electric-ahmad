@@ -173,4 +173,10 @@ export const invoicesWorkspaceService = {
   }) {
     return apiClient.post<any>("/api/invoices/summary", body);
   },
+
+  finalizeDirectInvoice(sheetId: string) {
+    return apiClient.post<any>(
+      `/api/measurement-sheets/${sheetId}/direct-invoice`
+    );
+  },
 };

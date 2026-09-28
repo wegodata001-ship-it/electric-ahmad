@@ -14,6 +14,8 @@ export type WorkflowDocKind =
 
 export type WorkflowStatus =
   | "draft"
+  | "assigned"
+  | "in_progress"
   | "pending_approval"
   | "revision"
   | "approved"
@@ -35,6 +37,10 @@ export type ClientSignatureStatus =
   | "expired";
 
 export type WorkflowAction =
+  | "assign"
+  | "start"
+  | "complete_field"
+  | "return_field"
   | "submit"
   | "approve"
   | "reject"
@@ -88,6 +94,8 @@ export type WorkflowActor = {
 
 export const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
   draft: "טיוטה",
+  assigned: "נשלח למנהל שטח",
+  in_progress: "בטיפול",
   pending_approval: "ממתין לאישור",
   revision: "דורש תיקון",
   approved: "אושר",

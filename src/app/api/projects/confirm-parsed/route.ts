@@ -4,14 +4,15 @@ import { ProjectsRepository } from "@/repositories/projects.repository";
 import { BOQRepository } from "@/repositories/boq.repository";
 import { AiParseRepository } from "@/repositories/ai-parse.repository";
 import { AuditRepository } from "@/repositories/audit.repository";
-import { getAuthContext } from "@/lib/auth/session";
+import { requireOfficeUser } from "@/lib/auth/office-session";
+import { canAssignProjectManager } from "@/lib/auth/project-access";
 import type { ParsedBoqItem, ParsedProjectDetails } from "@/lib/ai/types";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { cleanBoqDescription } from "@/utils/boq-text";
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await getAuthContext();
+    const { userId, role } = await requireOfficeUser();
     const body = await request.json();
 
     const projectId = String(body.projectId ?? "");
@@ -153,6 +154,17 @@ export async function POST(request: NextRequest) {
         status: "confirmed",
         resultJson: JSON.stringify({ project: projectData, items }),
       });
+    }
+
+    if (body.ownerId !== undefined) {
+      if (!canAssignProjectManager(role)) {
+        return apiError("אין הרשאה להקצות מנהל פרויקט", 403);
+      }
+      await ProjectsRepository.assignProjectManager(
+        projectId,
+        body.ownerId ? String(body.ownerId) : null,
+        userId
+      );
     }
 
     const project = await ProjectsRepository.findById(projectId);

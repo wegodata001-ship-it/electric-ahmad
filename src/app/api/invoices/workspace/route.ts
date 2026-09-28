@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     const user = await requireOfficeUser();
     const projectId = req.nextUrl.searchParams.get("projectId");
     const scopeParam = req.nextUrl.searchParams.get("scope");
+    const ownerId = req.nextUrl.searchParams.get("ownerId");
     const listMode =
       scopeParam === "operational" || scopeParam === "all"
         ? ("all" as const)
@@ -54,6 +55,7 @@ export async function GET(req: NextRequest) {
       userId: user.userId,
       role: user.role,
       mode: listMode,
+      ownerId,
     });
 
     return apiSuccess({
@@ -64,6 +66,8 @@ export async function GET(req: NextRequest) {
         contractor: p.contractor,
         location: p.location,
         status: p.status,
+        ownerId: p.ownerId,
+        ownerName: p.owner?.name ?? null,
       })),
     });
   } catch (error) {

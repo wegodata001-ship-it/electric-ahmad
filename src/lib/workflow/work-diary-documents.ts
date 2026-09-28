@@ -5,6 +5,10 @@ import { upsertOfficialArchiveDocument } from "@/lib/documents/official-document
 /** תיקיות ארכיון יומן — מסמך אחד, רק folderPath משתנה */
 export function workDiaryArchiveFolder(status: WorkflowStatus): string {
   switch (status) {
+    case "assigned":
+      return "יומני עבודה/נשלח למנהל שטח";
+    case "in_progress":
+      return "יומני עבודה/בטיפול";
     case "pending_approval":
       return "יומני עבודה/ממתין לאישור";
     case "revision":
@@ -67,6 +71,10 @@ export function mapLegacyDiaryStatusToWorkflow(
   status: string
 ): WorkflowStatus {
   switch (status) {
+    case "assigned":
+      return "assigned";
+    case "in_progress":
+      return "in_progress";
     case "revision":
       return "revision";
     case "pending_approval":

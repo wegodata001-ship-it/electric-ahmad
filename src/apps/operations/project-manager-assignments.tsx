@@ -16,8 +16,8 @@ type Project = {
   name: string;
   contractNumber: string;
   status: string;
-  ownerId: string;
-  owner: { id: string; name: string; role: string };
+  ownerId: string | null;
+  owner: { id: string; name: string; role: string } | null;
 };
 
 export function ProjectManagerAssignmentsPage() {
@@ -145,7 +145,7 @@ export function ProjectManagerAssignmentsPage() {
             {projects.map((project) => {
               const checked = selected.includes(project.id);
               const assignedElsewhere =
-                project.owner.role === "PROJECT_MANAGER" &&
+                project.owner?.role === "PROJECT_MANAGER" &&
                 project.ownerId !== managerId;
               return (
                 <label
@@ -162,8 +162,10 @@ export function ProjectManagerAssignmentsPage() {
                     <span className="text-xs text-slate-500">
                       {project.contractNumber} · {project.status}
                       {assignedElsewhere
-                        ? ` · משויך כעת ל${project.owner.name}`
-                        : ""}
+                        ? ` · משויך כעת ל${project.owner?.name}`
+                        : !project.ownerId
+                          ? " · טרם הוקצה מנהל פרויקט"
+                          : ""}
                     </span>
                   </span>
                 </label>

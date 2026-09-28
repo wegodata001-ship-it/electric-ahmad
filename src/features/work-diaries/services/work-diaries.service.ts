@@ -4,13 +4,17 @@ export type WorkDiaryListItem = {
   id: string;
   documentNumber: string;
   status: string;
+  statusLabel?: string;
   workDate: string;
+  workSummary?: string | null;
   workType: string | null;
   clientName: string | null;
   customSiteName?: string | null;
   siteLabel?: string | null;
   project: { id: string; name: string } | null;
   foreman: { id: string; name: string } | null;
+  createdBy?: { id: string; name: string } | null;
+  workItems?: { description: string }[];
   createdAt: string;
 };
 
@@ -42,6 +46,10 @@ export const workDiariesService = {
 
   submit(id: string, approverIds: string[]) {
     return apiClient.post<any>(`/api/field/work-diaries/${id}/submit`, { approverIds });
+  },
+
+  complete(id: string) {
+    return apiClient.post<any>(`/api/field/work-diaries/${id}/complete`);
   },
 
   listApprovers(projectId?: string | null) {

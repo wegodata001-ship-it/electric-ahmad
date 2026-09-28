@@ -15,6 +15,9 @@ const NAV_ITEMS = [
 
 export function DriverAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const hideNav =
+    pathname === "/driver/delivery-notes/new" ||
+    /^\/driver\/delivery-notes\/[^/]+$/.test(pathname);
   const { userName, ready, loggingOut, logout } = usePortalSession("driver");
 
   if (!ready) {
@@ -39,9 +42,16 @@ export function DriverAppShell({ children }: { children: React.ReactNode }) {
         loggingOut={loggingOut}
         onLogout={logout}
       />
-      <main className="mx-auto w-full max-w-2xl px-4 py-5 pb-28">
+      <main
+        className={
+          hideNav
+            ? "mx-auto w-full max-w-2xl px-3 py-3"
+            : "mx-auto w-full max-w-2xl px-4 py-5 pb-28"
+        }
+      >
         {children}
       </main>
+      {!hideNav && (
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#DCE4EF] bg-white pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto grid max-w-2xl grid-cols-3">
           {NAV_ITEMS.map((item) => {
@@ -74,6 +84,7 @@ export function DriverAppShell({ children }: { children: React.ReactNode }) {
           })}
         </div>
       </nav>
+      )}
     </div>
   );
 }

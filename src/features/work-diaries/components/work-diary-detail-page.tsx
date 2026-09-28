@@ -10,14 +10,16 @@ import { approvalStatusLabel } from "@/lib/workflow/approval-status-labels";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "טיוטה",
-  revision: "דורש תיקון",
+  assigned: "נשלח למנהל שטח",
+  in_progress: "בטיפול",
+  revision: "הוחזר לתיקון",
   pending_approval: "ממתין לאישור",
   in_approval: "ממתין לאישור",
-  approved: "אושר",
+  approved: "הושלם",
   sent_to_client: "נשלח ללקוח",
   client_signed: "נחתם ע״י לקוח",
   signed: "נחתם ע״י לקוח",
-  completed: "נעול",
+  completed: "הושלם",
   locked: "נעול",
   used_for_measurement: "שימש למדידה",
   used_for_account: "שימש לחשבון",
@@ -32,11 +34,39 @@ export function WorkDiaryDetailPage({ id }: { id: string }) {
   const [approvers, setApprovers] = useState<{ id: string; name: string; roleLabel: string }[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [execution, setExecution] = useState({
+    workSummary: "",
+    notes: "",
+    issues: "",
+    percent: "",
+    workersText: "",
+  });
+  const [uploading, setUploading] = useState(false);
+
+  function hydrateExecution(next: any) {
+    const percentItem = (next.workItems ?? []).find(
+      (item: any) => item.description === "אחוז ביצוע"
+    );
+    setExecution({
+      workSummary: next.workSummary || "",
+      notes: next.notes || "",
+      issues: "",
+      percent: percentItem ? String(percentItem.quantity ?? "") : "",
+      workersText: (next.workers ?? [])
+        .map((w: any) =>
+          [w.name, w.hours ? `${w.hours}` : ""].filter(Boolean).join(" | ")
+        )
+        .join("\n"),
+    });
+  }
 
   function reload() {
     return workDiariesService
       .get(id)
-      .then(setDiary)
+      .then((next) => {
+        setDiary(next);
+        hydrateExecution(next);
+      })
       .catch((e) => setError(e.message));
   }
 
@@ -84,7 +114,100 @@ export function WorkDiaryDetailPage({ id }: { id: string }) {
     );
   }
 
+  const assignedExec =
+    diary.status === "assigned" || diary.status === "in_progress";
   const editable = diary.status === "draft" || diary.status === "revision";
+  const done =
+    diary.status === "approved" ||
+    diary.status === "completed" ||
+    diary.status === "signed" ||
+    diary.status === "client_signed";
+
+  async function saveExecution() {
+    setSubmitting(true);
+    setError("");
+    try {
+      const workers = execution.workersText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [name, hours] = line.split("|").map((p) => p.trim());
+          return { name, hours: hours ? Number(hours) : 0 };
+        });
+      const notes = [execution.notes, execution.issues && `חריגים:\n${execution.issues}`]
+        .filter(Boolean)
+        .join("\n\n");
+      const workItems = [
+        ...(diary.workItems ?? [])
+          .filter((item: any) => item.description !== "אחוז ביצוע")
+          .map((item: any) => ({
+            description: item.description,
+            unit: item.unit,
+            quantity: item.quantity,
+            notes: item.notes,
+          })),
+        ...(execution.percent
+          ? [
+              {
+                description: "אחוז ביצוע",
+                unit: "%",
+                quantity: Number(execution.percent) || 0,
+              },
+            ]
+          : []),
+      ];
+      const updated = await workDiariesService.update(id, {
+        workSummary: execution.workSummary,
+        notes,
+        workers,
+        workItems,
+        expectedVersion: diary.currentVersion,
+      });
+      setDiary(updated);
+      hydrateExecution(updated);
+    } catch (e: any) {
+      setError(e.message);
+      throw e;
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function completeDiary() {
+    setSubmitting(true);
+    setError("");
+    try {
+      await saveExecution();
+      const updated = await workDiariesService.complete(id);
+      setDiary(updated);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function uploadPhoto(file: File) {
+    setUploading(true);
+    setError("");
+    try {
+      const data = new FormData();
+      data.append("file", file);
+      data.append("stage", "execution");
+      const res = await fetch(`/api/field/work-diaries/${id}/media`, {
+        method: "POST",
+        body: data,
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "העלאה נכשלה");
+      await reload();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <div className="space-y-5 pb-10">
@@ -146,12 +269,106 @@ export function WorkDiaryDetailPage({ id }: { id: string }) {
             </button>
           </>
         )}
-        {!editable && (
+        {!editable && !assignedExec && !done && (
           <p className="text-sm text-gray-500">
             המסמך נעול לעריכה עד החזרה לתיקון או השלמת התהליך
           </p>
         )}
       </div>
+
+      {assignedExec && (
+        <section className="space-y-3 rounded-2xl border border-blue-200 bg-white p-4">
+          <h2 className="font-bold text-[#03142F]">ביצוע בפועל</h2>
+          <label className="block text-sm">
+            <span className="font-semibold">מה בוצע</span>
+            <textarea
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              rows={3}
+              value={execution.workSummary}
+              onChange={(e) =>
+                setExecution((s) => ({ ...s, workSummary: e.target.value }))
+              }
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="font-semibold">עובדים שהיו באתר (שם | שעות)</span>
+            <textarea
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              rows={3}
+              value={execution.workersText}
+              onChange={(e) =>
+                setExecution((s) => ({ ...s, workersText: e.target.value }))
+              }
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="font-semibold">הערות</span>
+            <textarea
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              rows={2}
+              value={execution.notes}
+              onChange={(e) =>
+                setExecution((s) => ({ ...s, notes: e.target.value }))
+              }
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="font-semibold">בעיות / חריגים</span>
+            <textarea
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              rows={2}
+              value={execution.issues}
+              onChange={(e) =>
+                setExecution((s) => ({ ...s, issues: e.target.value }))
+              }
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="font-semibold">אחוז ביצוע</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={execution.percent}
+              onChange={(e) =>
+                setExecution((s) => ({ ...s, percent: e.target.value }))
+              }
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="font-semibold">תמונות מהשטח</span>
+            <input
+              type="file"
+              accept="image/*"
+              disabled={uploading}
+              className="mt-1 block"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadPhoto(file);
+              }}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => void saveExecution()}
+              className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold"
+            >
+              שמור
+            </button>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => void completeDiary()}
+              className="rounded-xl bg-[#1e40af] px-4 py-2.5 text-sm font-bold text-white"
+            >
+              סיום יומן עבודה
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl bg-white border border-gray-200 p-4 space-y-2 text-sm">
         <h2 className="font-bold text-[#03142F]">פרטי מסמך</h2>
@@ -170,6 +387,10 @@ export function WorkDiaryDetailPage({ id }: { id: string }) {
         <p>
           <span className="text-gray-500">מנהל עבודה: </span>
           {diary.foreman?.name}
+        </p>
+        <p>
+          <span className="text-gray-500">נשלח ע״י: </span>
+          {diary.createdBy?.name || "—"}
         </p>
         <p>
           <span className="text-gray-500">מזג אוויר / סוג: </span>

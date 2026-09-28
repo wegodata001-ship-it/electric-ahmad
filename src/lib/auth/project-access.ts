@@ -14,6 +14,21 @@ export function canSeeAllProjects(role?: string | null): boolean {
   );
 }
 
+export function canAssignProjectManager(role?: string | null): boolean {
+  return canSeeAllProjects(role);
+}
+
+const PROJECT_LIST_SELECT = {
+  id: true,
+  name: true,
+  contractNumber: true,
+  contractor: true,
+  location: true,
+  status: true,
+  ownerId: true,
+  owner: { select: { id: true, name: true } },
+} as const;
+
 /**
  * All PM scopes are limited to projects assigned through Project.ownerId.
  */
@@ -52,19 +67,20 @@ export async function listProjectsForRole(opts: {
   role: string;
   /** all = כל הפרויקטים (לתפעול); assigned = רק שהוקצו */
   mode?: "all" | "assigned";
+  ownerId?: string | null;
 }) {
-  const mode = opts.mode ?? "assigned";
+  void opts.mode;
+  const ownerFilter =
+    opts.ownerId === "unassigned"
+      ? { ownerId: null }
+      : opts.ownerId
+        ? { ownerId: opts.ownerId }
+        : {};
+
   if (canSeeAllProjects(opts.role)) {
     return prisma.project.findMany({
-      where: { deletedAt: null },
-      select: {
-        id: true,
-        name: true,
-        contractNumber: true,
-        contractor: true,
-        location: true,
-        status: true,
-      },
+      where: { deletedAt: null, ...ownerFilter },
+      select: PROJECT_LIST_SELECT,
       orderBy: { updatedAt: "desc" },
     });
   }
@@ -72,14 +88,7 @@ export async function listProjectsForRole(opts: {
   if (opts.role === PROJECT_MANAGER_ROLE) {
     return prisma.project.findMany({
       where: { ownerId: opts.userId, deletedAt: null },
-      select: {
-        id: true,
-        name: true,
-        contractNumber: true,
-        contractor: true,
-        location: true,
-        status: true,
-      },
+      select: PROJECT_LIST_SELECT,
       orderBy: { updatedAt: "desc" },
     });
   }

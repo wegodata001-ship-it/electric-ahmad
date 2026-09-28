@@ -52,6 +52,8 @@ export function generateProjects(count = 10): Project[] {
       location: pick(LOCATIONS, rand),
       foremanId: foreman.id,
       foremanName: foreman.fullName,
+      ownerId: null,
+      ownerName: null,
       status,
       contractValue,
       completedValue,

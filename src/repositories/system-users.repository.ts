@@ -390,7 +390,7 @@ export class SystemUsersRepository {
               ...priorProjectOwners
                 .filter(
                   (project) =>
-                    project.owner.role === PROJECT_MANAGER_ROLE &&
+                    project.owner?.role === PROJECT_MANAGER_ROLE &&
                     project.ownerId !== user.id
                 )
                 .map((project) => ({
@@ -537,7 +537,7 @@ export class SystemUsersRepository {
               ownerId: id,
               deletedAt: null,
             },
-            data: { ownerId: actorUserId, updatedById: actorUserId },
+            data: { ownerId: null, updatedById: actorUserId },
           });
         }
         if (normalized.projectIds.length) {
@@ -638,7 +638,7 @@ export class SystemUsersRepository {
               .filter(
                 (project) =>
                   addedProjectIds.includes(project.id) &&
-                  project.owner.role === PROJECT_MANAGER_ROLE &&
+                  project.owner?.role === PROJECT_MANAGER_ROLE &&
                   project.ownerId !== id
               )
               .map((project) => ({

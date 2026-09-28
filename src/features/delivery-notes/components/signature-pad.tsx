@@ -8,6 +8,8 @@ type Props = {
   onChange: (dataUrl: string | null) => void;
   label?: string;
   height?: number;
+  placeholder?: string;
+  showClear?: boolean;
 };
 
 /** Simple canvas signature pad — outputs PNG data URL */
@@ -16,6 +18,8 @@ export function SignaturePad({
   onChange,
   label = "חתימה",
   height = 140,
+  placeholder = "חתום כאן",
+  showClear = true,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
@@ -93,22 +97,40 @@ export function SignaturePad({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-gray-600">{label}</p>
-        <Button type="button" size="sm" variant="outline" onClick={clear}>
-          נקה
-        </Button>
+    <div className="space-y-1.5">
+      {showClear && (
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-gray-600">{label}</p>
+          <Button type="button" size="sm" variant="outline" onClick={clear}>
+            נקה חתימה
+          </Button>
+        </div>
+      )}
+      <div className="relative">
+        {!value && placeholder && (
+          <p className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center text-sm font-semibold text-slate-400">
+            {placeholder}
+          </p>
+        )}
+        <canvas
+          ref={canvasRef}
+          className="w-full touch-none rounded-xl border border-gray-300 bg-white"
+          style={{ height }}
+          onPointerDown={start}
+          onPointerMove={move}
+          onPointerUp={end}
+          onPointerCancel={end}
+        />
       </div>
-      <canvas
-        ref={canvasRef}
-        className="w-full touch-none rounded-xl border border-gray-300 bg-white"
-        style={{ height }}
-        onPointerDown={start}
-        onPointerMove={move}
-        onPointerUp={end}
-        onPointerCancel={end}
-      />
+      {!showClear && (
+        <button
+          type="button"
+          onClick={clear}
+          className="text-xs font-semibold text-slate-500 underline"
+        >
+          נקה חתימה
+        </button>
+      )}
     </div>
   );
 }

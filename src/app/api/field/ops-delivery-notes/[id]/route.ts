@@ -45,6 +45,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const note = await OpsDeliveryNotesRepository.update(id, {
       projectId: body.projectId,
       noteDate: body.noteDate ? new Date(body.noteDate) : undefined,
+      noteTime: body.noteTime !== undefined ? body.noteTime : undefined,
       clientName: body.clientName,
       address: body.address,
       vehicleNumber: body.vehicleNumber,

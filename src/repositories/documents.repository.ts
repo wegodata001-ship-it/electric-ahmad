@@ -3,6 +3,7 @@ import { mapDocument } from "@/lib/mappers";
 import { AuditRepository } from "./audit.repository";
 import { deleteFromStorage } from "@/lib/supabase/storage";
 import { defaultFolderForDocumentType } from "@/lib/documents/archive-folders";
+import { PROJECT_ORIGINAL_SOURCE_TYPE } from "@/lib/documents/project-original";
 import type { DocumentType } from "@prisma/client";
 
 export class DocumentsRepository {
@@ -280,6 +281,11 @@ export class DocumentsRepository {
       include: { versions: true, attachments: true },
     });
     if (!doc) throw new Error("מסמך לא נמצא");
+    if (doc.sourceType === PROJECT_ORIGINAL_SOURCE_TYPE) {
+      throw new Error(
+        "לא ניתן למחוק את קובץ הפרויקט המקורי. מנהל מערכת יכול להחליף אותו ממסך הפרויקט"
+      );
+    }
 
     await deleteFromStorage(doc.bucket, doc.path).catch(() => undefined);
     for (const v of doc.versions) {

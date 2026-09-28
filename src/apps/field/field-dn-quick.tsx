@@ -2,14 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Minus, Plus, Trash2 } from "lucide-react";
 import { fieldService } from "@/features/field/services/field.service";
 import { workManagementService } from "@/features/work-management/services/work-management.service";
 import type { WorkOrder } from "@/features/work-management/types";
 import { STATUS_LABELS } from "@/features/work-management/types";
 import { RevisionFeedbackBanner } from "@/features/approvals/components/revision-feedback-banner";
-import {
-  opsDeliveryNotesService,
-} from "@/features/work-diaries/services/work-diaries.service";
+import { opsDeliveryNotesService } from "@/features/work-diaries/services/work-diaries.service";
 import { SignaturePad } from "@/features/delivery-notes/components/signature-pad";
 import {
   FieldAttendanceGate,
@@ -24,6 +23,10 @@ import { field } from "@/apps/field/field-ui";
 import { cn } from "@/lib/utils";
 
 type EquipLine = { description: string; quantity: string; unit: string };
+type BoqOpt = { description: string; unit?: string };
+
+const compactInput =
+  "w-full min-h-10 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#111827] outline-none focus:border-blue-500";
 
 export function FieldDnQuick() {
   const router = useRouter();
@@ -40,7 +43,11 @@ export function FieldDnQuick() {
   const [noteDate, setNoteDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
+  const [noteTime, setNoteTime] = useState(() =>
+    new Date().toTimeString().slice(0, 5)
+  );
   const [clientName, setClientName] = useState("");
+  const [destTouched, setDestTouched] = useState(false);
   const [address, setAddress] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [driverName, setDriverName] = useState("");
@@ -60,6 +67,8 @@ export function FieldDnQuick() {
     null
   );
   const [allowSkip, setAllowSkip] = useState(true);
+  const [boqItems, setBoqItems] = useState<BoqOpt[]>([]);
+  const [boqOpen, setBoqOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -82,8 +91,10 @@ export function FieldDnQuick() {
             ? String(n.noteDate).slice(0, 10)
             : new Date().toISOString().slice(0, 10)
         );
+        if (n.noteTime) setNoteTime(String(n.noteTime).slice(0, 5));
         setClientName(n.clientName || "");
         setAddress(n.address || "");
+        setDestTouched(true);
         setVehicleNumber(n.vehicleNumber || "");
         setDriverName(n.driverName || "");
         setNotes(n.notes || "");
@@ -131,10 +142,28 @@ export function FieldDnQuick() {
   useEffect(() => {
     if (!projectId || selected || reviseId) return;
     const p = projects.find((x) => x.id === projectId);
-    if (p) {
-      if (!clientName) setClientName(p.contractor || p.name);
-      if (!address && p.location) setAddress(p.location);
+    if (p && !destTouched) {
+      if (p.contractor || p.name) setClientName(p.contractor || p.name);
+      if (p.location) setAddress(p.location);
     }
+    setBoqItems([]);
+    if (!projectId) return;
+    fetch(`/api/boq?projectId=${encodeURIComponent(projectId)}`)
+      .then((r) => r.json())
+      .then((json) => {
+        const rows = json?.data?.items || json?.data || [];
+        if (!Array.isArray(rows)) return;
+        setBoqItems(
+          rows
+            .map((row: { description?: string; unit?: string }) => ({
+              description: String(row.description || "").trim(),
+              unit: row.unit || "יח'",
+            }))
+            .filter((row: BoqOpt) => row.description)
+            .slice(0, 40)
+        );
+      })
+      .catch(() => setBoqItems([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
@@ -149,6 +178,17 @@ export function FieldDnQuick() {
       unit: l.unit || "יח'",
       sortOrder: i,
     }));
+  }
+
+  function addLine(preset?: Partial<EquipLine>) {
+    setLines((prev) => [
+      ...prev,
+      {
+        description: preset?.description || "",
+        quantity: preset?.quantity || "1",
+        unit: preset?.unit || "יח'",
+      },
+    ]);
   }
 
   async function requestSave(mode: "draft" | "submit") {
@@ -193,8 +233,9 @@ export function FieldDnQuick() {
       const payload = {
         projectId: projectId || null,
         noteDate,
+        noteTime,
         clientName: clientName.trim(),
-        address: address.trim() || null,
+        address: address.trim() || clientName.trim() || null,
         vehicleNumber: vehicleNumber.trim() || null,
         driverName: driverName.trim() || null,
         notes: notes.trim() || null,
@@ -243,23 +284,32 @@ export function FieldDnQuick() {
     }
   }
 
+  const selectedProject = projects.find((p) => p.id === projectId);
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className={field.title}>
+    <div className="overflow-x-hidden pb-24">
+      <header className="mb-3">
+        <h1 className="text-lg font-black text-[#111827]">
           {reviseId ? "תיקון תעודה" : "תעודת משלוח חדשה"}
         </h1>
-        <p className={field.subtitle}>מילוי · טיוטה או שליחה לאישור</p>
-      </div>
+        {selectedProject && (
+          <p className="mt-0.5 truncate text-sm text-[#6B7280]">
+            {selectedProject.name}
+          </p>
+        )}
+      </header>
 
       {revisionNote && <RevisionFeedbackBanner comment={revisionNote} />}
-      {error && <p className={field.error}>{error}</p>}
+      {error && <p className={cn(field.error, "mb-3 py-2 text-sm")}>{error}</p>}
 
-      <div className="space-y-5">
+      <section className="space-y-2">
+        <h2 className="text-sm font-bold">פרטי משלוח</h2>
         {!reviseId && (
           <>
-            <label className="block space-y-2">
-              <span className="text-lg font-bold text-[#111827]">פרויקט</span>
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-[#6B7280]">
+                פרויקט *
+              </span>
               <select
                 value={projectId}
                 onChange={(e) => {
@@ -269,9 +319,9 @@ export function FieldDnQuick() {
                     if (o && o.projectId !== e.target.value) setOrderId("");
                   }
                 }}
-                className={field.input}
+                className={compactInput}
               >
-                <option value="">ללא / בחרו פרויקט</option>
+                <option value="">בחר פרויקט</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -279,17 +329,13 @@ export function FieldDnQuick() {
                 ))}
               </select>
             </label>
-
-            <label className="block space-y-2">
-              <span className="text-lg font-bold text-[#111827]">
-                סידור עבודה (אופציונלי)
-              </span>
+            {orders.length > 0 && (
               <select
                 value={orderId}
                 onChange={(e) => setOrderId(e.target.value)}
-                className={field.input}
+                className={compactInput}
               >
-                <option value="">ללא סידור / יצירה עצמאית</option>
+                <option value="">סידור עבודה (אופציונלי)</option>
                 {orders.map((order) => (
                   <option key={order.id} value={order.id}>
                     {order.project?.name || "פרויקט"} ·{" "}
@@ -298,59 +344,94 @@ export function FieldDnQuick() {
                   </option>
                 ))}
               </select>
-            </label>
+            )}
           </>
         )}
-
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">תאריך</span>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-[#6B7280]">
+            יעד / מקבל
+          </span>
+          <input
+            value={clientName}
+            onChange={(e) => {
+              setDestTouched(true);
+              setClientName(e.target.value);
+            }}
+            placeholder="שם / כתובת"
+            className={compactInput}
+          />
+        </label>
+        <input
+          value={address}
+          onChange={(e) => {
+            setDestTouched(true);
+            setAddress(e.target.value);
+          }}
+          placeholder="כתובת"
+          className={compactInput}
+        />
+        <div className="grid grid-cols-2 gap-2">
           <input
             type="date"
             value={noteDate}
             onChange={(e) => setNoteDate(e.target.value)}
-            className={field.input}
+            className={compactInput}
           />
-        </label>
-
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">לקוח</span>
           <input
-            value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
-            className={field.input}
-            required
+            type="time"
+            value={noteTime}
+            onChange={(e) => setNoteTime(e.target.value)}
+            className={compactInput}
           />
-        </label>
-
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">כתובת</span>
-          <input
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className={field.input}
-          />
-        </label>
-
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">רכב</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           <input
             value={vehicleNumber}
             onChange={(e) => setVehicleNumber(e.target.value)}
-            className={field.input}
+            placeholder="רכב"
+            className={compactInput}
           />
-        </label>
-
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">נהג</span>
           <input
             value={driverName}
             onChange={(e) => setDriverName(e.target.value)}
-            className={field.input}
+            placeholder="נהג"
+            className={compactInput}
           />
-        </label>
+        </div>
+      </section>
 
+      <section className="mt-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold">פריטים</h2>
+          {boqItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setBoqOpen((v) => !v)}
+              className="text-xs font-bold text-blue-700"
+            >
+              בחר פריט מהפרויקט
+            </button>
+          )}
+        </div>
+        {boqOpen && (
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white">
+            {boqItems.map((item, i) => (
+              <button
+                key={`${item.description}-${i}`}
+                type="button"
+                className="block w-full truncate px-3 py-2 text-right text-sm"
+                onClick={() => {
+                  addLine({ description: item.description, unit: item.unit });
+                  setBoqOpen(false);
+                }}
+              >
+                {item.description}
+              </button>
+            ))}
+          </div>
+        )}
         {lines.map((line, idx) => (
-          <div key={idx} className={cn(field.card, "space-y-3")}>
+          <div key={idx} className="flex min-w-0 items-center gap-1.5">
             <input
               value={line.description}
               onChange={(e) => {
@@ -358,97 +439,99 @@ export function FieldDnQuick() {
                 next[idx] = { ...line, description: e.target.value };
                 setLines(next);
               }}
-              placeholder="תיאור פריט"
-              className={field.input}
+              placeholder="פריט / תיאור"
+              className={cn(compactInput, "min-w-0 flex-1")}
             />
-            <div className="flex gap-3">
-              <input
-                value={line.quantity}
-                onChange={(e) => {
-                  const next = [...lines];
-                  next[idx] = { ...line, quantity: e.target.value };
-                  setLines(next);
-                }}
-                inputMode="decimal"
-                placeholder="כמות"
-                className={cn(field.input, "w-28")}
-              />
-              <input
-                value={line.unit}
-                onChange={(e) => {
-                  const next = [...lines];
-                  next[idx] = { ...line, unit: e.target.value };
-                  setLines(next);
-                }}
-                placeholder="יח'"
-                className={cn(field.input, "w-24")}
-              />
-            </div>
+            <QtyStepper
+              value={line.quantity}
+              onChange={(qty) => {
+                const next = [...lines];
+                next[idx] = { ...line, quantity: String(Math.max(0, qty)) };
+                setLines(next);
+              }}
+            />
+            <button
+              type="button"
+              aria-label="מחק פריט"
+              onClick={() =>
+                setLines((prev) =>
+                  prev.length === 1
+                    ? [{ description: "", quantity: "1", unit: "יח'" }]
+                    : prev.filter((_, i) => i !== idx)
+                )
+              }
+              className="grid h-10 w-9 shrink-0 place-items-center text-red-500"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
           </div>
         ))}
-
         <button
           type="button"
-          onClick={() =>
-            setLines([
-              ...lines,
-              { description: "", quantity: "1", unit: "יח'" },
-            ])
-          }
-          className="w-full rounded-2xl border border-dashed border-[#E5E7EB] bg-white py-4 text-lg font-bold text-[#6B7280]"
+          onClick={() => addLine()}
+          className="inline-flex min-h-10 items-center gap-1 text-sm font-bold text-blue-700"
         >
-          + הוסף פריט
+          <Plus className="h-4 w-4" />
+          הוסף פריט
         </button>
+      </section>
 
-        <label className="block space-y-2">
-          <span className="text-lg font-bold text-[#111827]">הערות</span>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            className={field.input}
-          />
-        </label>
-
+      <section className="mt-4 space-y-2">
+        <h2 className="text-sm font-bold">תיעוד</h2>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          placeholder="הערות"
+          className="w-full rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm"
+        />
         <FieldMediaCapture
-          label={reviseId ? "הוספת תמונות לתיקון" : "תמונות"}
+          compact
+          label="תמונות"
           files={photos}
           onChange={setPhotos}
           stage={photoStage}
           onStageChange={setPhotoStage}
           stages={DN_PHOTO_STAGES}
         />
+      </section>
 
-        <div className={cn(field.card, "p-3")}>
-          <p className="mb-2 text-lg font-bold text-[#111827]">
-            חתימת יוצר המסמך
-          </p>
-          <p className="mb-2 text-sm text-slate-500">
-            חובה לפני שליחה לאישור
-          </p>
-          <SignaturePad value={signature} onChange={setSignature} height={160} />
+      <section className="mt-4 space-y-1.5">
+        <h2 className="text-sm font-bold">חתימה</h2>
+        <SignaturePad
+          value={signature}
+          onChange={setSignature}
+          label="חתימת מוסר / מקבל"
+          placeholder="חתום כאן"
+          height={96}
+          showClear={false}
+        />
+      </section>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#E5E7EB] bg-white/95 px-3 pt-2 backdrop-blur">
+        <div
+          className="mx-auto grid max-w-lg grid-cols-2 gap-2"
+          style={{
+            paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))",
+          }}
+        >
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void requestSave("draft")}
+            className="min-h-11 rounded-lg border border-[#E5E7EB] bg-white text-sm font-bold disabled:opacity-60"
+          >
+            שמור טיוטה
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void requestSave("submit")}
+            className="min-h-11 rounded-lg bg-emerald-600 text-sm font-bold text-white disabled:opacity-60"
+          >
+            {reviseId ? "שלח שוב" : "שלח לאישור"}
+          </button>
         </div>
-
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void requestSave("draft")}
-          className={cn(field.btnGhost, "min-h-16 text-xl")}
-        >
-          {busy && pendingMode !== "submit" ? "שומר…" : "שמור כטיוטה"}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void requestSave("submit")}
-          className={cn(field.btnSuccess, "min-h-16 text-xl")}
-        >
-          {busy && pendingMode === "submit"
-            ? "שולח…"
-            : reviseId
-              ? "שלח שוב"
-              : "שלח לאישור"}
-        </button>
       </div>
 
       <FieldAttendanceGate
@@ -475,6 +558,43 @@ export function FieldDnQuick() {
         onCancel={() => setPickerOpen(false)}
         onConfirm={(ids) => void doSave("submit", ids)}
       />
+    </div>
+  );
+}
+
+function QtyStepper({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (qty: number) => void;
+}) {
+  const n = Number(value) || 0;
+  return (
+    <div className="flex h-10 shrink-0 items-center rounded-lg border border-[#E5E7EB] bg-white">
+      <button
+        type="button"
+        aria-label="הקטן כמות"
+        onClick={() => onChange(n - 1)}
+        className="grid h-10 w-8 place-items-center"
+      >
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      <input
+        value={value}
+        inputMode="decimal"
+        aria-label="כמות"
+        onChange={(e) => onChange(Number(e.target.value) || 0)}
+        className="h-10 w-8 bg-transparent text-center text-sm outline-none"
+      />
+      <button
+        type="button"
+        aria-label="הגדל כמות"
+        onClick={() => onChange(n + 1)}
+        className="grid h-10 w-8 place-items-center"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

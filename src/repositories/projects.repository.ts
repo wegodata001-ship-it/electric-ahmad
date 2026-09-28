@@ -2,19 +2,30 @@ import { prisma } from "@/lib/prisma";
 import { mapProject } from "@/lib/mappers";
 import { AuditRepository } from "./audit.repository";
 import { EmployeesRepository } from "./employees.repository";
+import { PROJECT_MANAGER_ROLE } from "@/lib/auth/roles";
 import type { ProjectStatus } from "@prisma/client";
 
+const PROJECT_INCLUDE = {
+  foreman: true,
+  owner: { select: { id: true, name: true, role: true } },
+  _count: { select: { employees: true } },
+} as const;
+
 export class ProjectsRepository {
-  static async findAll(status?: ProjectStatus) {
+  static async findAll(status?: ProjectStatus, ownerId?: string | null) {
+    const ownerFilter =
+      ownerId === "unassigned"
+        ? { ownerId: null }
+        : ownerId
+          ? { ownerId }
+          : {};
     const rows = await prisma.project.findMany({
       where: {
         deletedAt: null,
         ...(status ? { status } : {}),
+        ...ownerFilter,
       },
-      include: {
-        foreman: true,
-        _count: { select: { employees: true } },
-      },
+      include: PROJECT_INCLUDE,
       orderBy: { updatedAt: "desc" },
     });
     return rows.map(mapProject);
@@ -23,10 +34,7 @@ export class ProjectsRepository {
   static async findById(id: string) {
     const row = await prisma.project.findFirst({
       where: { id, deletedAt: null },
-      include: {
-        foreman: true,
-        _count: { select: { employees: true } },
-      },
+      include: PROJECT_INCLUDE,
     });
     return row ? mapProject(row) : null;
   }
@@ -35,10 +43,7 @@ export class ProjectsRepository {
     const rows = await prisma.project.findMany({
       where: { deletedAt: null },
       take: limit,
-      include: {
-        foreman: true,
-        _count: { select: { employees: true } },
-      },
+      include: PROJECT_INCLUDE,
       orderBy: { updatedAt: "desc" },
     });
     return rows.map(mapProject);
@@ -58,6 +63,7 @@ export class ProjectsRepository {
       startDate?: Date;
       endDate?: Date;
       description?: string;
+      ownerId?: string | null;
     },
     userId: string
   ) {
@@ -73,6 +79,19 @@ export class ProjectsRepository {
     const endDate =
       data.endDate ?? new Date(startDate.getTime() + 365 * 24 * 60 * 60 * 1000);
 
+    if (data.ownerId) {
+      const owner = await prisma.user.findUnique({
+        where: { id: data.ownerId },
+        select: { id: true, role: true, archivedAt: true, status: true },
+      });
+      if (!owner || owner.archivedAt || owner.status !== "ACTIVE") {
+        throw new Error("מנהל הפרויקט לא נמצא");
+      }
+      if (owner.role !== PROJECT_MANAGER_ROLE) {
+        throw new Error("ניתן להקצות רק משתמש עם תפקיד מנהל פרויקט");
+      }
+    }
+
     const row = await prisma.project.create({
       data: {
         name: data.name,
@@ -86,14 +105,11 @@ export class ProjectsRepository {
         startDate,
         endDate,
         description: data.description,
-        ownerId: userId,
+        ownerId: data.ownerId || null,
         createdById: userId,
         updatedById: userId,
       },
-      include: {
-        foreman: true,
-        _count: { select: { employees: true } },
-      },
+      include: PROJECT_INCLUDE,
     });
 
     await prisma.projectEmployee.create({
@@ -119,13 +135,84 @@ export class ProjectsRepository {
 
     const created = await prisma.project.findUniqueOrThrow({
       where: { id: row.id },
-      include: {
-        foreman: true,
-        _count: { select: { employees: true } },
-      },
+      include: PROJECT_INCLUDE,
     });
 
     return mapProject(created);
+  }
+
+  static async assignProjectManager(
+    projectId: string,
+    ownerId: string | null,
+    actorUserId: string
+  ) {
+    const current = await prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+      select: {
+        id: true,
+        ownerId: true,
+        owner: { select: { id: true, name: true, role: true } },
+      },
+    });
+    if (!current) throw new Error("פרויקט לא נמצא");
+
+    let nextOwner: { id: string; name: string; role: string } | null = null;
+    if (ownerId) {
+      const user = await prisma.user.findUnique({
+        where: { id: ownerId },
+        select: { id: true, name: true, role: true, archivedAt: true, status: true },
+      });
+      if (!user || user.archivedAt || user.status !== "ACTIVE") {
+        throw new Error("מנהל הפרויקט לא נמצא");
+      }
+      if (user.role !== PROJECT_MANAGER_ROLE) {
+        throw new Error("ניתן להקצות רק משתמש עם תפקיד מנהל פרויקט");
+      }
+      nextOwner = user;
+    }
+
+    if (current.ownerId === (ownerId || null)) {
+      const unchanged = await prisma.project.findFirstOrThrow({
+        where: { id: projectId },
+        include: PROJECT_INCLUDE,
+      });
+      return mapProject(unchanged);
+    }
+
+    const row = await prisma.project.update({
+      where: { id: projectId },
+      data: { ownerId: ownerId || null, updatedById: actorUserId },
+      include: PROJECT_INCLUDE,
+    });
+
+    const fromName = current.owner?.name ?? "טרם הוקצה מנהל פרויקט";
+    const toName = nextOwner?.name ?? "טרם הוקצה מנהל פרויקט";
+
+    await AuditRepository.log({
+      action: "PROJECT_ASSIGNMENT_CHANGED",
+      entityType: "Project",
+      entityId: projectId,
+      userId: actorUserId,
+      metadata: {
+        event: "Project Manager changed",
+        fromOwnerId: current.ownerId,
+        fromOwnerName: fromName,
+        toOwnerId: ownerId || null,
+        toOwnerName: toName,
+      },
+    });
+
+    await prisma.activity.create({
+      data: {
+        projectId,
+        type: "project_updated",
+        title: "מנהל פרויקט שונה",
+        description: `מ: ${fromName} → אל: ${toName}`,
+        userId: actorUserId,
+      },
+    });
+
+    return mapProject(row);
   }
 
   static async update(
@@ -150,10 +237,7 @@ export class ProjectsRepository {
     const row = await prisma.project.update({
       where: { id },
       data: { ...data, updatedById: userId },
-      include: {
-        foreman: true,
-        _count: { select: { employees: true } },
-      },
+      include: PROJECT_INCLUDE,
     });
 
     await AuditRepository.log({

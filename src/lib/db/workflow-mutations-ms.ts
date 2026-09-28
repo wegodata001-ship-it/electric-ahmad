@@ -73,6 +73,9 @@ export async function msSubmitForApprovalSql(input: {
       SET
         status = 'pending_approval'::"MeasurementSheetStatus",
         "currentVersion" = target.next_version,
+        "approvalFlow" = 'APPROVAL'::"MeasurementApprovalFlow",
+        "finalizedAt" = NULL,
+        "finalizedById" = NULL,
         "submittedAt" = NOW(),
         "approvedAt" = NULL,
         "returnedAt" = NULL,

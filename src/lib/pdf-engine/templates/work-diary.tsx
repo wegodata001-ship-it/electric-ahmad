@@ -16,6 +16,7 @@ export type WorkDiaryPdfModel = {
   siteLabel: string;
   clientName?: string | null;
   address?: string | null;
+  projectManagerName?: string | null;
   foremanName?: string | null;
   foremanSignatureUrl?: string | null;
   foremanSignedName?: string | null;
@@ -114,8 +115,9 @@ export function WorkDiaryTemplate({ model }: { model: WorkDiaryPdfModel }) {
         <Field label="אתר / מיקום" value={model.siteLabel} />
         <Field label="לקוח" value={model.clientName} />
         <Field label="כתובת" value={model.address} />
-        <Field label="מנהל עבודה" value={model.foremanName} />
-        <Field label="סוג עבודה" value={model.workType} />
+        <Field label="מנהל פרויקט" value={model.projectManagerName} />
+        <Field label="מנהל שטח" value={model.foremanName} />
+        <Field label="אזור / סוג עבודה" value={model.workType} />
         <Field label="מזג אוויר" value={model.weather} />
       </section>
 

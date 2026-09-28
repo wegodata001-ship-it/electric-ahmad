@@ -10,6 +10,10 @@ import { canSeeAllProjects } from "@/lib/auth/project-access";
 import { uploadToStorage } from "@/lib/supabase/storage";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { PipelineError, pipelineLog } from "@/lib/api/pipeline-log";
+import {
+  PROJECT_ORIGINAL_FOLDER,
+  PROJECT_ORIGINAL_SOURCE_TYPE,
+} from "@/lib/documents/project-original";
 
 export const maxDuration = 300;
 
@@ -111,6 +115,8 @@ export async function POST(request: NextRequest) {
         bucket: uploaded.bucket,
         path: uploaded.path,
         url: uploaded.url,
+        folderPath: PROJECT_ORIGINAL_FOLDER,
+        sourceType: PROJECT_ORIGINAL_SOURCE_TYPE,
       },
       userId
     );

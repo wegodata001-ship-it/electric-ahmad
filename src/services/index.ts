@@ -12,8 +12,9 @@ export type CreateProjectInput = {
 };
 
 export const projectService = {
-  async getAll(): Promise<Project[]> {
-    return apiClient.get<Project[]>("/api/projects");
+  async getAll(ownerId?: string): Promise<Project[]> {
+    const q = ownerId ? `?ownerId=${encodeURIComponent(ownerId)}` : "";
+    return apiClient.get<Project[]>(`/api/projects${q}`);
   },
 
   async getById(id: string): Promise<Project | undefined> {
@@ -84,11 +85,22 @@ export const projectService = {
     parseLogId: string;
     project: Record<string, unknown>;
     items: Record<string, unknown>[];
+    ownerId?: string | null;
   }) {
     return apiClient.post<{ project: Project; itemsCount: number }>(
       "/api/projects/confirm-parsed",
       payload
     );
+  },
+
+  async listProjectManagers() {
+    return apiClient.get<{
+      items: { id: string; name: string; username: string; status: string }[];
+    }>("/api/project-managers");
+  },
+
+  async assignProjectManager(projectId: string, ownerId: string | null) {
+    return apiClient.patch<Project>(`/api/projects/${projectId}`, { ownerId });
   },
 };
 

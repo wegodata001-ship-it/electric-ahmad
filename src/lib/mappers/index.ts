@@ -27,6 +27,7 @@ import { availableForInvoice } from "@/utils/invoice-calc";
 
 type ProjectWithRelations = PrismaProject & {
   foreman: PrismaEmployee;
+  owner?: { id: string; name: string; role: string } | null;
   employees?: { employeeId: string }[];
   _count?: { employees: number };
 };
@@ -117,6 +118,8 @@ export function mapProject(row: ProjectWithRelations): Project {
     location: row.location,
     foremanId: row.foremanId,
     foremanName: `${row.foreman.firstName} ${row.foreman.lastName}`,
+    ownerId: row.ownerId ?? null,
+    ownerName: row.owner?.name ?? null,
     status: row.status,
     contractValue: decimalToNumber(row.contractValue),
     completedValue: decimalToNumber(row.completedValue),

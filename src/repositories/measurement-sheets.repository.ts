@@ -120,6 +120,15 @@ function isSheetEditable(status: MeasurementSheetStatus): boolean {
   return status === "draft" || status === "in_progress" || status === "revision";
 }
 
+function isSheetReadyForInvoice(sheet: {
+  status: MeasurementSheetStatus | string;
+  approvalFlow?: string | null;
+  finalizedAt?: Date | string | null;
+}): boolean {
+  if (sheet.status === "approved" || sheet.status === "locked") return true;
+  return sheet.approvalFlow === "DIRECT" && Boolean(sheet.finalizedAt);
+}
+
 function documentFolderForStatus(status: MeasurementSheetStatus): string {
   switch (status) {
     case "pending_approval":
@@ -210,6 +219,8 @@ function mapSheet(row: any) {
     status: row.status as MeasurementSheetStatus,
     notes: row.notes,
     currentVersion: row.currentVersion ?? 1,
+    approvalFlow: row.approvalFlow ?? null,
+    finalizedAt: iso(row.finalizedAt),
     submittedAt: iso(row.submittedAt),
     approvedAt: iso(row.approvedAt),
     returnedAt: iso(row.returnedAt),
@@ -308,6 +319,9 @@ type SheetSqlRow = {
   status: MeasurementSheetStatus;
   notes: string | null;
   currentVersion: number;
+  approvalFlow: "DIRECT" | "APPROVAL" | null;
+  finalizedAt: Date | null;
+  finalizedById: string | null;
   submittedAt: Date | null;
   approvedAt: Date | null;
   returnedAt: Date | null;
@@ -469,6 +483,9 @@ export class MeasurementSheetsRepository {
               s.status,
               s.notes,
               s."currentVersion",
+              s."approvalFlow",
+              s."finalizedAt",
+              s."finalizedById",
               s."submittedAt",
               s."approvedAt",
               s."returnedAt",
@@ -677,6 +694,9 @@ export class MeasurementSheetsRepository {
             b.status,
             b.notes,
             b."currentVersion",
+            b."approvalFlow",
+            b."finalizedAt",
+            b."finalizedById",
             b."submittedAt",
             b."approvedAt",
             b."returnedAt",
@@ -715,6 +735,9 @@ export class MeasurementSheetsRepository {
               s.status,
               s.notes,
               s."currentVersion",
+              s."approvalFlow",
+              s."finalizedAt",
+              s."finalizedById",
               s."submittedAt",
               s."approvedAt",
               s."returnedAt",
@@ -923,6 +946,9 @@ export class MeasurementSheetsRepository {
             b.status,
             b.notes,
             b."currentVersion",
+            b."approvalFlow",
+            b."finalizedAt",
+            b."finalizedById",
             b."submittedAt",
             b."approvedAt",
             b."returnedAt",
@@ -3187,7 +3213,15 @@ export class MeasurementSheetsRepository {
         projectId,
         ...(sheetIds?.length
           ? { id: { in: sheetIds } }
-          : { status: { in: ["approved", "locked"] as MeasurementSheetStatus[] } }),
+          : {
+              OR: [
+                { status: { in: ["approved", "locked"] as MeasurementSheetStatus[] } },
+                {
+                  approvalFlow: "DIRECT",
+                  finalizedAt: { not: null },
+                },
+              ],
+            }),
         partialInvoiceId: null,
       },
       include: {
@@ -3297,6 +3331,8 @@ export class MeasurementSheetsRepository {
           id: true,
           title: true,
           status: true,
+          approvalFlow: true,
+          finalizedAt: true,
           partialInvoiceId: true,
           sequenceNumber: true,
         },
@@ -3312,13 +3348,11 @@ export class MeasurementSheetsRepository {
             .join(", ")} — פתחו את החשבון הקיים במקום ליצור חדש`
         );
       }
-      const notApproved = sourceSheets.filter(
-        (s) => s.status !== "approved" && s.status !== "locked"
-      );
-      if (notApproved.length) {
+      const notReady = sourceSheets.filter((s) => !isSheetReadyForInvoice(s));
+      if (notReady.length) {
         throw new Error(
-          "ניתן להפיק חשבון רק מדף מדידה שאושר. דפים שלא אושרו: " +
-            notApproved.map((s) => `MS-${s.sequenceNumber}`).join(", ")
+          "ניתן להפיק חשבון רק מדף מדידה שאושר או שסוכם במסלול ישיר. דפים שלא מוכנים: " +
+            notReady.map((s) => `MS-${s.sequenceNumber}`).join(", ")
         );
       }
     }
@@ -3381,10 +3415,19 @@ export class MeasurementSheetsRepository {
       },
     });
 
+    const invoicedMeta = await prisma.measurementSheet.findMany({
+      where: { id: { in: summary.sheetIds } },
+      select: { id: true, approvalFlow: true },
+    });
+    const flowById = new Map(
+      invoicedMeta.map((s) => [s.id, s.approvalFlow] as const)
+    );
+
     for (const sid of summary.sheetIds) {
       await this.ensureDocument(sid, userId, "invoiced");
       await this.addEvent(sid, "invoiced", "הופק לחשבון", userId, {
         invoiceId: invoice.id,
+        approvalFlow: flowById.get(sid) ?? null,
       });
     }
 
@@ -3417,6 +3460,128 @@ export class MeasurementSheetsRepository {
       summary,
       documentFolder,
     };
+  }
+
+  /**
+   * SYSTEM_ADMIN fast path: finalize the existing measurement sheet as DIRECT
+   * (no fake approved status) and generate an invoice from that snapshot.
+   */
+  static async finalizeDirectAndInvoice(sheetId: string, userId: string) {
+    const sheet = await prisma.measurementSheet.findUnique({
+      where: { id: sheetId },
+      include: {
+        cells: { select: { quantity: true } },
+        _count: { select: { rows: true, cells: true } },
+      },
+    });
+    if (!sheet) throw new Error("דף מדידה לא נמצא");
+    if (sheet.partialInvoiceId) {
+      throw new Error("כבר הופק חשבון לדף מדידה זה");
+    }
+    if (sheet.status === "pending_approval") {
+      throw new Error(
+        "הדף ממתין לאישור. יש לאשר / להחזיר לתיקון, או להפיק חשבון רק אחרי החזרה לתיקון"
+      );
+    }
+    if (sheet.status === "invoiced") {
+      throw new Error("הדף כבר חויב");
+    }
+
+    const alreadyDirect =
+      sheet.approvalFlow === "DIRECT" && Boolean(sheet.finalizedAt);
+
+    if (!alreadyDirect) {
+      if (!isSheetEditable(sheet.status)) {
+        throw new Error("ניתן להפיק במסלול ישיר רק מדף מדידה פתוח לעריכה");
+      }
+      const hasQty = sheet.cells.some((c) => Number(c.quantity) > 0);
+      if (!hasQty) {
+        throw new Error("אין כמויות במדידה — יש למלא דף מדידה לפני הפקת חשבון");
+      }
+
+      const nextVersion = (sheet.currentVersion ?? 1) + 1;
+      const now = new Date();
+
+      await prisma.$transaction([
+        prisma.measurementSheet.update({
+          where: { id: sheetId },
+          data: {
+            approvalFlow: "DIRECT",
+            finalizedAt: now,
+            finalizedById: userId,
+            currentVersion: nextVersion,
+            updatedById: userId,
+          },
+        }),
+        prisma.measurementSheetVersion.create({
+          data: {
+            sheetId,
+            version: nextVersion,
+            status: sheet.status,
+            snapshotJson: JSON.stringify({
+              id: sheet.id,
+              title: sheet.title,
+              projectId: sheet.projectId,
+              status: sheet.status,
+              approvalFlow: "DIRECT",
+              currentVersion: nextVersion,
+              sequenceNumber: sheet.sequenceNumber,
+              rowCount: sheet._count.rows,
+              cellCount: sheet._count.cells,
+            }),
+            note: "V" + nextVersion + " סוכם במסלול ישיר",
+            actorId: userId,
+          },
+        }),
+        prisma.measurementSheetEvent.create({
+          data: {
+            sheetId,
+            type: "finalized_direct",
+            message: "המדידה סוכמה במסלול ישיר ללא אישור",
+            actorId: userId,
+            metadata: JSON.stringify({
+              event: "Measurement finalized directly",
+              approvalFlow: "DIRECT",
+              approval: "Bypassed by authorized role",
+              invoiceGenerated: true,
+            }),
+          },
+        }),
+        prisma.activity.create({
+          data: {
+            projectId: sheet.projectId,
+            type: "status_changed",
+            title: "מדידה הופקה במסלול ישיר",
+            description: `${sheet.title} · אישור עסקי דולג של מנהל מערכת`,
+            userId,
+            metadata: JSON.stringify({
+              sheetId,
+              approvalFlow: "DIRECT",
+            }),
+          },
+        }),
+      ]);
+    }
+
+    const result = await this.generateInvoice(
+      sheet.projectId,
+      { sheetIds: [sheetId], createDocumentFolder: false },
+      userId
+    );
+
+    await this.addEvent(
+      sheetId,
+      "direct_invoice",
+      "הופק חשבון במסלול ישיר — אישור דולג של תפקיד מורשה",
+      userId,
+      {
+        invoiceId: result.invoice.id,
+        approvalFlow: "DIRECT",
+        invoiceGenerated: true,
+      }
+    );
+
+    return result;
   }
 
   static async updateProjectAxis(

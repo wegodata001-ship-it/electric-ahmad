@@ -154,6 +154,8 @@ export interface Project {
   location: string;
   foremanId: string;
   foremanName: string;
+  ownerId: string | null;
+  ownerName: string | null;
   status: ProjectStatus;
   contractValue: number;
   completedValue: number;

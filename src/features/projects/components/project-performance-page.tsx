@@ -122,6 +122,7 @@ export function ProjectPerformancePage({
   const [clientLinkOpen, setClientLinkOpen] = useState(false);
   const [clientLinkBusy, setClientLinkBusy] = useState(false);
   const [canSendExternal, setCanSendExternal] = useState(false);
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveAllRef = useRef<() => Promise<boolean>>(async () => false);
 
@@ -134,6 +135,13 @@ export function ProjectPerformancePage({
   const hasInvoice = Boolean(sheet?.partialInvoiceId);
   const postApprovalStage = isApproved;
   const isPending = sheet?.status === "pending_approval";
+  const canDirectInvoice =
+    isSystemAdmin &&
+    Boolean(sheetId) &&
+    !hasInvoice &&
+    !postApprovalStage &&
+    !isPending &&
+    !locked;
   const pmApprovalEdit = Boolean(sheet?.pmApprovalEdit);
   const pmEditQuery = searchParams.get("pmEdit") === "1";
   const approvalEditMode =
@@ -141,12 +149,17 @@ export function ProjectPerformancePage({
 
   useEffect(() => {
     fetchClientMe("/api/auth/me")
-      .then((json) =>
-        setCanSendExternal(
-          Boolean(json.success && isSystemAdminRole(json.data?.role))
-        )
-      )
-      .catch(() => setCanSendExternal(false));
+      .then((json) => {
+        const admin = Boolean(
+          json.success && isSystemAdminRole(json.data?.role)
+        );
+        setIsSystemAdmin(admin);
+        setCanSendExternal(admin);
+      })
+      .catch(() => {
+        setIsSystemAdmin(false);
+        setCanSendExternal(false);
+      });
   }, []);
   const activeReviewNotes = useMemo(() => {
     const notes = sheet?.reviewNotes ?? [];
@@ -847,6 +860,40 @@ export function ProjectPerformancePage({
     }
   }
 
+  async function handleSaveAndInvoice() {
+    if (!sheetId) return;
+    if (dirty) {
+      const ok = await saveAll({ silent: true });
+      if (!ok) return;
+    }
+    const quantities = [
+      ...Object.values(draft).map((v) => Number(v) || 0),
+      ...((sheet?.cells ?? []) as { quantity?: number }[]).map(
+        (c) => Number(c.quantity) || 0
+      ),
+    ];
+    if (!hasMeasurementData(quantities)) {
+      toast.error("אין כמויות במדידה — יש למלא דף מדידה לפני הפקת חשבון");
+      return;
+    }
+    setGeneratingInvoice(true);
+    try {
+      const result = await invoicesWorkspaceService.finalizeDirectInvoice(
+        sheetId
+      );
+      setInvoicePreview(result.summary ?? null);
+      setInvoiceDraftId(result.invoice?.id ?? null);
+      const s = await invoicesWorkspaceService.getSheet(sheetId);
+      applySheet(s);
+      await loadSheets();
+      toast.success("החשבון הופק במסלול ישיר");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setGeneratingInvoice(false);
+    }
+  }
+
   async function handleGenerateInvoice() {
     if (!sheetId) return;
     if (hasInvoice && sheet?.partialInvoiceId) {
@@ -1043,6 +1090,7 @@ export function ProjectPerformancePage({
             >
               {STATUS_UI[sheet.status]?.label || sheet.status}
               {sheet.currentVersion ? ` · V${sheet.currentVersion}` : ""}
+              {sheet.approvalFlow === "DIRECT" ? " · מסלול ישיר" : ""}
             </span>
           )}
           {!locked && !postApprovalStage && !isPending && (
@@ -1057,6 +1105,17 @@ export function ProjectPerformancePage({
             >
               <CheckCircle2 className="h-4 w-4" />
               {isRevision ? "שמור ושלח מחדש לאישור" : "שלח לאישור"}
+            </Button>
+          )}
+          {canDirectInvoice && (
+            <Button
+              size="sm"
+              className="bg-emerald-700 hover:bg-emerald-800"
+              disabled={generatingInvoice || completing}
+              onClick={() => void handleSaveAndInvoice()}
+            >
+              <Receipt className="h-4 w-4" />
+              {generatingInvoice ? "מפיק…" : "שמור והפק חשבון"}
             </Button>
           )}
           {approvalEditMode && sheetId && (
@@ -1079,7 +1138,9 @@ export function ProjectPerformancePage({
                 ? "שומר…"
                 : approvalEditMode
                   ? "שמור שינויים"
-                  : "שמור"}
+                  : isSystemAdmin
+                    ? "שמור טיוטה"
+                    : "שמור"}
             </Button>
           )}
           {isPending && (
@@ -1903,6 +1964,35 @@ export function ProjectPerformancePage({
         </div>
       ) : (
         matrix
+      )}
+
+      {canDirectInvoice && (
+        <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
+          <Button
+            variant="outline"
+            onClick={() => void saveAll()}
+            disabled={saving || !dirty}
+          >
+            <Save className="h-4 w-4" />
+            {saving ? "שומר…" : "שמור טיוטה"}
+          </Button>
+          <Button
+            className="bg-amber-600 hover:bg-amber-700"
+            onClick={() => void openSubmitFlow()}
+            disabled={completing}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            שלח לאישור
+          </Button>
+          <Button
+            className="bg-emerald-700 hover:bg-emerald-800"
+            disabled={generatingInvoice || completing}
+            onClick={() => void handleSaveAndInvoice()}
+          >
+            <Receipt className="h-4 w-4" />
+            {generatingInvoice ? "מפיק…" : "שמור והפק חשבון"}
+          </Button>
+        </div>
       )}
 
       <Modal

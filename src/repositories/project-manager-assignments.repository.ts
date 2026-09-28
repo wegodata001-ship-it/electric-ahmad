@@ -92,7 +92,7 @@ export class ProjectManagerAssignmentsRepository {
       if (removed.length) {
         await tx.project.updateMany({
           where: { id: { in: removed }, ownerId: targetUserId },
-          data: { ownerId: actorUserId, updatedById: actorUserId },
+          data: { ownerId: null, updatedById: actorUserId },
         });
       }
       if (projectIds.length) {
@@ -107,8 +107,8 @@ export class ProjectManagerAssignmentsRepository {
           assigned
             .map((project) => project.ownerId)
             .filter(
-              (ownerId) =>
-                ownerId !== actorUserId && ownerId !== targetUserId
+              (id): id is string =>
+                Boolean(id) && id !== actorUserId && id !== targetUserId
             )
         ),
       ];
@@ -137,7 +137,10 @@ export class ProjectManagerAssignmentsRepository {
             }),
           })),
           ...assigned
-            .filter((project) => displacedManagerIds.has(project.ownerId))
+            .filter(
+              (project) =>
+                project.ownerId && displacedManagerIds.has(project.ownerId)
+            )
             .map((project) => ({
               action: "PROJECT_UNASSIGNED" as const,
               entityType: "Project",

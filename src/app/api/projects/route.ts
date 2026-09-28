@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { ProjectsRepository } from "@/repositories/projects.repository";
 import { requireOfficeUser } from "@/lib/auth/office-session";
 import {
+  canAssignProjectManager,
   canSeeAllProjects,
   listProjectsForRole,
 } from "@/lib/auth/project-access";
@@ -15,15 +16,17 @@ export async function GET(request: NextRequest) {
     const user = await requireOfficeUser();
     const status = request.nextUrl.searchParams.get("status") ?? undefined;
     const recent = request.nextUrl.searchParams.get("recent");
+    const ownerId = request.nextUrl.searchParams.get("ownerId");
 
     if (canSeeAllProjects(user.role)) {
       if (recent) {
         const data = await ProjectsRepository.findRecent(Number(recent));
         return apiSuccess(data);
       }
-      const data = status
-        ? await ProjectsRepository.findAll(status as "active")
-        : await ProjectsRepository.findAll();
+      const data = await ProjectsRepository.findAll(
+        status as "active" | undefined,
+        ownerId
+      );
       return apiSuccess(data);
     }
 
@@ -41,6 +44,7 @@ export async function GET(request: NextRequest) {
       },
       include: {
         foreman: true,
+        owner: { select: { id: true, name: true, role: true } },
         _count: { select: { employees: true } },
       },
       orderBy: { updatedAt: "desc" },
@@ -74,6 +78,14 @@ export async function POST(request: NextRequest) {
       return apiError("שווי חוזה חייב להיות גדול מ-0");
     }
 
+    let ownerId: string | null = null;
+    if (body.ownerId) {
+      if (!canAssignProjectManager(user.role)) {
+        return apiError("אין הרשאה להקצות מנהל פרויקט", 403);
+      }
+      ownerId = String(body.ownerId);
+    }
+
     const project = await ProjectsRepository.create(
       {
         name: body.name.trim(),
@@ -87,6 +99,7 @@ export async function POST(request: NextRequest) {
         status: body.status ?? "planning",
         startDate: body.startDate ? new Date(body.startDate) : undefined,
         endDate: body.endDate ? new Date(body.endDate) : undefined,
+        ownerId,
       },
       user.userId
     );

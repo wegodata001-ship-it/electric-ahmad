@@ -108,6 +108,11 @@ enum MeasurementSheetStatus {
   invoiced
 }
 
+enum MeasurementApprovalFlow {
+  DIRECT
+  APPROVAL
+}
+
 enum InvoiceApprovalStatus {
   pending
   approved
@@ -332,8 +337,8 @@ model Project {
   /** ציר יחידות לדפי מדידה: חדר / קומה / בניין / אזור */
   measurementAxisType  MeasurementAxisType @default(room)
   measurementAxisLabel String?
-  ownerId        String
-  owner          User          @relation("ProjectOwner", fields: [ownerId], references: [id])
+  ownerId        String?
+  owner          User?         @relation("ProjectOwner", fields: [ownerId], references: [id])
   createdById    String
   createdBy      User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
   updatedById    String
@@ -1397,6 +1402,8 @@ model WorkOrderMedia {
 
 enum WorkDiaryStatus {
   draft
+  assigned
+  in_progress
   pending_approval
   in_approval
   approved
@@ -1827,6 +1834,10 @@ model MeasurementSheet {
   notes            String?
   /** גרסת מסמך — עולה בכל שליחה לאישור */
   currentVersion   Int                    @default(1)
+  /** DIRECT = הפקה מורשית ללא אישור; APPROVAL = מסלול אישור רגיל */
+  approvalFlow     MeasurementApprovalFlow?
+  finalizedAt      DateTime?
+  finalizedById    String?
   submittedAt      DateTime?
   approvedAt       DateTime?
   returnedAt       DateTime?
@@ -1857,6 +1868,7 @@ model MeasurementSheet {
   @@unique([projectId, sequenceNumber])
   @@index([projectId])
   @@index([status])
+  @@index([approvalFlow])
   @@index([partialInvoiceId])
 }
 
@@ -2020,6 +2032,8 @@ enum WorkflowDocKind {
 
 enum WorkflowStatus {
   draft
+  assigned
+  in_progress
   pending_approval
   revision
   approved

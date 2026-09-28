@@ -41,7 +41,7 @@ export async function listDocumentApprovers(options?: {
       },
     });
     if (project) {
-      projectPmIds.add(project.ownerId);
+      if (project.ownerId) projectPmIds.add(project.ownerId);
       for (const a of project.defaultApprovers) projectPmIds.add(a.userId);
     }
   }
