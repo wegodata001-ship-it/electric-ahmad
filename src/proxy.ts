@@ -7,16 +7,43 @@ import {
   OFFICE_SESSION_COOKIE,
   verifyOfficeSession,
 } from "@/lib/auth/office-cookie";
+import {
+  SUBCONTRACTOR_SESSION_COOKIE,
+  verifySubcontractorSession,
+} from "@/lib/auth/subcontractor-cookie";
 import { portalHomeForRole } from "@/lib/portals/config";
 import { isSystemAdminRole } from "@/lib/auth/document-permissions";
 import { isSecretaryRole } from "@/lib/auth/attendance-permissions";
 import { isTruckDriverRole } from "@/lib/auth/driver-permissions";
+import {
+  isLegacyDashboardPath,
+  landingPathForSession,
+  unifiedLoginHref,
+} from "@/lib/auth/login-redirect";
 
 function isPublicFieldPath(pathname: string): boolean {
   return (
     pathname === "/field/login" ||
     pathname === "/api/field/auth/login" ||
     pathname === "/api/field/auth/logout"
+  );
+}
+
+function isPublicSubcontractorPath(pathname: string): boolean {
+  return (
+    pathname === "/subcontractor/login" ||
+    pathname === "/subcontractor/activate" ||
+    pathname.startsWith("/subcontractor/activate/") ||
+    pathname === "/api/subcontractor/auth/activate"
+  );
+}
+
+function isSubcontractorPath(pathname: string): boolean {
+  return (
+    pathname === "/subcontractor" ||
+    pathname.startsWith("/subcontractor/") ||
+    pathname === "/api/subcontractor" ||
+    pathname.startsWith("/api/subcontractor/")
   );
 }
 
@@ -60,41 +87,16 @@ function isOfficeAliasPath(pathname: string): boolean {
   );
 }
 
-function safeNextPath(next: string | null, fallback: string): string {
-  if (
-    next &&
-    next.startsWith("/") &&
-    !next.startsWith("//") &&
-    next !== "/login" &&
-    next !== "/field/login"
-  ) {
-    return next;
-  }
-  return fallback;
-}
-
-/** Legacy /dashboard is not a destination — always prefer the role portal home. */
-function isLegacyDashboardPath(pathname: string): boolean {
-  return pathname === "/dashboard" || pathname.startsWith("/dashboard/");
-}
-
-function officeLandingPath(
-  role: string | undefined,
-  next: string | null
-): string {
-  const portalHome = portalHomeForRole(role);
-  const fallback = portalHome === "/login" ? "/dashboard" : portalHome;
-  if (!next || isLegacyDashboardPath(next)) return fallback;
-  return safeNextPath(next, fallback);
+function officeLandingPath(role: string | undefined, next: string | null): string {
+  return landingPathForSession("office", role, next);
 }
 
 function fieldLandingPath(next: string | null): string {
-  // Field session must never be sent to office routes (e.g. /dashboard) —
-  // that created ERR_TOO_MANY_REDIRECTS: /dashboard → /login → /dashboard.
-  if (next && next.startsWith("/field") && !next.startsWith("/field/login")) {
-    return safeNextPath(next, "/field");
-  }
-  return "/field";
+  return landingPathForSession("field", undefined, next);
+}
+
+function subcontractorLandingPath(next: string | null): string {
+  return landingPathForSession("subcontractor", undefined, next);
 }
 
 async function handleFieldAuth(request: NextRequest, pathname: string) {
@@ -127,8 +129,7 @@ async function handleFieldAuth(request: NextRequest, pathname: string) {
         { status: 401 }
       );
     }
-    const login = new URL("/login", request.url);
-    login.searchParams.set("next", pathname);
+    const login = new URL(unifiedLoginHref(pathname), request.url);
     return NextResponse.redirect(login);
   }
 
@@ -140,21 +141,29 @@ async function handleOfficeAuth(request: NextRequest, pathname: string) {
 
   if (isPublicOfficePath(pathname)) {
     if (pathname === "/login") {
-      // Field session wins when present
+      const next = request.nextUrl.searchParams.get("next");
       const fieldToken = request.cookies.get(FIELD_SESSION_COOKIE)?.value;
       const fieldSession = await verifyFieldSession(fieldToken);
       if (fieldSession) {
-        const next = request.nextUrl.searchParams.get("next");
-        const dest = fieldLandingPath(next);
-        return NextResponse.redirect(new URL(dest, request.url));
+        return NextResponse.redirect(
+          new URL(fieldLandingPath(next), request.url)
+        );
+      }
+
+      const subToken = request.cookies.get(SUBCONTRACTOR_SESSION_COOKIE)?.value;
+      const subSession = await verifySubcontractorSession(subToken);
+      if (subSession) {
+        return NextResponse.redirect(
+          new URL(subcontractorLandingPath(next), request.url)
+        );
       }
 
       const token = request.cookies.get(OFFICE_SESSION_COOKIE)?.value;
       const session = await verifyOfficeSession(token);
       if (session) {
-        const next = request.nextUrl.searchParams.get("next");
-        const dest = officeLandingPath(session.role, next);
-        return NextResponse.redirect(new URL(dest, request.url));
+        return NextResponse.redirect(
+          new URL(officeLandingPath(session.role, next), request.url)
+        );
       }
     }
     if (pathname === "/manager" || pathname === "/manager/") {
@@ -324,6 +333,36 @@ export async function proxy(request: NextRequest) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname);
     return NextResponse.redirect(login);
+  }
+
+  if (isSubcontractorPath(pathname)) {
+    const token = request.cookies.get(SUBCONTRACTOR_SESSION_COOKIE)?.value;
+    const session = await verifySubcontractorSession(token);
+    if (pathname === "/subcontractor/login") {
+      if (session) {
+        return NextResponse.redirect(new URL("/subcontractor", request.url));
+      }
+      const next = request.nextUrl.searchParams.get("next");
+      return NextResponse.redirect(new URL(unifiedLoginHref(next), request.url));
+    }
+    if (isPublicSubcontractorPath(pathname)) {
+      return NextResponse.next();
+    }
+    const isApi =
+      pathname === "/api/subcontractor" ||
+      pathname.startsWith("/api/subcontractor/");
+    if (!session) {
+      if (isApi) {
+        return NextResponse.json(
+          { success: false, error: "נדרשת התחברות לפורטל קבלן המשנה" },
+          { status: 401 }
+        );
+      }
+      return NextResponse.redirect(
+        new URL(unifiedLoginHref(pathname), request.url)
+      );
+    }
+    return NextResponse.next();
   }
 
   // Field system first — never falls through to office session checks

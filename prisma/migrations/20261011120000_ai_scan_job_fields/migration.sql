@@ -1,0 +1,10 @@
+ALTER TABLE "AiParseLog" ADD COLUMN IF NOT EXISTS "attempts" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "AiParseLog" ADD COLUMN IF NOT EXISTS "maxAttempts" INTEGER NOT NULL DEFAULT 3;
+ALTER TABLE "AiParseLog" ADD COLUMN IF NOT EXISTS "lockedAt" TIMESTAMP(3);
+ALTER TABLE "AiParseLog" ADD COLUMN IF NOT EXISTS "heartbeatAt" TIMESTAMP(3);
+ALTER TABLE "AiParseLog" ADD COLUMN IF NOT EXISTS "nextRetryAt" TIMESTAMP(3);
+ALTER TABLE "AiParseLog" ADD COLUMN IF NOT EXISTS "timeoutAt" TIMESTAMP(3);
+ALTER TABLE "AiParseLog" ADD COLUMN IF NOT EXISTS "errorCode" TEXT;
+
+CREATE INDEX IF NOT EXISTS "AiParseLog_status_nextRetryAt_idx" ON "AiParseLog"("status", "nextRetryAt");
+CREATE INDEX IF NOT EXISTS "AiParseLog_status_heartbeatAt_idx" ON "AiParseLog"("status", "heartbeatAt");

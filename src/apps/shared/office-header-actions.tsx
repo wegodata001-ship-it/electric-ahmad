@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, LogOut } from "lucide-react";
+import { Bell, LogOut, Menu } from "lucide-react";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import type { Notification } from "@/types";
 import { notificationService } from "@/features/notifications/services/notification.service";
 import { formatRelative } from "@/utils/format";
@@ -15,6 +16,7 @@ type Props = {
   notificationsHref: string;
   loggingOut: boolean;
   onLogout: () => void | Promise<void>;
+  onMenuClick?: () => void;
 };
 
 export function OfficeHeaderActions({
@@ -23,6 +25,7 @@ export function OfficeHeaderActions({
   notificationsHref,
   loggingOut,
   onLogout,
+  onMenuClick,
 }: Props) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -74,14 +77,29 @@ export function OfficeHeaderActions({
   }
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur sm:px-5">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-black text-slate-900">
-          {userName || "משתמש"}
-        </p>
-        <p className="truncate text-xs text-slate-500">
-          {roleGradeLabel(role)}
-        </p>
+    <header className="sticky top-0 z-30 flex min-h-14 items-center justify-between gap-2 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]/95 px-3 py-2 backdrop-blur sm:min-h-16 sm:px-5">
+      <div className="flex min-w-0 items-center gap-2">
+        {onMenuClick && (
+          <button
+            type="button"
+            onClick={onMenuClick}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--brand-border)] text-[var(--brand-text)] lg:hidden"
+            aria-label="תפריט"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
+        <div className="hidden min-[375px]:block lg:hidden">
+          <BrandLogo height={28} maxWidth={120} />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-[var(--brand-text)]">
+            {userName || "משתמש"}
+          </p>
+          <p className="truncate text-xs text-[var(--brand-text-muted)]">
+            {roleGradeLabel(role)}
+          </p>
+        </div>
       </div>
 
       <div className="flex items-center gap-2" ref={rootRef}>

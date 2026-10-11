@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { PipelineError, pipelineLog } from "@/lib/api/pipeline-log";
 import { FieldAuthError } from "@/lib/auth/field-session";
 import { OfficeAuthError } from "@/lib/auth/office-session";
+import { SubcontractorAuthError } from "@/lib/auth/subcontractor-session";
+import { SubcontractorError } from "@/repositories/subcontractors.repository";
 import { toUserFacingError } from "@/lib/api/user-facing-error";
 import { ValidationError } from "@/lib/validation/parse-body";
 import { SessionSecretError } from "@/lib/env/required-secrets";
@@ -31,6 +33,12 @@ export async function handleApiError(error: unknown) {
     return apiError(error.message, error.status);
   }
   if (error instanceof OfficeAuthError) {
+    return apiError(error.message, error.status);
+  }
+  if (error instanceof SubcontractorAuthError) {
+    return apiError(error.message, error.status);
+  }
+  if (error instanceof SubcontractorError) {
     return apiError(error.message, error.status);
   }
 

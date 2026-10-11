@@ -4,19 +4,21 @@ import {
   CONTRACT_BOQ_SYSTEM_PROMPT,
   CONTRACT_BOQ_USER_PROMPT,
 } from "./prompts/contract-boq.prompt";
+import { normalizeContractBoq } from "./contract-boq.schema";
+import {
+  classifyGeminiError,
+  geminiUserMessage,
+  isTransientGeminiError,
+} from "./gemini-errors";
+import { backoffMs, SCAN_TIMEOUT } from "./scan-job";
 import type {
   AiDocumentType,
   AiParseRequest,
   AiParseResult,
   ParsedContractBoqResult,
 } from "./types";
-import { cleanBoqDescription } from "@/utils/boq-text";
 
-function asNullableNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function extractJson(text: string): unknown {
+export function extractJson(text: string): unknown {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fenced?.[1]?.trim() ?? trimmed;
@@ -25,94 +27,11 @@ function extractJson(text: string): unknown {
   if (start === -1 || end === -1 || end <= start) {
     throw new Error("לא התקבל JSON תקין מ-AI");
   }
-  return JSON.parse(candidate.slice(start, end + 1));
-}
-
-function normalizeContractBoq(raw: unknown): ParsedContractBoqResult {
-  const data = (raw ?? {}) as Partial<ParsedContractBoqResult>;
-  const project = data.project ?? ({} as ParsedContractBoqResult["project"]);
-
-  const items = Array.isArray(data.items)
-    ? data.items.map((item, index) => {
-        const qty =
-          typeof item.contractQuantity === "number" ? item.contractQuantity : null;
-        const unitPrice = typeof item.unitPrice === "number" ? item.unitPrice : null;
-        let totalPrice =
-          typeof item.totalPrice === "number" ? item.totalPrice : null;
-        if (totalPrice == null && qty != null && unitPrice != null) {
-          totalPrice = qty * unitPrice;
-        }
-
-        return {
-          code: item.code ?? null,
-          description: cleanBoqDescription(item.description) || null,
-          unit: item.unit ?? null,
-          contractQuantity: qty,
-          unitPrice,
-          totalPrice,
-          chapter: item.chapter ?? null,
-          subChapter: item.subChapter ?? null,
-          category: item.category ?? null,
-          sortOrder: typeof item.sortOrder === "number" ? item.sortOrder : index + 1,
-        };
-      })
-    : [];
-
-  const missingFields = Array.isArray(data.missingFields)
-    ? data.missingFields
-    : [];
-
-  const requiredProjectFields: (keyof typeof project)[] = [
-    "name",
-    "contractNumber",
-    "contractor",
-    "location",
-    "contractValue",
-  ];
-
-  for (const field of requiredProjectFields) {
-    const value = project[field];
-    if (value == null || value === "") {
-      const key = `project.${field}`;
-      if (!missingFields.includes(key)) missingFields.push(key);
-    }
+  try {
+    return JSON.parse(candidate.slice(start, end + 1));
+  } catch {
+    throw new Error("לא התקבל JSON תקין מ-AI");
   }
-
-  const subtotal = asNullableNumber(project.subtotal);
-  const vatPercent = asNullableNumber(project.vatPercent);
-  const vatAmount = asNullableNumber(project.vatAmount);
-  const totalWithVat = asNullableNumber(project.totalWithVat);
-  let contractValue = asNullableNumber(project.contractValue);
-  // Prefer document total when contractValue missing — never invent VAT math
-  if (contractValue == null && totalWithVat != null) {
-    contractValue = totalWithVat;
-  } else if (contractValue == null && subtotal != null && vatAmount == null) {
-    contractValue = subtotal;
-  }
-
-  return {
-    documentType: "contract_boq",
-    project: {
-      name: project.name ?? null,
-      contractNumber: project.contractNumber ?? null,
-      contractor: project.contractor ?? null,
-      client: project.client ?? null,
-      location: project.location ?? null,
-      date: project.date ?? null,
-      contractValue,
-      subtotal,
-      vatPercent,
-      vatAmount,
-      totalWithVat,
-      paymentTerms: project.paymentTerms ?? null,
-      currency: project.currency ?? null,
-      notes: project.notes ?? null,
-    },
-    chapters: Array.isArray(data.chapters) ? data.chapters : [],
-    items,
-    missingFields,
-    confidence: typeof data.confidence === "number" ? data.confidence : 0.5,
-  };
 }
 
 function getPromptForType(documentType: AiDocumentType): {
@@ -133,6 +52,89 @@ function getPromptForType(documentType: AiDocumentType): {
   }
 }
 
+const INLINE_PDF_LIMIT_BYTES = 2 * 1024 * 1024;
+
+function parseTimeoutMs() {
+  const raw = Number(process.env.GEMINI_PARSE_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw >= 30_000 ? raw : SCAN_TIMEOUT.geminiMs;
+}
+
+function isAbortError(error: unknown) {
+  return (
+    (error instanceof Error && error.name === "AbortError") ||
+    (error instanceof Error && /aborted|timeout/i.test(error.message))
+  );
+}
+
+async function wait(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type DocumentPart =
+  | { inlineData: { mimeType: string; data: string } }
+  | { fileData: { fileUri: string; mimeType: string } };
+
+async function filePartForBuffer(
+  ai: ReturnType<typeof getGeminiClient>,
+  request: AiParseRequest,
+  abortSignal: AbortSignal
+): Promise<{ part: DocumentPart; uploadedName?: string }> {
+  const mimeType = request.mimeType || "application/pdf";
+  const useFileApi =
+    mimeType === "application/pdf" && request.buffer.length > INLINE_PDF_LIMIT_BYTES;
+
+  if (!useFileApi) {
+    return {
+      part: {
+        inlineData: {
+          mimeType,
+          data: request.buffer.toString("base64"),
+        },
+      },
+    };
+  }
+
+  pipelineLog("AI", "Uploading PDF to AI Files API", {
+    fileName: request.fileName,
+    bytes: request.buffer.length,
+  });
+
+  let uploaded = await ai.files.upload({
+    file: new Blob([new Uint8Array(request.buffer)], { type: mimeType }),
+    config: { mimeType, abortSignal },
+  });
+
+  for (let i = 0; i < 30; i++) {
+    if (abortSignal.aborted) {
+      throw new DOMException("תם הזמן לסריקת AI", "AbortError");
+    }
+    if (!uploaded.state || uploaded.state === "ACTIVE") break;
+    if (uploaded.state === "FAILED") {
+      throw new Error("העלאת המסמך ל-AI נכשלה");
+    }
+    await wait(1000);
+    if (!uploaded.name) break;
+    uploaded = await ai.files.get({ name: uploaded.name, config: { abortSignal } });
+  }
+
+  if (uploaded.state && uploaded.state !== "ACTIVE") {
+    throw new Error("המסמך לא מוכן לסריקה");
+  }
+  if (!uploaded.uri) {
+    throw new Error("לא התקבל קישור למסמך ב-AI");
+  }
+
+  return {
+    part: {
+      fileData: {
+        fileUri: uploaded.uri,
+        mimeType,
+      },
+    },
+    uploadedName: uploaded.name,
+  };
+}
+
 /**
  * Central AI Document Parser Service.
  * Communicates with Gemini and returns a normalized JSON result.
@@ -144,43 +146,62 @@ export class AiDocumentParserService {
   ): Promise<AiParseResult<T>> {
     const startedAt = new Date();
     const startMs = Date.now();
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), parseTimeoutMs());
+    let uploadedName: string | undefined;
 
     try {
       const ai = getGeminiClient();
       const model = getGeminiModel();
       const { system, user } = getPromptForType(request.documentType);
+      const filePart = await filePartForBuffer(ai, request, abort.signal);
+      uploadedName = filePart.uploadedName;
 
       pipelineLog("AI", "Calling AI generateContent", {
         model,
         fileName: request.fileName,
         bytes: request.buffer.length,
+        via: "fileData" in filePart.part ? "files" : "inline",
       });
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: `${system}\n\n${user}\n\nשם קובץ: ${request.fileName}` },
+      let rawText = "";
+      for (let attempt = 1; attempt <= SCAN_TIMEOUT.maxAttempts; attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: [
               {
-                inlineData: {
-                  mimeType: request.mimeType || "application/pdf",
-                  data: request.buffer.toString("base64"),
-                },
+                role: "user",
+                parts: [
+                  { text: `${system}\n\n${user}\n\nשם קובץ: ${request.fileName}` },
+                  filePart.part,
+                ],
               },
             ],
-          },
-        ],
-        config: {
-          temperature: 0.1,
-          responseMimeType: "application/json",
-        },
-      });
-
-      const rawText = response.text ?? "";
-      if (!rawText) {
-        throw new Error("AI החזיר תשובה ריקה");
+            config: {
+              temperature: 0.1,
+              responseMimeType: "application/json",
+              abortSignal: abort.signal,
+            },
+          });
+          rawText = response.text ?? "";
+          if (!rawText) {
+            throw new Error("AI החזיר תשובה ריקה");
+          }
+          break;
+        } catch (error) {
+          const kind = classifyGeminiError(error);
+          const canRetry =
+            isTransientGeminiError(kind) &&
+            !isAbortError(error) &&
+            attempt < SCAN_TIMEOUT.maxAttempts;
+          if (!canRetry) throw error;
+          pipelineLog("AI", "Transient Gemini error, retrying", {
+            attempt,
+            kind,
+          });
+          await wait(backoffMs(attempt));
+        }
       }
 
       pipelineLog("AI", "AI raw response received", {
@@ -192,7 +213,11 @@ export class AiDocumentParserService {
       let data: unknown = parsedRaw;
 
       if (request.documentType === "contract_boq") {
-        data = normalizeContractBoq(parsedRaw);
+        const validated = normalizeContractBoq(parsedRaw);
+        if (!validated.ok) {
+          throw new Error(validated.error);
+        }
+        data = validated.data;
       }
 
       const endedAt = new Date();
@@ -212,17 +237,30 @@ export class AiDocumentParserService {
         rawText,
       };
     } catch (error) {
+      const kind = classifyGeminiError(error);
       const endedAt = new Date();
       return {
         success: false,
         data: null,
         missingFields: [],
         itemsDetected: 0,
-        error: error instanceof Error ? error.message : "שגיאת ניתוח AI",
+        error: geminiUserMessage(
+          kind,
+          error instanceof Error ? error.message : "שגיאת ניתוח AI"
+        ),
         startedAt: startedAt.toISOString(),
         endedAt: endedAt.toISOString(),
         durationMs: Date.now() - startMs,
       };
+    } finally {
+      clearTimeout(timer);
+      if (uploadedName) {
+        try {
+          await getGeminiClient().files.delete({ name: uploadedName });
+        } catch {
+          // Best-effort cleanup of the temporary AI file.
+        }
+      }
     }
   }
 }

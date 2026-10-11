@@ -43,6 +43,7 @@ export type OpsDnItemInput = {
 
 export type CreateOpsDnInput = {
   projectId?: string | null;
+  workSiteId?: string | null;
   foremanId: string;
   noteDate: Date;
   noteTime?: string | null;
@@ -358,6 +359,7 @@ export const OpsDeliveryNotesRepository = {
         documentNumber,
         sequenceNumber,
         projectId: input.projectId ?? null,
+        workSiteId: input.workSiteId ?? null,
         foremanId: input.foremanId,
         noteDate: input.noteDate,
         noteTime: input.noteTime ?? null,

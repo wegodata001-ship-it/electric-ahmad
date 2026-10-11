@@ -1,6 +1,7 @@
 import {
   isFieldManagerRole,
   isOfficeRole,
+  isSubcontractorRole,
   OPERATIONS_MANAGER_ROLE,
   PROJECT_MANAGER_ROLE,
 } from "@/lib/auth/roles";
@@ -21,6 +22,7 @@ export function portalsAllowedForRole(role?: string | null): PortalId[] {
   if (role === PROJECT_MANAGER_ROLE) return ["project"];
   if (role === OPERATIONS_MANAGER_ROLE) return ["operations"];
   if (isFieldManagerRole(role)) return ["field"];
+  if (isSubcontractorRole(role)) return ["subcontractor"];
   if (isOfficeRole(role)) return ["project"];
   return [];
 }

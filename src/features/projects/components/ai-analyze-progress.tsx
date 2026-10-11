@@ -1,47 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const STEPS = [
-  { id: "upload", label: "הקובץ הועלה" },
-  { id: "saved", label: "נשמר בשרת" },
-  { id: "ai", label: "AI מנתח את המסמך..." },
-  { id: "project", label: "מזהה פרטי פרויקט..." },
-  { id: "boq", label: "קורא כתב כמויות..." },
-  { id: "items", label: "יוצר סעיפים..." },
-  { id: "calc", label: "מחשב כמויות..." },
-  { id: "done", label: "מסיים..." },
-];
+import {
+  isActiveScanStatus,
+  SCAN_STATUS,
+  SCAN_STEP_LABELS,
+  scanStepIndex,
+} from "@/lib/ai/scan-job";
 
 interface AiAnalyzeProgressProps {
-  active: boolean;
-  done?: boolean;
+  status: string;
   failed?: boolean;
+  stillRunning?: boolean;
+  error?: string | null;
 }
 
-export function AiAnalyzeProgress({ active, done, failed }: AiAnalyzeProgressProps) {
-  const [stepIndex, setStepIndex] = useState(0);
-
-  useEffect(() => {
-    if (!active || done || failed) return;
-    setStepIndex(0);
-    const timer = setInterval(() => {
-      setStepIndex((prev) => Math.min(prev + 1, STEPS.length - 2));
-    }, 1600);
-    return () => clearInterval(timer);
-  }, [active, done, failed]);
-
-  useEffect(() => {
-    if (done) setStepIndex(STEPS.length - 1);
-  }, [done]);
+export function AiAnalyzeProgress({
+  status,
+  failed,
+  stillRunning,
+  error,
+}: AiAnalyzeProgressProps) {
+  const done = status === SCAN_STATUS.COMPLETED || status === SCAN_STATUS.CONFIRMED;
+  const stepIndex = scanStepIndex(status);
+  const isFailed = Boolean(failed) || status === SCAN_STATUS.FAILED || status === SCAN_STATUS.TIMED_OUT;
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200/80 shadow-sm p-8 max-w-lg mx-auto">
       <div className="text-center mb-8">
         <div className="h-14 w-14 rounded-2xl bg-primary-50 border border-primary-100 flex items-center justify-center mx-auto mb-4">
-          {failed ? (
+          {isFailed ? (
             <span className="text-2xl">⚠️</span>
           ) : done ? (
             <CheckCircle2 className="h-7 w-7 text-green-600" />
@@ -50,23 +39,28 @@ export function AiAnalyzeProgress({ active, done, failed }: AiAnalyzeProgressPro
           )}
         </div>
         <h2 className="text-lg font-semibold text-gray-900">
-          {failed
-            ? "לא הצלחנו לזהות את כל הנתונים"
+          {isFailed
+            ? "לא הצלחנו להשלים את סריקת המסמך"
             : done
-              ? "הניתוח הושלם"
-              : "AI מנתח את המסמך"}
+              ? "הסריקה הושלמה"
+              : stillRunning
+                ? "הסריקה עדיין רצה בשרת"
+                : "AI סורק את המסמך"}
         </h2>
         <p className="text-sm text-gray-500 mt-1">
-          {failed
-            ? "הקובץ נשמר במערכת. אפשר לנסות שוב או להמשיך בהזנה ידנית."
-            : "אל תסגור את החלון — העיבוד מתבצע בשרת"}
+          {isFailed
+            ? error || "הקובץ המקורי נשמר בפרויקט."
+            : stillRunning
+              ? "אפשר לעזוב את הדף. הסטטוס יישמר בפרויקט."
+              : "הסריקה ממשיכה גם אם סוגרים את הדפדפן."}
         </p>
       </div>
 
       <div className="space-y-3">
-        {STEPS.map((step, index) => {
+        {SCAN_STEP_LABELS.map((step, index) => {
           const completed = done || index < stepIndex;
-          const current = !done && !failed && index === stepIndex;
+          const current =
+            !done && !isFailed && isActiveScanStatus(status) && index === stepIndex;
           return (
             <div
               key={step.id}

@@ -16,7 +16,7 @@ import {
  * Dashboard → Approvals → Delivery notes → Projects → …
  */
 export const mainNavigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "מסך ראשי", href: "/dashboard", icon: LayoutDashboard },
   { name: "ממתינים לאישור", href: "/approvals", icon: ClipboardCheck },
   { name: "תעודות משלוח", href: "/delivery-notes", icon: Package },
   { name: "מרכז מסמכים", href: "/documents-archive", icon: ClipboardList },

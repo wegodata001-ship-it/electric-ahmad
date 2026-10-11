@@ -14,9 +14,16 @@ import {
   Truck,
   Link2,
   User,
+  HardHat,
 } from "lucide-react";
 
-export type PortalId = "system" | "project" | "operations" | "field" | "driver";
+export type PortalId =
+  | "system"
+  | "project"
+  | "operations"
+  | "field"
+  | "driver"
+  | "subcontractor";
 
 export type PortalNavItem = {
   label: string;
@@ -52,19 +59,21 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     name: "System Portal",
     shortName: "מערכת",
     headerTitle: "ניהול מערכת",
-    home: "/system/accounts",
-    description: "עץ פרויקט · משתמשים · תשתית",
-    accent: "#0f172a",
+    home: "/system",
+    description: "מרכז ניהול · עץ פרויקט · משתמשים",
+    accent: "#C8102E",
     theme: {
-      accent: "#0f172a",
-      accentSoft: "#e2e8f0",
-      accentMuted: "#334155",
-      sidebarBg: "#f8fafc",
-      headerTint: "#f1f5f9",
-      badge: "SYS",
+      accent: "#C8102E",
+      accentSoft: "#FDECEE",
+      accentMuted: "#9B0C24",
+      sidebarBg: "#ffffff",
+      headerTint: "#fff7f8",
+      badge: "ג.א",
     },
     nav: [
+      { label: "מרכז ניהול", href: "/system", icon: LayoutDashboard, mode: "live" },
       { label: "עץ פרויקט", href: "/system/accounts", icon: GitBranch, mode: "live" },
+      { label: "קבלני משנה", href: "/system/subcontractors", icon: HardHat, mode: "live" },
       { label: "ניהול משתמשים", href: "/system/users", icon: Users, mode: "live" },
       { label: "ציר תהליכים", href: "/system/workflow", icon: GitBranch, mode: "live" },
       { label: "מרכז מסמכים", href: "/system/documents", icon: FolderOpen, mode: "live" },
@@ -76,19 +85,21 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     name: "Project Portal",
     shortName: "פרויקט",
     headerTitle: "ניהול פרויקט",
-    home: "/project/accounts",
-    description: "עץ פרויקט · מדידות · חשבונות · תפעול חוצה-פרויקטים",
-    accent: "#1d4ed8",
+    home: "/project",
+    description: "מרכז ניהול · עץ פרויקט · מדידות · חשבונות",
+    accent: "#C8102E",
     theme: {
-      accent: "#1d4ed8",
-      accentSoft: "#dbeafe",
-      accentMuted: "#1e40af",
-      sidebarBg: "#f8fbff",
-      headerTint: "#eff6ff",
-      badge: "PRJ",
+      accent: "#C8102E",
+      accentSoft: "#FDECEE",
+      accentMuted: "#9B0C24",
+      sidebarBg: "#ffffff",
+      headerTint: "#fff7f8",
+      badge: "ג.א",
     },
     nav: [
+      { label: "מרכז ניהול", href: "/project", icon: LayoutDashboard, mode: "live" },
       { label: "עץ פרויקט", href: "/project/accounts", icon: GitBranch, mode: "live" },
+      { label: "קבלני משנה", href: "/project/subcontractors", icon: HardHat, mode: "live" },
       { label: "תיקונים", href: "/project/approvals", icon: CheckSquare, mode: "live" },
       { label: "תעודות משלוח", href: "/project/delivery-notes", icon: Truck, mode: "live" },
       { label: "מרכז מסמכים", href: "/project/documents", icon: FileText, mode: "live" },
@@ -99,8 +110,8 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
     name: "Operations Portal",
     shortName: "תפעול",
     headerTitle: "מנהל תפעול",
-    home: "/operations/accounts",
-    description: "עץ פרויקט · עבודה יומית · ללא שליחה ללקוח",
+    home: "/operations",
+    description: "מרכז ניהול · עץ פרויקט · עבודה יומית",
     accent: "#b45309",
     theme: {
       accent: "#b45309",
@@ -111,7 +122,9 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       badge: "OPS",
     },
     nav: [
+      { label: "מרכז ניהול", href: "/operations", icon: LayoutDashboard, mode: "live" },
       { label: "עץ פרויקט", href: "/operations/accounts", icon: GitBranch, mode: "live" },
+      { label: "קבלני משנה", href: "/operations/subcontractors", icon: HardHat, mode: "live" },
       {
         label: "תיקונים",
         href: "/operations/approvals",
@@ -211,6 +224,30 @@ export const PORTALS: Record<PortalId, PortalDefinition> = {
       { label: "פרופיל", href: "/driver/profile", icon: User, mode: "live" },
     ],
   },
+  subcontractor: {
+    id: "subcontractor",
+    name: "Subcontractor Portal",
+    shortName: "קבלן",
+    headerTitle: "פורטל קבלן משנה",
+    home: "/subcontractor",
+    description: "עבודות · דיווחים · כספים",
+    accent: "#C8102E",
+    theme: {
+      accent: "#C8102E",
+      accentSoft: "#FDECEE",
+      accentMuted: "#9B0C24",
+      sidebarBg: "#ffffff",
+      headerTint: "#fff7f8",
+      badge: "ג.א",
+    },
+    nav: [
+      { label: "בית", href: "/subcontractor", icon: LayoutDashboard, mode: "live" },
+      { label: "עבודות", href: "/subcontractor/works", icon: HardHat, mode: "live" },
+      { label: "דיווחים", href: "/subcontractor/reports", icon: BookOpen, mode: "live" },
+      { label: "כספים", href: "/subcontractor/finance", icon: Wallet, mode: "live" },
+      { label: "פרופיל", href: "/subcontractor/profile", icon: User, mode: "live" },
+    ],
+  },
 };
 
 export const FUTURE_PORTAL_IDS = [
@@ -239,6 +276,8 @@ export function portalHomeForRole(role?: string | null): string {
     case "TRUCK_DRIVER":
     case "נהג":
       return PORTALS.driver.home;
+    case "SUBCONTRACTOR":
+      return PORTALS.subcontractor.home;
     default:
       return "/login";
   }
@@ -251,6 +290,9 @@ export function portalIdForRole(role?: string | null): PortalId | null {
   if (home === "/operations" || home.startsWith("/operations/")) return "operations";
   if (home === "/field" || home.startsWith("/field/")) return "field";
   if (home === "/driver" || home.startsWith("/driver/")) return "driver";
+  if (home === "/subcontractor" || home.startsWith("/subcontractor/")) {
+    return "subcontractor";
+  }
   return null;
 }
 
@@ -265,7 +307,9 @@ export function isPortalPath(pathname: string): boolean {
     pathname === "/field" ||
     pathname.startsWith("/field/") ||
     pathname === "/driver" ||
-    pathname.startsWith("/driver/")
+    pathname.startsWith("/driver/") ||
+    pathname === "/subcontractor" ||
+    pathname.startsWith("/subcontractor/")
   );
 }
 
@@ -285,4 +329,5 @@ export const PORTAL_DASHBOARD_MOCKS: Record<
   operations: [],
   field: [],
   driver: [],
+  subcontractor: [],
 };

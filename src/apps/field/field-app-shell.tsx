@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Clock, GitBranch, Home, LogOut, User } from "lucide-react";
 import { usePortalSession } from "@/apps/shared/use-portal-session";
 import { PortalNotificationsMenu } from "@/apps/shared/portal-notifications-menu";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -37,11 +38,14 @@ export function FieldAppShell({ children }: { children: React.ReactNode }) {
     >
       <header className="sticky top-0 z-40 flex h-14 items-center border-b border-[#E2E8F0] bg-white px-4">
         <div className="mx-auto flex w-full max-w-lg min-w-0 items-center justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-[#2563EB]">מנהל עבודה</p>
-            <p className="truncate text-sm font-bold text-[#0F172A]">
-              {userName || "מנהל עבודה"}
-            </p>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <BrandLogo height={26} maxWidth={96} />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-[var(--brand-primary)]">מנהל עבודה</p>
+              <p className="truncate text-sm font-bold text-[#0F172A]">
+                {userName || "מנהל עבודה"}
+              </p>
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <PortalNotificationsMenu notificationsHref="/field/notifications" />

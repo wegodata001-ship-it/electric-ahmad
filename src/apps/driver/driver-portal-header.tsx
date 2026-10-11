@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { LogOut, Truck } from "lucide-react";
+import { LogOut } from "lucide-react";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import {
   PortalNotificationsMenu,
   resolveDriverNotificationLink,
@@ -25,13 +26,7 @@ export function DriverPortalHeader({
           href="/driver"
           className="flex min-w-0 flex-1 items-center gap-2.5"
         >
-          <span
-            className="hidden h-9 w-1 shrink-0 rounded-full bg-[#EA580C] min-[360px]:block"
-            aria-hidden
-          />
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#FFF7ED] text-[#EA580C]">
-            <Truck className="h-5 w-5" />
-          </span>
+          <BrandLogo height={28} maxWidth={96} />
           <div className="min-w-0">
             <p className="truncate text-sm font-black text-[#0F172A]">
               {userName || "נהג משאית"}

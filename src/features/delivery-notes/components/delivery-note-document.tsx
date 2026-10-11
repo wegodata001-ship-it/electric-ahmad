@@ -24,7 +24,7 @@ export function DeliveryNoteDocument({ note }: { note: DeliveryNote }) {
             <img
               src={COMPANY_PROFILE.logoUrl}
               alt={COMPANY_PROFILE.name}
-              className="h-16 w-16 object-contain"
+              className="h-16 w-auto max-w-[160px] object-contain"
             />
           ) : (
             <div

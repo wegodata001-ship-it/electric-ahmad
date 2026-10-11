@@ -215,6 +215,34 @@ export class ProjectsRepository {
     return mapProject(row);
   }
 
+  static async assignWorkRegion(
+    projectId: string,
+    workRegionId: string | null,
+    actorUserId: string
+  ) {
+    const current = await prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!current) throw new Error("פרויקט לא נמצא");
+    if (workRegionId) {
+      const region = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "WorkRegion" WHERE id = ${workRegionId} AND active = true
+      `;
+      if (!region[0]) throw new Error("אזור העבודה לא נמצא או אינו פעיל");
+    }
+    await prisma.$executeRaw`
+      UPDATE "Project"
+      SET "workRegionId" = ${workRegionId}, "updatedById" = ${actorUserId}, "updatedAt" = CURRENT_TIMESTAMP
+      WHERE id = ${projectId}
+    `;
+    const row = await prisma.project.findFirstOrThrow({
+      where: { id: projectId },
+      include: PROJECT_INCLUDE,
+    });
+    return mapProject(row);
+  }
+
   static async update(
     id: string,
     data: Partial<{

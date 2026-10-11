@@ -1,14 +1,9 @@
-import { Suspense } from "react";
-import { FieldLoginPage } from "@/features/field/components/field-login-page";
+import { redirect } from "next/navigation";
+import { unifiedLoginHref } from "@/lib/auth/login-redirect";
 
-export default function Page() {
-  return (
-    <Suspense
-      fallback={
-        <p className="p-10 text-center text-gray-400">טוען התחברות...</p>
-      }
-    >
-      <FieldLoginPage />
-    </Suspense>
-  );
+type Props = { searchParams: Promise<{ next?: string }> };
+
+export default async function Page({ searchParams }: Props) {
+  const { next } = await searchParams;
+  redirect(unifiedLoginHref(next));
 }

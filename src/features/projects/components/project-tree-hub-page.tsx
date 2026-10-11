@@ -26,6 +26,7 @@ import { PROJECT_STATUS_COLORS, PROJECT_STATUS_LABELS } from "@/constants";
 import type { ProjectStatus } from "@/types";
 import { cn } from "@/lib/utils";
 import { OriginalProjectFileCard } from "@/features/projects/components/original-project-file-card";
+import { ProjectScanStatusCard } from "@/features/projects/components/project-scan-status-card";
 
 type HubData = {
   project: {
@@ -379,6 +380,7 @@ export function ProjectTreeHubPage({ projectId }: { projectId: string }) {
       </div>
 
       <OriginalProjectFileCard projectId={project.id} />
+      <ProjectScanStatusCard projectId={project.id} />
     </div>
   );
 }

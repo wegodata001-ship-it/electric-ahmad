@@ -63,6 +63,7 @@ export type NamedQtyInput = {
 
 export type CreateWorkDiaryInput = {
   projectId?: string | null;
+  workSiteId?: string | null;
   /** When set, diary is for an unlisted/"אחר" site */
   customSiteName?: string | null;
   foremanId: string;
@@ -631,6 +632,7 @@ export const WorkDiariesRepository = {
         documentNumber,
         sequenceNumber,
         projectId: projectId!,
+        workSiteId: input.workSiteId || null,
         customSiteName: customSite,
         foremanId: input.foremanId,
         workDate: input.workDate,

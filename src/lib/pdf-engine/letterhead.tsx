@@ -40,7 +40,7 @@ export function PdfLetterhead({
           <img
             src={company.logoUrl}
             alt={company.name}
-            className="h-[68px] w-[68px] object-contain"
+            className="h-[68px] w-auto max-w-[160px] object-contain"
           />
         ) : (
           <div
@@ -105,7 +105,7 @@ export function PdfFooterBar({
       className="pdf-avoid-break mt-3 flex justify-between border-t border-gray-200 pt-2 text-[9px] text-gray-500"
     >
       <span>{left || COMPANY_PROFILE.name}</span>
-      <span>{right || "מסמך רשמי · WEGO"}</span>
+      <span>{right || `מסמך רשמי · ${COMPANY_PROFILE.name}`}</span>
     </footer>
   );
 }

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { PipelineError } from "@/lib/api/pipeline-log";
+import { jobTimeoutAt, SCAN_STATUS } from "@/lib/ai/scan-job";
 
 export class AiParseRepository {
   private static assertModel() {
@@ -28,6 +29,8 @@ export class AiParseRepository {
     error?: string;
     resultJson?: string;
     createdById: string;
+    timeoutAt?: Date;
+    maxAttempts?: number;
   }) {
     this.assertModel();
 
@@ -45,6 +48,9 @@ export class AiParseRepository {
         error: params.error,
         resultJson: params.resultJson,
         createdById: params.createdById,
+        timeoutAt: params.timeoutAt ?? jobTimeoutAt(params.startedAt),
+        maxAttempts: params.maxAttempts ?? 3,
+        nextRetryAt: params.startedAt,
       },
     });
   }
@@ -52,6 +58,35 @@ export class AiParseRepository {
   static async findById(id: string) {
     this.assertModel();
     return prisma.aiParseLog.findUnique({ where: { id } });
+  }
+
+  static async findLatestForProject(projectId: string) {
+    this.assertModel();
+    return prisma.aiParseLog.findFirst({
+      where: { projectId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  /** Claim a queued/uploaded job so only one worker proceeds. */
+  static async claim(id: string): Promise<boolean> {
+    this.assertModel();
+    const now = new Date();
+    const updated = await prisma.aiParseLog.updateMany({
+      where: {
+        id,
+        status: { in: [SCAN_STATUS.UPLOADED, SCAN_STATUS.QUEUED] },
+      },
+      data: {
+        status: SCAN_STATUS.PROCESSING,
+        lockedAt: now,
+        heartbeatAt: now,
+        attempts: { increment: 1 },
+        error: null,
+        errorCode: null,
+      },
+    });
+    return updated.count === 1;
   }
 
   static async update(
@@ -66,6 +101,11 @@ export class AiParseRepository {
       resultJson: string | null;
       projectId: string;
       documentId: string;
+      lockedAt: Date | null;
+      heartbeatAt: Date;
+      nextRetryAt: Date | null;
+      timeoutAt: Date | null;
+      errorCode: string | null;
     }>
   ) {
     this.assertModel();

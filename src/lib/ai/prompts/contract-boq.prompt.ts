@@ -1,6 +1,7 @@
 export const CONTRACT_BOQ_SYSTEM_PROMPT = `אתה מנתח מסמכי חוזי חשמל וכתבי כמויות עבור מערכת ניהול פרויקטי חשמל.
 תפקידך להבין את מבנה המסמך המלא — לא רק OCR — ולהחזיר JSON מדויק בלבד.
-אין להחזיר טקסט חופשי, markdown, או הסברים מחוץ ל-JSON.`;
+אין להחזיר טקסט חופשי, markdown, או הסברים מחוץ ל-JSON.
+אסור להמציא חדרים, סעיפים, כמויות או מחירים שלא מופיעים במסמך.`;
 
 export const CONTRACT_BOQ_USER_PROMPT = `נתח את מסמך ה-PDF המצורף (חוזה / כתב כמויות) והחזר JSON בלבד במבנה הבא:
 
@@ -22,6 +23,9 @@ export const CONTRACT_BOQ_USER_PROMPT = `נתח את מסמך ה-PDF המצור�
     "currency": string | null,
     "notes": string | null
   },
+  "rooms": [
+    { "name": string, "sortOrder": number }
+  ],
   "chapters": [
     { "name": string, "sortOrder": number }
   ],
@@ -44,7 +48,7 @@ export const CONTRACT_BOQ_USER_PROMPT = `נתח את מסמך ה-PDF המצור�
 }
 
 כללים:
-1. זהה את כל סעיפי כתב הכמויות לפי סדר הופעתם במסמך.
+1. זהה את כל סעיפי כתב הכמויות לפי סדר הופעתם במסמך. rooms / chapters הם חדרים, אזורים או פרקים שמופיעים במסמך בלבד.
 2. שמור פרקים ותתי פרקים בשדות chapter / subChapter / category בלבד — לעולם אל תכניס אותם לתוך description.
 3. description חייב להכיל רק את תיאור העבודה הנקי, בלי:
    - טקסט בתוך סוגריים מרובעים [ ... ]

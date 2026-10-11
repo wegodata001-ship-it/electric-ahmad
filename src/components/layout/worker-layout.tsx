@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { workerNavigation } from "@/config/navigation";
-import { Zap } from "lucide-react";
+import { BrandLogo, BrandWordmark } from "@/components/brand/brand-logo";
 
 export function WorkerLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -15,10 +15,8 @@ export function WorkerLayout({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-30 bg-white border-b border-gray-200/80">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
           <Link href="/worker" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary-600 flex items-center justify-center">
-              <Zap className="h-4 w-4 text-white" />
-            </div>
-            <span className="text-sm font-bold text-gray-900">WEGO Worker</span>
+            <BrandLogo height={28} maxWidth={110} />
+            <BrandWordmark compact />
           </Link>
           <Link href="/dashboard" className="text-xs text-primary-600 hover:text-primary-700">
             ממשק ניהול

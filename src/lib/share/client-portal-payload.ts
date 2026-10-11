@@ -195,7 +195,7 @@ async function loadRelated(projectId: string | null | undefined) {
 
 function companyBlock() {
   return {
-    name: COMPANY_PROFILE.name || "מערכת חשמל הזם",
+    name: COMPANY_PROFILE.name || "אחמד אבו גרה",
     logoUrl: COMPANY_PROFILE.logoUrl || "/logopng.jpeg",
     address: COMPANY_PROFILE.address || "",
     phone: COMPANY_PROFILE.phone || "",

@@ -2,25 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { COMPANY_PROFILE } from "@/config/company";
-
-const LOGIN_BRAND_NAME = "מערכת חשמל הזם";
-const LOGIN_BRAND_MARK = "הזם";
-
-function safeBrandName(value: string | undefined): string {
-  const v = (value ?? "").trim();
-  if (!v) return LOGIN_BRAND_NAME;
-  // Reject mojibake (Hebrew geresh spam from bad Windows/env encoding)
-  if ((v.match(/\u05F3/g) || []).length >= 2) return LOGIN_BRAND_NAME;
-  return v;
-}
-
-function safeBrandMark(value: string | undefined): string {
-  const v = (value ?? "").trim();
-  if (!v) return LOGIN_BRAND_MARK;
-  if ((v.match(/\u05F3/g) || []).length >= 2) return LOGIN_BRAND_MARK;
-  return v;
-}
+import {
+  landingPathForSession,
+  sessionKindForRole,
+} from "@/lib/auth/login-redirect";
 
 export function OfficeLoginPage() {
   const router = useRouter();
@@ -30,9 +17,6 @@ export function OfficeLoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const brandName = safeBrandName(COMPANY_PROFILE.name);
-  const brandMark = safeBrandMark(COMPANY_PROFILE.logoText);
-  const [logoFailed, setLogoFailed] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -48,21 +32,12 @@ export function OfficeLoginPage() {
       if (!res.ok || !json.success) {
         throw new Error(json.error || "התחברות נכשלה");
       }
-      const portalPath =
-        typeof json.data?.portalPath === "string"
-          ? json.data.portalPath
-          : null;
-      const next = searchParams.get("next");
-      const safeNext =
-        next &&
-        next.startsWith("/") &&
-        !next.startsWith("//") &&
-        !next.startsWith("/api") &&
-        next !== "/login" &&
-        next !== "/field/login"
-          ? next
-          : null;
-      const dest = safeNext || portalPath || "/login";
+      const role = typeof json.data?.role === "string" ? json.data.role : undefined;
+      const dest = landingPathForSession(
+        sessionKindForRole(role),
+        role,
+        searchParams.get("next")
+      );
       router.replace(dest);
       router.refresh();
     } catch (err) {
@@ -74,69 +49,52 @@ export function OfficeLoginPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4"
+      className="flex min-h-dvh items-center justify-center overflow-x-hidden px-4"
       style={{
         background:
-          "linear-gradient(160deg, #eef2ff 0%, #f8fafc 45%, #e0e7ff 100%)",
+          "linear-gradient(160deg, #fdecee 0%, #f6f7f8 48%, #ffffff 100%)",
       }}
       dir="rtl"
     >
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-sm p-7 space-y-4"
+        className="w-full max-w-md space-y-4 rounded-2xl border border-[#E6E8EB] bg-white p-7 shadow-sm"
       >
-        <div className="text-center mb-1">
-          {COMPANY_PROFILE.logoUrl && !logoFailed ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={COMPANY_PROFILE.logoUrl}
-              alt={brandName}
-              className="mx-auto mb-3 h-14 w-14 rounded-xl object-cover"
-              onError={() => setLogoFailed(true)}
-            />
-          ) : (
-            <div
-              className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl text-sm font-bold tracking-wide text-white"
-              style={{ background: COMPANY_PROFILE.brandBlue }}
-            >
-              {brandMark}
-            </div>
-          )}
-          <h1 className="text-xl font-bold text-gray-900">{brandName}</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            התחברות אחת · הפניה אוטומטית ל־Portal
-          </p>
+        <div className="mb-1 text-center">
+          <BrandLogo className="mx-auto mb-4" height={56} maxWidth={220} />
+          <h1 className="text-xl font-black text-[#111111]">{COMPANY_PROFILE.name}</h1>
+          <p className="mt-1 text-sm text-[#5B6470]">מערכת ניהול פרויקטי חשמל</p>
         </div>
 
         <div>
-          <label className="block text-sm text-gray-600 mb-1">
+          <label className="mb-1 block text-sm text-[#5B6470]">
             שם משתמש / אימייל
           </label>
           <input
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="admin / pm1 / sysmgr…"
-            className="w-full h-11 border border-gray-300 rounded-xl px-3 text-sm"
+            placeholder="שם משתמש או אימייל"
+            className="h-12 w-full rounded-xl border border-[#E6E8EB] px-3 text-sm"
             required
             dir="ltr"
           />
         </div>
 
         <div>
-          <label className="block text-sm text-gray-600 mb-1">סיסמה</label>
+          <label className="mb-1 block text-sm text-[#5B6470]">סיסמה</label>
           <input
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full h-11 border border-gray-200 rounded-xl px-3 text-sm"
+            className="h-12 w-full rounded-xl border border-[#E6E8EB] px-3 text-sm"
             required
             dir="ltr"
           />
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-gray-600">
+        <label className="flex items-center gap-2 text-sm text-[#5B6470]">
           <input
             type="checkbox"
             checked={rememberMe}
@@ -146,7 +104,7 @@ export function OfficeLoginPage() {
         </label>
 
         {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+          <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
             {error}
           </p>
         )}
@@ -154,10 +112,10 @@ export function OfficeLoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full h-12 rounded-xl text-white text-base font-bold disabled:opacity-50"
-          style={{ background: COMPANY_PROFILE.brandBlue }}
+          className="h-12 w-full rounded-xl text-base font-bold text-white disabled:opacity-50"
+          style={{ background: "#C8102E" }}
         >
-          {loading ? "מתחבר..." : "התחבר"}
+          {loading ? "מתחבר..." : "כניסה"}
         </button>
       </form>
     </div>

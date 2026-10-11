@@ -14,11 +14,19 @@ export function usePortalSession(portalId: PortalId) {
   const [userName, setUserName] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState<string | null>(null);
+  const [portalRole, setPortalRole] = useState<string | null>(null);
+  const [canViewFinance, setCanViewFinance] = useState(false);
   const [ready, setReady] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    const meUrl = portalId === "field" ? "/api/field/auth/me" : "/api/auth/me";
+    const meUrl =
+      portalId === "field"
+        ? "/api/field/auth/me"
+        : portalId === "subcontractor"
+          ? "/api/subcontractor/auth/me"
+          : "/api/auth/me";
     fetchClientMe(meUrl)
       .then((json) => {
         if (!json.success) {
@@ -31,6 +39,13 @@ export function usePortalSession(portalId: PortalId) {
         );
         const nextRole = json.data?.role as string | undefined;
         setRole(nextRole ?? null);
+        setCompanyName(
+          typeof json.data?.companyName === "string" ? json.data.companyName : null
+        );
+        setPortalRole(
+          typeof json.data?.portalRole === "string" ? json.data.portalRole : null
+        );
+        setCanViewFinance(json.data?.canViewFinance === true);
         if (!canAccessPortal(nextRole, portalId)) {
           router.replace(portalHomeOrLogin(nextRole));
           return;
@@ -45,17 +60,28 @@ export function usePortalSession(portalId: PortalId) {
     try {
       if (portalId === "field") {
         await fetch("/api/field/auth/logout", { method: "POST" });
+      } else if (portalId === "subcontractor") {
+        await fetch("/api/subcontractor/auth/logout", { method: "POST" });
       } else {
         await fetch("/api/auth/logout", { method: "POST" });
       }
       clearClientMeCache();
-      // Hard navigation so browser Back cannot reopen a protected cached page.
-      window.location.assign(portalId === "field" ? "/field/login" : "/login");
+      window.location.assign("/login");
     } catch {
       setLoggingOut(false);
-      router.replace(portalId === "field" ? "/field/login" : "/login");
+      router.replace("/login");
     }
   }
 
-  return { userName, username, role, ready, loggingOut, logout };
+  return {
+    userName,
+    username,
+    role,
+    companyName,
+    portalRole,
+    canViewFinance,
+    ready,
+    loggingOut,
+    logout,
+  };
 }

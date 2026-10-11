@@ -44,14 +44,16 @@ export const projectService = {
       projectId: string;
       documentId: string;
       parseLogId: string;
+      pending?: boolean;
       success: boolean;
+      status?: string;
       parsed: unknown;
       missingFields: string[];
       itemsDetected: number;
-      durationMs: number;
+      durationMs?: number;
       error?: string;
       message: string;
-    }>("/api/projects/from-pdf", formData);
+    }>("/api/projects/from-pdf", formData, 120_000);
   },
 
   async getParseLog(parseLogId: string) {
@@ -72,12 +74,45 @@ export const projectService = {
   async reparse(projectId: string, documentId: string) {
     return apiClient.post<{
       parseLogId: string;
+      pending?: boolean;
       success: boolean;
+      status?: string;
       parsed: unknown;
       missingFields: string[];
       itemsDetected: number;
       error?: string;
     }>("/api/ai/reparse", { projectId, documentId });
+  },
+
+  async getProjectScanJob(projectId: string) {
+    return apiClient.get<{
+      job: {
+        id: string;
+        status: string;
+        documentId: string | null;
+        projectId: string | null;
+        itemsDetected: number;
+        fieldsMissing: number;
+        error: string | null;
+        errorCode: string | null;
+        parsed: unknown;
+        createdAt: string;
+      } | null;
+    }>(`/api/projects/${projectId}/scan-job`);
+  },
+
+  async runParse(parseLogId: string) {
+    return apiClient.post<{
+      parseLogId: string;
+      status?: string;
+      pending?: boolean;
+      skipped?: boolean;
+      success: boolean;
+      parsed?: unknown;
+      missingFields?: string[];
+      itemsDetected?: number;
+      error?: string;
+    }>(`/api/ai/parse-logs/${parseLogId}/run`);
   },
 
   async confirmParsed(payload: {

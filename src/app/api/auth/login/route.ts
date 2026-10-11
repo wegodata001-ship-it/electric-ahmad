@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/auth/password";
-import { isFieldManagerRole, isOfficeRole } from "@/lib/auth/roles";
+import { isFieldManagerRole, isOfficeRole, isSubcontractorRole } from "@/lib/auth/roles";
 import { portalHomeForRole } from "@/lib/portals/config";
 import {
   OFFICE_SESSION_COOKIE,
@@ -15,6 +15,11 @@ import {
   fieldSessionCookieOptions,
   signFieldSession,
 } from "@/lib/auth/field-cookie";
+import {
+  SUBCONTRACTOR_SESSION_COOKIE,
+  subcontractorSessionCookieOptions,
+  signSubcontractorSession,
+} from "@/lib/auth/subcontractor-cookie";
 import { AuditRepository } from "@/repositories/audit.repository";
 import { apiError, handleApiError } from "@/lib/api/response";
 import { parseJsonBody } from "@/lib/validation/parse-body";
@@ -159,6 +164,57 @@ export async function POST(request: NextRequest) {
         },
       });
       res.cookies.set(FIELD_SESSION_COOKIE, token, fieldSessionCookieOptions());
+      return res;
+    }
+
+    if (isSubcontractorRole(user.role)) {
+      const membership = await prisma.subcontractorUser.findFirst({
+        where: {
+          userId: user.id,
+          status: "active",
+          subcontractor: { status: "active" },
+        },
+        select: { subcontractorId: true },
+      });
+      if (!membership) {
+        return apiError("הגישה לקבלן המשנה אינה פעילה", 403);
+      }
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+      const token = await signSubcontractorSession({
+        userId: user.id,
+        subcontractorId: membership.subcontractorId,
+        sessionVersion: user.sessionVersion,
+      });
+      await AuditRepository.log({
+        action: "UPDATE",
+        entityType: "SubcontractorAuth",
+        entityId: membership.subcontractorId,
+        userId: user.id,
+        metadata: {
+          action: "login",
+          portal: "subcontractor",
+          datetime: new Date().toISOString(),
+        },
+      });
+      const res = NextResponse.json({
+        success: true,
+        data: {
+          userId: user.id,
+          name: user.name,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+          portalPath,
+        },
+      });
+      res.cookies.set(
+        SUBCONTRACTOR_SESSION_COOKIE,
+        token,
+        subcontractorSessionCookieOptions()
+      );
       return res;
     }
 

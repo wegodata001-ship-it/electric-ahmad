@@ -10,6 +10,8 @@ export const SECRETARY_ROLE = "SECRETARY" as const;
 export const TRUCK_DRIVER_ROLE = "TRUCK_DRIVER" as const;
 /** Seed / legacy office admin role (Hebrew label kept for BC) */
 export const LEGACY_SYSTEM_ADMIN_ROLE = "מנהל מערכת" as const;
+/** קבלן משנה — פורטל נפרד, לא משרדי */
+export const SUBCONTRACTOR_ROLE = "SUBCONTRACTOR" as const;
 
 /** Roles a System Manager may assign from User Management. */
 export const MANAGED_USER_ROLES = [
@@ -28,6 +30,10 @@ export function isManagedUserRole(role: unknown): role is ManagedUserRole {
 
 export function isFieldManagerRole(role?: string | null): boolean {
   return role === FIELD_MANAGER_ROLE;
+}
+
+export function isSubcontractorRole(role?: string | null): boolean {
+  return role === SUBCONTRACTOR_ROLE;
 }
 
 /** Office / project-manager shell roles (not field) */
@@ -53,6 +59,7 @@ export function officeRoleLabel(role?: string | null): string {
   if (role === FIELD_MANAGER_ROLE) return "מנהל עבודה";
   if (role === SECRETARY_ROLE || role === "מזכירה") return "מזכירה";
   if (role === TRUCK_DRIVER_ROLE || role === "נהג") return "נהג משאית";
+  if (role === SUBCONTRACTOR_ROLE) return "קבלן משנה";
   if (
     role === ADMIN_ROLE ||
     role === SYSTEM_MANAGER_ROLE ||

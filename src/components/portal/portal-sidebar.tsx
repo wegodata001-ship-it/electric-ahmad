@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { PortalDefinition, PortalNavItem } from "@/lib/portals/config";
+import { BrandLogo, BrandWordmark } from "@/components/brand/brand-logo";
 
 type Props = {
   portal: PortalDefinition;
@@ -55,16 +56,9 @@ export function PortalSidebar({ portal, mobileOpen, onNavigate }: Props) {
         className="flex h-16 items-center gap-2.5 border-b border-gray-200/80 px-4"
         style={{ background: theme.headerTint }}
       >
-        <div
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-[10px] font-bold tracking-wide text-white"
-          style={{ background: theme.accent }}
-        >
-          {theme.badge}
-        </div>
+        <BrandLogo height={32} maxWidth={72} />
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-gray-900">
-            {portal.shortName}
-          </p>
+          <BrandWordmark compact />
           <p className="truncate text-[11px] text-gray-500">
             {portal.headerTitle}
           </p>
@@ -89,7 +83,7 @@ export function PortalSidebar({ portal, mobileOpen, onNavigate }: Props) {
         })}
       </nav>
       <div className="border-t border-gray-200/80 px-4 py-3 text-[11px] text-gray-400">
-        {portal.name} · P1
+        {portal.headerTitle}
       </div>
     </>
   );

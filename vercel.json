@@ -4,6 +4,12 @@
   "buildCommand": "prisma generate && next build",
   "installCommand": "npm install",
   "regions": ["arn1"],
+  "crons": [
+    {
+      "path": "/api/cron/ai-scan-jobs",
+      "schedule": "* * * * *"
+    }
+  ],
   "git": {
     "deploymentEnabled": {
       "master": true,

@@ -80,7 +80,9 @@ export async function POST(req: NextRequest) {
 
     const note = await OpsDeliveryNotesRepository.create({
       projectId,
+      workSiteId: body.workSiteId ? String(body.workSiteId) : null,
       foremanId: String(body.foremanId),
+      noteTime: body.noteTime ? String(body.noteTime).slice(0, 8) : null,
       noteDate: body.noteDate ? new Date(body.noteDate) : new Date(),
       clientName: String(body.clientName).trim(),
       address: body.address,

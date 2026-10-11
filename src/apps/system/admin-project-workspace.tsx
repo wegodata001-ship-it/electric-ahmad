@@ -17,6 +17,7 @@ import { ProjectDeliveryNotesPanel } from "@/features/projects/components/panels
 import { ProjectWorkDiariesPanel } from "@/features/projects/components/panels/project-work-diaries-panel";
 import { ProjectDashboardPanel } from "@/apps/system/project-dashboard-panel";
 import { OriginalProjectFileCard } from "@/features/projects/components/original-project-file-card";
+import { ProjectScanStatusCard } from "@/features/projects/components/project-scan-status-card";
 import {
   ADMIN_PROJECT_MODULE_IDS,
   ProjectModulesNavTree,
@@ -32,6 +33,7 @@ import {
 import { OPERATIONS_MANAGER_ROLE } from "@/lib/auth/roles";
 import { apiClient } from "@/lib/api/client";
 import { ProjectManagerSelect } from "@/features/projects/components/project-manager-select";
+import { ProjectSubcontractorsPanel } from "@/features/subcontractors/components/project-subcontractors-panel";
 
 const ProjectInvoicesPage = dynamic(
   () =>
@@ -241,6 +243,26 @@ export function AdminProjectWorkspace({
           deliveryCount: tree.deliveries?.length ?? tree.deliveryCount,
         };
         setTreeStats(nextStats);
+        apiClient
+          .get<{
+            summary?: {
+              contractorCount: number;
+              activeContractors: number;
+              pendingMeasurements: number;
+              pendingAccounts: number;
+            };
+          }>(`/api/projects/${selectedId}/subcontractors`)
+          .then((r) => {
+            if (cancelled || !r.summary) return;
+            setTreeStats((prev) => ({
+              ...prev,
+              subcontractorCount: r.summary!.contractorCount,
+              subcontractorActive: r.summary!.activeContractors,
+              subcontractorPendingMeasurements: r.summary!.pendingMeasurements,
+              subcontractorPendingAccounts: r.summary!.pendingAccounts,
+            }));
+          })
+          .catch(() => undefined);
         apiClient
           .get<{
             counts?: {
@@ -500,6 +522,7 @@ export function AdminProjectWorkspace({
                 }}
               />
               <OriginalProjectFileCard projectId={selectedId} />
+              <ProjectScanStatusCard projectId={selectedId} />
 
               <div
                 id="project-module-content"
@@ -568,6 +591,9 @@ export function AdminProjectWorkspace({
                 )}
                 {activeModule === "documents" && (
                   <DocumentsHubV2Page projectId={selectedId} embedded />
+                )}
+                {activeModule === "subcontractors" && (
+                  <ProjectSubcontractorsPanel projectId={selectedId} />
                 )}
                 {activeModule === "reports" && (
                   <ProjectReportsPanel projectId={selectedId} />

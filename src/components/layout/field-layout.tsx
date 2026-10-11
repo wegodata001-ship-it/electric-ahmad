@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { BookOpen, Home, LogOut, Package, UserRound, Users } from "lucide-react";
+import { BrandLogo, BrandWordmark } from "@/components/brand/brand-logo";
 
 const nav = [
   { name: "בית", href: "/field", icon: Home },
@@ -24,7 +25,7 @@ export function FieldLayout({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     await fetch("/api/field/auth/logout", { method: "POST" });
-    router.replace("/field/login");
+    router.replace("/login");
     router.refresh();
   }
 
@@ -38,11 +39,9 @@ export function FieldLayout({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-30 bg-white border-b border-gray-200 lg:hidden">
         <div className="px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-md bg-[#1e40af] flex items-center justify-center text-white text-xs font-bold">
-              WG
-            </div>
+            <BrandLogo height={28} maxWidth={96} />
             <div>
-              <p className="text-sm font-bold leading-tight">WEGO Field</p>
+              <BrandWordmark compact />
               <p className="text-[11px] text-gray-500">מנהל עבודה</p>
             </div>
           </div>
@@ -61,11 +60,9 @@ export function FieldLayout({ children }: { children: React.ReactNode }) {
         {/* Desktop sidebar */}
         <aside className="hidden lg:flex lg:w-56 lg:flex-col lg:border-l lg:border-gray-200 lg:bg-white lg:sticky lg:top-0 lg:h-screen">
           <div className="px-4 h-16 flex items-center gap-2 border-b border-gray-100">
-            <div className="h-9 w-9 rounded-md bg-[#1e40af] flex items-center justify-center text-white text-xs font-bold">
-              WG
-            </div>
+            <BrandLogo height={28} maxWidth={96} />
             <div>
-              <p className="text-sm font-bold">WEGO Field</p>
+              <BrandWordmark compact />
               <p className="text-[11px] text-gray-500">מנהל עבודה</p>
             </div>
           </div>

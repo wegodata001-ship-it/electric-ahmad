@@ -83,14 +83,16 @@ export async function POST(req: NextRequest) {
 
     const diary = await WorkDiariesRepository.create({
       projectId: String(body.projectId),
+      workSiteId: body.workSiteId ? String(body.workSiteId) : null,
+      customSiteName: body.customSiteName ?? null,
+      clientName: body.clientName ?? null,
+      address: body.address ?? null,
       foremanId: String(body.foremanId),
       workDate: body.workDate ? new Date(body.workDate) : new Date(),
       workTime: body.workTime,
       weather: body.weather,
       workType: body.workType,
       workSummary: body.workSummary,
-      clientName: body.clientName,
-      address: body.address,
       notes: body.notes,
       workItems: Array.isArray(body.workItems) ? body.workItems : [],
       workers: Array.isArray(body.workers) ? body.workers : [],

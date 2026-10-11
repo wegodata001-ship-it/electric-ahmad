@@ -70,7 +70,7 @@ export function DeliveryNoteTemplate({ model }: { model: DeliveryNotePdfModel })
             <img
               src={COMPANY_PROFILE.logoUrl}
               alt={COMPANY_PROFILE.name}
-              className="h-14 w-14 shrink-0 object-contain"
+              className="h-14 w-auto max-w-[150px] shrink-0 object-contain"
             />
           ) : (
             <div

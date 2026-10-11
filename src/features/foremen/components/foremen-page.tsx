@@ -100,8 +100,8 @@ export function ForemenPage() {
   }
 
   function loginUrl() {
-    if (typeof window === "undefined") return "/field/login";
-    return `${window.location.origin}/field/login`;
+    if (typeof window === "undefined") return "/login";
+    return `${window.location.origin}/login`;
   }
 
   async function copyLoginLink() {
@@ -518,10 +518,10 @@ export function ForemenPage() {
         <p className="text-sm text-gray-600">
           התחברות שטח:{" "}
           <a
-            href="/field/login"
+            href="/login"
             className="text-primary-600 font-medium underline"
           >
-            /field/login
+            /login
           </a>
         </p>
       </Card>

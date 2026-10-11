@@ -310,7 +310,7 @@ export function ForemanDetailPage({ foremanId }: { foremanId: string }) {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => window.open("/field/login", "_blank")}
+          onClick={() => window.open("/login", "_blank")}
         >
           קישור התחברות לשטח
         </Button>

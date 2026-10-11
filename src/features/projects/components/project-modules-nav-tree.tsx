@@ -11,6 +11,7 @@ import {
   Receipt,
   Table2,
   Truck,
+  HardHat,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +24,8 @@ export type ProjectModuleId =
   | "documents"
   | "workDiaries"
   | "deliveries"
-  | "reports";
+  | "reports"
+  | "subcontractors";
 
 export type ProjectNavTreeStats = {
   boqCount?: number;
@@ -34,6 +36,10 @@ export type ProjectNavTreeStats = {
   workDiaryCompleted?: number;
   workDiaryInProgress?: number;
   deliveryCount?: number;
+  subcontractorCount?: number;
+  subcontractorActive?: number;
+  subcontractorPendingMeasurements?: number;
+  subcontractorPendingAccounts?: number;
 };
 
 type ModuleNode = {
@@ -65,6 +71,7 @@ export const ADMIN_PROJECT_MODULE_IDS: ProjectModuleId[] = [
   "deliveries",
   "workDiaries",
   "documents",
+  "subcontractors",
   "reports",
 ];
 
@@ -144,6 +151,20 @@ const ALL_MODULES: ModuleNode[] = [
       "border-orange-300 bg-gradient-to-b from-orange-50 to-white hover:border-orange-500",
     iconBg: "bg-orange-600",
     lines: (s) => [`${s?.deliveryCount ?? 0} תעודות`],
+  },
+  {
+    id: "subcontractors",
+    title: "קבלני משנה",
+    icon: HardHat,
+    accent:
+      "border-orange-300 bg-gradient-to-b from-orange-50 to-white hover:border-orange-500",
+    iconBg: "bg-orange-700",
+    lines: (s) => [
+      `${s?.subcontractorCount ?? 0} קבלנים`,
+      `${s?.subcontractorActive ?? 0} פעילים`,
+      `${s?.subcontractorPendingMeasurements ?? 0} מדידות ממתינות`,
+      `${s?.subcontractorPendingAccounts ?? 0} חשבונות ממתינים`,
+    ],
   },
   {
     id: "reports",

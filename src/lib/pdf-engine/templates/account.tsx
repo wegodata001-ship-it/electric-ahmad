@@ -509,7 +509,7 @@ function CompactAccountHeader({
           <img
             src={company.logoUrl}
             alt={company.name}
-            className="h-9 w-9 object-contain"
+            className="h-9 w-auto max-w-[120px] object-contain"
           />
         )}
         <p className="text-[12px] font-bold" style={{ color: blue }}>

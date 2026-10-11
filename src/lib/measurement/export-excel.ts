@@ -35,7 +35,7 @@ export async function buildMeasurementSheetExcel(input: {
   // Lazy-load exceljs only when an export is requested (keeps it out of initial chunks).
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
-  wb.creator = "מערכת חשמל הזם";
+  wb.creator = "אחמד אבו גרה";
   wb.created = new Date();
 
   const ws = wb.addWorksheet("דף מדידה", {

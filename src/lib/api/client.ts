@@ -50,13 +50,31 @@ export const apiClient = {
     });
   },
 
-  upload<T>(url: string, formData: FormData) {
-    return fetch(url, { method: "POST", body: formData, cache: "no-store" }).then(
-      async (res) => {
+  upload<T>(url: string, formData: FormData, timeoutMs = 0) {
+    const controller = timeoutMs > 0 ? new AbortController() : null;
+    const timer =
+      controller && timeoutMs > 0
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : null;
+    return fetch(url, {
+      method: "POST",
+      body: formData,
+      cache: "no-store",
+      signal: controller?.signal,
+    })
+      .then(async (res) => {
         const json = await res.json();
         if (!res.ok || !json.success) throw new Error(json.error ?? "שגיאת העלאה");
         return json.data as T;
-      }
-    );
+      })
+      .catch((error) => {
+        if (error instanceof Error && error.name === "AbortError") {
+          throw new Error("העלאת הקובץ ארכה יותר מדי. נסו שוב.");
+        }
+        throw error;
+      })
+      .finally(() => {
+        if (timer) clearTimeout(timer);
+      });
   },
 };

@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
+import { ProjectControlCenter } from "@/features/projects/components/project-control-center";
 
-/** מסך הבית של ADMIN = עץ הפרויקט (לא Dashboard כללי) */
 export default function Page() {
-  redirect("/system/accounts");
+  return <ProjectControlCenter accountsPath="/system/accounts" />;
 }

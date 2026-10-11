@@ -10,8 +10,13 @@ const heebo = Heebo({
 });
 
 export const metadata: Metadata = {
-  title: "ניהול פרויקטי חשמל",
-  description: "מערכת ניהול פרויקטי חשמל",
+  title: "אחמד אבו גרה · ניהול פרויקטי חשמל",
+  description: "ניהול פרויקטי חשמל",
+  applicationName: "אחמד אבו גרה",
+  icons: {
+    icon: [{ url: "/logopng.jpeg", type: "image/jpeg" }],
+    apple: [{ url: "/logopng.jpeg", type: "image/jpeg" }],
+  },
 };
 
 export default function RootLayout({

@@ -43,6 +43,7 @@ export interface ParsedContractBoqResult {
   documentType: "contract_boq";
   project: ParsedProjectDetails;
   chapters: { name: string; sortOrder: number }[];
+  rooms?: { name: string; sortOrder: number }[];
   items: ParsedBoqItem[];
   missingFields: string[];
   confidence: number;

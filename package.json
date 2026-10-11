@@ -15,6 +15,7 @@
     "db:migrate": "prisma migrate dev",
     "db:backfill-invoice-snapshots": "tsx scripts/backfill-partial-invoice-snapshots.ts",
     "test:user-management": "tsx scripts/test-user-management.ts",
+    "test:ai-scan-job": "tsx scripts/test-ai-scan-job.ts",
     "test:measurement-sheet": "tsx scripts/test-measurement-sheet.tsx",
     "test:pm-document-access": "tsx scripts/test-project-manager-document-exceptions.ts",
     "db:seed": "prisma db seed",
@@ -26,6 +27,7 @@
     "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.1.1",
     "@google/genai": "^2.11.0",
     "@hookform/resolvers": "^5.4.0",
     "@prisma/client": "^6.19.3",
@@ -34,6 +36,7 @@
     "@supabase/supabase-js": "^2.110.3",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.8",
+    "@xyflow/react": "^12.12.0",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

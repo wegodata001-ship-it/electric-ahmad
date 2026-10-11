@@ -13,6 +13,8 @@ function isPublicAuthPath(pathname: string): boolean {
     pathname === "/login" ||
     pathname === "/manager" ||
     pathname.startsWith("/field/login") ||
+    pathname.startsWith("/subcontractor/login") ||
+    pathname.startsWith("/subcontractor/activate") ||
     pathname.startsWith("/sign/")
   );
 }

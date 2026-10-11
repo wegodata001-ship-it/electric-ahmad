@@ -9,6 +9,8 @@ import { canAssignProjectManager } from "@/lib/auth/project-access";
 import type { ParsedBoqItem, ParsedProjectDetails } from "@/lib/ai/types";
 import { apiSuccess, apiError, handleApiError } from "@/lib/api/response";
 import { cleanBoqDescription } from "@/utils/boq-text";
+import { SCAN_STATUS } from "@/lib/ai/scan-job";
+import { ProjectRoomsRepository } from "@/repositories/project-rooms.repository";
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,6 +35,14 @@ export async function POST(request: NextRequest) {
 
     const existing = await ProjectsRepository.findById(projectId);
     if (!existing) return apiError("פרויקט לא נמצא", 404);
+
+    if (parseLogId) {
+      const existingLog = await AiParseRepository.findById(parseLogId);
+      if (existingLog?.status === SCAN_STATUS.CONFIRMED) {
+        const itemsCount = await prisma.boqItem.count({ where: { projectId } });
+        return apiSuccess({ project: existing, itemsCount });
+      }
+    }
 
     const existingReports = await prisma.workReport.count({ where: { projectId } });
     const existingBoq = await prisma.boqItem.count({ where: { projectId } });
@@ -101,6 +111,8 @@ export async function POST(request: NextRequest) {
           unit: item.unit || "יח'",
           contractQuantity: Number(item.contractQuantity) || 0,
           unitPrice: Number(item.unitPrice) || 0,
+          chapter: item.chapter ?? null,
+          category: item.category ?? item.chapter ?? null,
           level: item.subChapter ? 2 : item.chapter ? 1 : 0,
         };
       });
@@ -151,9 +163,28 @@ export async function POST(request: NextRequest) {
 
     if (parseLogId) {
       await AiParseRepository.update(parseLogId, {
-        status: "confirmed",
+        status: SCAN_STATUS.CONFIRMED,
         resultJson: JSON.stringify({ project: projectData, items }),
       });
+    }
+
+    const existingRooms = await prisma.projectRoom.count({
+      where: { projectId, deletedAt: null },
+    });
+    if (existingRooms === 0) {
+      const roomNames = [
+        ...new Set(
+          items
+            .map((item) => item.chapter?.trim())
+            .filter((name): name is string => Boolean(name))
+        ),
+      ];
+      for (const [index, name] of roomNames.entries()) {
+        await ProjectRoomsRepository.create(projectId, {
+          name,
+          sortOrder: index,
+        });
+      }
     }
 
     if (body.ownerId !== undefined) {

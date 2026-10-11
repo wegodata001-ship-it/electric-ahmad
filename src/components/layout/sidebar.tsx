@@ -5,9 +5,10 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { mainNavigation } from "@/config/navigation";
 import { useAppStore } from "@/store/app.store";
-import { ChevronRight, Zap } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { Drawer } from "@/components/ui";
+import { BrandLogo, BrandWordmark } from "@/components/brand/brand-logo";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -58,13 +59,10 @@ export function Sidebar() {
       >
         <div className="h-16 flex items-center px-4 border-b border-gray-100">
           <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-primary-600 flex items-center justify-center flex-shrink-0">
-              <Zap className="h-5 w-5 text-white" />
-            </div>
+            <BrandLogo height={sidebarCollapsed ? 28 : 36} maxWidth={sidebarCollapsed ? 36 : 140} />
             {!sidebarCollapsed && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <p className="text-sm font-bold text-gray-900 leading-tight">WEGO</p>
-                <p className="text-[10px] text-gray-400 leading-tight">ELECTRIC</p>
+                <BrandWordmark />
               </motion.div>
             )}
           </Link>
