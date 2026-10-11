@@ -291,7 +291,7 @@ export function ProjectControlCenter({
         <HubOrgTree
           company={company}
           regions={regions}
-          expanded={expanded}
+          expanded={expanded ?? { "company:root": true }}
           selectedId={selected ? nodeKey(selected) : null}
           onToggle={toggleNode}
           onDetails={setSelected}

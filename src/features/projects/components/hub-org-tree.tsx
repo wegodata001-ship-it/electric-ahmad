@@ -153,14 +153,15 @@ export function HubOrgTree({
 }: {
   company: HubCompany;
   regions: HubRegion[];
-  expanded: Record<string, boolean>;
+  expanded?: Record<string, boolean> | null;
   selectedId: string | null;
   onToggle: (node: SelectedHubNode) => void;
   onDetails: (node: SelectedHubNode) => void;
   totals?: { regions: number; projects: number };
 }) {
   const { nodes, edges, width, height } = useMemo(() => {
-    const companyOpen = expanded["company:root"] !== false;
+    const openMap = expanded ?? { "company:root": true };
+    const companyOpen = openMap["company:root"] !== false;
     const root: TreeItem = {
       id: "company:root",
       kind: "company",
@@ -180,7 +181,7 @@ export function HubOrgTree({
     if (companyOpen) {
       root.children = [...regions].reverse().map((region) => {
         const regionId = `region:${region.id}`;
-        const regionOpen = Boolean(expanded[regionId]);
+        const regionOpen = Boolean(openMap[regionId]);
         const regionNode: TreeItem = {
           id: regionId,
           kind: "region",
@@ -196,7 +197,7 @@ export function HubOrgTree({
         if (!regionOpen) return regionNode;
         regionNode.children = region.projects.map((project) => {
           const projectId = `project:${project.id}`;
-          const projectOpen = Boolean(expanded[projectId]);
+          const projectOpen = Boolean(openMap[projectId]);
           const extras = extrasFor(project);
           const projectNode: TreeItem = {
             id: projectId,
@@ -218,7 +219,7 @@ export function HubOrgTree({
           projectNode.children = [
             ...project.sites.map((site) => {
               const siteId = `site:${site.id}`;
-              const siteOpen = Boolean(expanded[siteId]);
+              const siteOpen = Boolean(openMap[siteId]);
               const siteNode: TreeItem = {
                 id: siteId,
                 kind: "site",
